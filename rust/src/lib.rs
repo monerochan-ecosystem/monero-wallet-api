@@ -1,4 +1,18 @@
+use std::cell::RefCell;
+
+thread_local! {
+    static THREAD_LOCAL_STRING: RefCell<String> = RefCell::new(String::from("Initial value"));
+}
 pub fn add(left: usize, right: usize) -> usize {
+    THREAD_LOCAL_STRING.with(|string| {
+        println!("Initial value: {}", string.borrow());
+
+        // Modify the string
+        *string.borrow_mut() = String::from("New value");
+
+        println!("Modified value: {}", string.borrow());
+    });
+
     left + right
 }
 
@@ -18,6 +32,14 @@ mod tests {
 
     #[test]
     fn test_monero_serai() {
+        THREAD_LOCAL_STRING.with(|string| {
+            println!("Initial value: {}", string.borrow());
+
+            // Modify the string
+            *string.borrow_mut() = String::from("New value");
+
+            println!("Modified value: {}", string.borrow());
+        });
         let primary_address = "55Py9fSwyEeQX1CydtFfPk96uHEFxSxvD9AYBy7dwnYt9cXqKDjix9rS9AWZ5GnH4B1Z7yHr3B2UH2updNw5ZNJEEnv87H1";
         let secret_view_key = "1195868d30373aa9d92c1a21514de97670bcd360c209a409ea3234174892770e";
         let view_key_bytes = <[u8; 32]>::from_hex(secret_view_key.to_string()).unwrap();
