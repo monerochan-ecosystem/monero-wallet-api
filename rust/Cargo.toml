@@ -14,3 +14,11 @@ hex = "0.4.3"
 zeroize = { version = "^1.5", default-features = false, features = [
     "zeroize_derive",
 ] }
+
+[lib]
+crate-type = ["lib", "cdylib"]
+
+[profile.release]
+opt-level = "z"   # Optimize for size.
+lto = true
+codegen-units = 1
