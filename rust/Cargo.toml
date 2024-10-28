@@ -14,6 +14,7 @@ hex = "0.4.3"
 zeroize = { version = "^1.5", default-features = false, features = [
     "zeroize_derive",
 ] }
+serde_json = { version = "1", default-features = false, features = ["std"] }
 
 [lib]
 crate-type = ["lib", "cdylib"]

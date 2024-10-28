@@ -110,8 +110,8 @@ WebAssembly.instantiate(typedArray, {
     fd_prestat_dir_name: fd_prestat_dir_name, // ((param i32 i32 i32) (result i32))
     fd_prestat_get: fd_prestat_get, // ((param i32 i32) (result i32))
     fd_pwrite: undefined, // ((param i32 i32 i32 i64 i32) (result i32))
-    fd_read: function () {
-      console.log("fd_read lol");
+    fd_read: function (fd, iovsPtr, iovsLength, bytesReadPtr) {
+      console.log("fd_read lol", fd, iovsPtr, iovsLength, bytesReadPtr);
     }, // ((param i32 i32 i32 i32) (result i32))
     fd_readdir: undefined, // ((param i32 i32 i32 i64 i32) (result i32))
     fd_renumber: undefined, // ((param i32 i32) (result i32))
