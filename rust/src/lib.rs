@@ -4,14 +4,19 @@ use curve25519_dalek::scalar::Scalar;
 use hex::FromHex;
 use monero_wallet;
 use monero_wallet::ViewPair;
+use serde_json::Value;
+use std::io::{self, Read};
 use zeroize::Zeroizing;
 thread_local! {
     static GLOBAL_VIEWPAIR: RefCell<Option<ViewPair>> = RefCell::new(None);
 }
-
+//TODO init view pair with name (hashmap of view pairs)
 #[no_mangle]
 pub extern "C" fn init_view_pair() {
     GLOBAL_VIEWPAIR.with(|old_viewpair| {
+        //TODO let library consumer pass in a function to handle input
+        let mut buf = String::new();
+        io::stdin().read_to_string(&mut buf);
         let mut viewpair = old_viewpair.borrow_mut();
         let primary_address = "55Py9fSwyEeQX1CydtFfPk96uHEFxSxvD9AYBy7dwnYt9cXqKDjix9rS9AWZ5GnH4B1Z7yHr3B2UH2updNw5ZNJEEnv87H1";
         let secret_view_key = "1195868d30373aa9d92c1a21514de97670bcd360c209a409ea3234174892770e";
@@ -37,6 +42,7 @@ pub extern "C" fn init_view_pair() {
         )
         .unwrap());
 
+        //TODO let library consumer pass in a function to handle output
         // Check if ViewPair is present and print its legacy address
         if let Some(vp) = &*viewpair {
             println!(
