@@ -150,7 +150,11 @@ WebAssembly.instantiate(typedArray, {
     sock_send: undefined, // ((param i32 i32 i32 i32 i32) (result i32))
     sock_shutdown: undefined, // ((param i32 i32) (result i32))
   },
-  env: {},
+  env: {
+    hi_there: function (x) {
+      console.log("hi there,", x);
+    },
+  },
 }).then((result) => {
   console.log("exports", result.instance.exports);
   mem = result.instance.exports.memory;
