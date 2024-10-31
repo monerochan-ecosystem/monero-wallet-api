@@ -95,9 +95,6 @@ export class TinyWASI {
 
   initialize(instance: WebAssembly.Instance) {
     this.instance = instance;
-
-    const initialize = instance.exports._initialize as CallableFunction;
-    initialize();
   }
 
   get imports(): WebAssembly.Imports {
