@@ -1,4 +1,5 @@
 {
+  "include": ["wallet-api/**/*"],
   "compilerOptions": {
     // Enable latest features
     "lib": ["ESNext", "DOM"],
