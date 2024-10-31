@@ -156,6 +156,10 @@ WebAssembly.instantiate(typedArray, {
     },
   },
 }).then((result) => {
+  let primary_address =
+    "55Py9fSwyEeQX1CydtFfPk96uHEFxSxvD9AYBy7dwnYt9cXqKDjix9rS9AWZ5GnH4B1Z7yHr3B2UH2updNw5ZNJEEnv87H1";
+  let secret_view_key =
+    "1195868d30373aa9d92c1a21514de97670bcd360c209a409ea3234174892770e";
   console.log("exports", result.instance.exports);
   mem = result.instance.exports.memory;
   const main = result.instance.exports.init_view_pair;
