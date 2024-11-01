@@ -27,23 +27,30 @@ class ViewPair {
     tinywasi.initialize(instance);
     console.log(instance.exports);
     const ffiRegister: FFiRegister = (ptr, len) => {
+      console.log("ffffiiiiiii");
       //TODO write primary address to ptr
       const view = tinywasi.getDataView();
       const encoder = new TextEncoder();
       const uint8Array = encoder.encode(primary_address);
-      for (let i = ptr; i < uint8Array.length; i++) {
-        view.setUint8(i, uint8Array[i]);
+      console.log(uint8Array);
+
+      for (let i = 0; i < uint8Array.length; i++) {
+        const offset = i + ptr;
+        view.setUint8(offset, uint8Array[i]);
       }
       viewPair.ffiRegister = (ptr, len) => {
         const view = tinywasi.getDataView();
         const encoder = new TextEncoder();
         const uint8Array = encoder.encode(secret_view_key);
-        for (let i = ptr; i < uint8Array.length; i++) {
-          view.setUint8(i, uint8Array[i]);
+        console.log(uint8Array);
+        for (let i = 0; i < uint8Array.length; i++) {
+          const offset = i + ptr;
+          view.setUint8(offset, uint8Array[i]);
         }
         //TODO write secretviewkey to ptr
       };
     };
+    viewPair.ffiRegister = ffiRegister;
     instance.exports.init_viewpair(
       primary_address.length,
       secret_view_key.length
