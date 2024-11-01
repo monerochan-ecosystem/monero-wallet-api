@@ -1,0 +1,28 @@
+[package]
+name = "cuprate-wire"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["Boog900"]
+repository = "https://github.com/SyntheticBird45/cuprate/tree/main/net/monero-wire"
+
+[features]
+default = []
+tracing = ["cuprate-levin/tracing"]
+
+[dependencies]
+cuprate-levin           = { workspace = true }
+cuprate-epee-encoding   = { workspace = true }
+cuprate-fixed-bytes     = { workspace = true }
+cuprate-types           = { workspace = true, default-features = false, features = ["epee"] }
+cuprate-helper          = { workspace = true, default-features = false, features = ["map"] }
+
+bitflags = { workspace = true, features = ["std"] }
+bytes = { workspace = true, features = ["std"] }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+hex = { workspace = true, features = ["std"]}
+
+[lints]
+workspace = true
