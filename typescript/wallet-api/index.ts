@@ -4,7 +4,7 @@ const source = fs.readFileSync(
   "../rust/target/wasm32-wasip1/release/monero_wallet_api.wasm"
 );
 const typedArray = new Uint8Array(source);
-
+let ffiRegister = (ptr: number, len: number) => {};
 export async function init() {
   const tinywasi = new TinyWASI();
 
@@ -12,6 +12,7 @@ export async function init() {
     env: {
       input: (ptr: number, len: number) => {
         console.log("input", ptr, len);
+        ffiRegister(ptr, len);
       },
     },
     ...tinywasi.imports,

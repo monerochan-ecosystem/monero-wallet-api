@@ -107,7 +107,7 @@ export class TinyWASI {
     else throw new Error("Attempt to access instance before initialisation!");
   }
 
-  private getDataView(): DataView {
+  getDataView(): DataView {
     if (this.instance)
       return new DataView(
         (this.instance.exports.memory as WebAssembly.Memory).buffer
