@@ -43,12 +43,7 @@ mod your_program {
         unsafe {
             vec.set_len(length);
             yours::input(vec.as_ptr(), length);
-
-            for (index, &item) in vec.iter().enumerate() {
-                println!("Element {}: {}", index, item);
-            }
             return String::from_utf8_unchecked(vec);
-            //return String::from_utf8_lossy(&vec[..length]).into_owned();
         }
     }
     pub fn output_string(value: &str) {
@@ -64,9 +59,6 @@ pub extern "C" fn init_viewpair(
 ) {
     let primary_address = input_string(primary_address_string_len);
     let secret_view_key = input_string(secret_view_key_string_len);
-    let leeen = primary_address.len();
-    let lee = secret_view_key.len();
-    println!("{leeen}prim: {primary_address} {lee}view: {secret_view_key}");
 
     GLOBAL_VIEWPAIR.with(|old_viewpair| {
         let mut viewpair = old_viewpair.borrow_mut();
