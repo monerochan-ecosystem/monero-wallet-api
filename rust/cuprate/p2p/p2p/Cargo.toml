@@ -1,0 +1,44 @@
+[package]
+name = "cuprate-p2p"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["Boog900"]
+
+[dependencies]
+cuprate-constants = { workspace = true }
+cuprate-fixed-bytes = { workspace = true }
+cuprate-wire = { workspace = true }
+cuprate-p2p-core = { workspace = true, features = ["borsh"] }
+cuprate-address-book = { workspace = true }
+cuprate-pruning = { workspace = true }
+cuprate-helper = { workspace = true, features = ["asynch"], default-features = false }
+cuprate-async-buffer = { workspace = true }
+cuprate-types = { workspace = true, default-features = false }
+
+monero-serai = { workspace = true, features = ["std"] }
+
+tower = { workspace = true, features = ["buffer"] }
+tokio = { workspace = true, features = ["rt", "rt-multi-thread"] }
+rayon = { workspace = true }
+tokio-util = { workspace = true }
+tokio-stream = { workspace = true, features = ["sync", "time"] }
+futures = { workspace = true, features = ["std"] }
+pin-project = { workspace = true }
+dashmap = { workspace = true }
+
+thiserror = { workspace = true }
+bytes = { workspace = true, features = ["std"] }
+rand = { workspace = true, features = ["std", "std_rng"] }
+rand_distr = { workspace = true, features = ["std"] }
+tracing = { workspace = true, features = ["std", "attributes"] }
+borsh = { workspace = true, features = ["derive", "std"] }
+
+[dev-dependencies]
+cuprate-test-utils = { workspace = true }
+indexmap = { workspace = true }
+proptest = { workspace = true }
+tokio-test = { workspace = true }
+
+[lints]
+workspace = true
