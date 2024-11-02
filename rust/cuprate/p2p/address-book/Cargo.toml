@@ -1,0 +1,34 @@
+[package]
+name = "cuprate-address-book"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["Boog900"]
+
+
+[dependencies]
+cuprate-constants   = { workspace = true }
+cuprate-pruning     = { workspace = true }
+cuprate-p2p-core    = { workspace = true, features = ["borsh"] }
+
+tower = { workspace = true, features = ["util"] }
+tokio = { workspace = true, features = ["time", "fs", "rt"]}
+tokio-util = { workspace = true, features = ["time"] }
+
+futures = { workspace = true, features = ["std"] }
+
+thiserror = { workspace = true }
+tracing = { workspace = true, features = ["std", "attributes"] }
+indexmap = { workspace = true, features = ["std"] }
+
+rand = { workspace = true, features = ["std", "std_rng"] }
+
+borsh = { workspace = true, features = ["derive", "std"]}
+
+[dev-dependencies]
+cuprate-test-utils = { workspace = true }
+
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"]}
+
+[lints]
+workspace = true

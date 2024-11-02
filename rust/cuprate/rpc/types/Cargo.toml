@@ -1,0 +1,31 @@
+[package]
+name        = "cuprate-rpc-types"
+version     = "0.0.0"
+edition     = "2021"
+description = "Monero RPC types"
+license     = "MIT"
+authors     = ["hinto-janai"]
+repository  = "https://github.com/Cuprate/cuprate/tree/main/rpc/types"
+keywords    = ["cuprate", "rpc", "types", "monero"]
+
+[features]
+default = ["serde", "epee"]
+serde   = ["dep:serde", "cuprate-fixed-bytes/serde", "cuprate-types/serde"]
+epee    = ["dep:cuprate-epee-encoding", "cuprate-types/epee"]
+
+[dependencies]
+cuprate-epee-encoding = { workspace = true, optional = true }
+cuprate-fixed-bytes   = { workspace = true }
+cuprate-types         = { workspace = true, default-features = false }
+
+paste        = { workspace = true }
+serde        = { workspace = true, optional = true }
+
+[dev-dependencies]
+cuprate-test-utils = { workspace = true }
+
+serde      = { workspace = true }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

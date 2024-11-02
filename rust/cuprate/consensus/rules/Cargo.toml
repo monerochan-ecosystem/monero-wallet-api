@@ -1,0 +1,40 @@
+[package]
+name = "cuprate-consensus-rules"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["Boog900"]
+
+[features]
+default = []
+proptest = ["cuprate-types/proptest"]
+rayon = ["dep:rayon"]
+
+[dependencies]
+cuprate-constants   = { workspace = true, default-features = false, features = ["block"] }
+cuprate-helper      = { workspace = true, default-features = false, features = ["std", "cast"] }
+cuprate-types       = { workspace = true, default-features = false }
+cuprate-cryptonight = { workspace = true }
+
+monero-serai = { workspace = true, features = ["std"] }
+curve25519-dalek = { workspace = true, features = ["alloc", "zeroize", "precomputed-tables"] }
+
+rand = { workspace = true, features = ["std", "std_rng"] }
+
+hex = { workspace = true, features = ["std"] }
+hex-literal = { workspace = true }
+crypto-bigint = { workspace = true }
+
+cfg-if = { workspace = true }
+tracing = { workspace = true, features = ["std"] }
+thiserror = { workspace = true }
+
+rayon = { workspace = true, optional = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+proptest-derive = { workspace = true }
+tokio = { version = "1.35.0", features = ["rt-multi-thread", "macros"] }
+
+[lints]
+workspace = true
