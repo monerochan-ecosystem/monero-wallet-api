@@ -3,6 +3,7 @@ import { TinyWASI } from "./wasi";
 export type FFiRegister = (ptr: number, len: number) => void;
 class ViewPair {
   public ffiRegister = (ptr: number, len: number) => {};
+  public outputRegister = (ptr: number, len: number) => {};
   public static async create(
     primary_address: string,
     secret_view_key: string
@@ -15,6 +16,10 @@ class ViewPair {
         input: (ptr: number, len: number) => {
           console.log("input", ptr, len);
           viewPair.ffiRegister(ptr, len);
+        },
+        output: (ptr: number, len: number) => {
+          console.log("output", ptr, len);
+          viewPair.outputRegister(ptr, len);
         },
       },
       ...tinywasi.imports,
@@ -51,6 +56,42 @@ class ViewPair {
       };
     };
     viewPair.ffiRegister = ffiRegister;
+    viewPair.outputRegister = (ptr, len) => {
+      const memory = tinywasi.getMemory();
+      const arri = new Uint8Array(memory.buffer, ptr, len);
+      console.log(arri);
+      fetch("http://localhost:48081/getblocks.bin", {
+        headers: {
+          accept: "*/*",
+          "accept-language": "en-US,en;q=0.9",
+          "sec-fetch-dest": "empty",
+          "sec-fetch-mode": "cors",
+          "sec-fetch-site": "same-site",
+          Referer: "http://localhost:8080/",
+          "Referrer-Policy": "strict-origin-when-cross-origin",
+        },
+        body: arri,
+        method: "POST",
+      }).then((x) => {
+        console.log(x);
+        x.blob()
+          .then((z) => {
+            return z.arrayBuffer();
+          })
+          .then((y) => {
+            const view = tinywasi.getDataView();
+            const uint8Array = new Uint8Array(y);
+            viewPair.ffiRegister = (ptr, len) => {
+              console.log(uint8Array);
+              for (let i = 0; i < uint8Array.length; i++) {
+                const offset = i + ptr;
+                view.setUint8(offset, uint8Array[i]);
+              }
+            };
+            instance.exports.parse_response(uint8Array.length);
+          });
+      });
+    };
     instance.exports.init_viewpair(
       primary_address.length,
       secret_view_key.length

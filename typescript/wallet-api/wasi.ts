@@ -101,7 +101,7 @@ export class TinyWASI {
     return this.nameSpaces as WebAssembly.Imports;
   }
 
-  private getMemory(): WebAssembly.Memory {
+  getMemory(): WebAssembly.Memory {
     if (this.instance)
       return this.instance.exports.memory as WebAssembly.Memory;
     else throw new Error("Attempt to access instance before initialisation!");
