@@ -79,10 +79,10 @@ class ViewPair {
             return z.arrayBuffer();
           })
           .then((y) => {
-            const view = tinywasi.getDataView();
             const uint8Array = new Uint8Array(y);
             viewPair.ffiRegister = (ptr, len) => {
               console.log(uint8Array);
+              const view = tinywasi.getDataView();
               for (let i = 0; i < uint8Array.length; i++) {
                 const offset = i + ptr;
                 view.setUint8(offset, uint8Array[i]);

@@ -1,5 +1,5 @@
 use core::str;
-use cuprate_epee_encoding::{from_bytes, to_bytes, EpeeValue};
+use cuprate_epee_encoding::{from_bytes, to_bytes, EpeeObject, EpeeValue};
 use cuprate_rpc_types::bin::{GetBlocksRequest, GetBlocksResponse};
 use curve25519_dalek::scalar::Scalar;
 use hex::FromHex;
@@ -83,7 +83,12 @@ pub extern "C" fn init_viewpair(
             eprintln!("ViewPair has not been initialized");
         }
         // The expected data.
-        let expected = GetBlocksRequest::default();
+        let mut expected = GetBlocksRequest::default();
+        expected.start_height = 100;
+        match serde_json::to_string(&expected) {
+            Ok(json_string) => println!("{}", json_string),
+            Err(e) => eprintln!("Serialization error: {}", e),
+        }
         let data = to_bytes(expected).unwrap();
         output(data.to_vec().as_ref());
         let lossy_string: String = String::from_utf8_lossy(data.as_ref()).into_owned();
