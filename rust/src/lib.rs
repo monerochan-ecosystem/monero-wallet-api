@@ -1,18 +1,21 @@
 use core::str;
-use std::cell::RefCell;
-
+use cuprate_epee_encoding::{from_bytes, to_bytes, EpeeValue};
+use cuprate_rpc_types::bin::{GetBlocksRequest, GetBlocksResponse};
 use curve25519_dalek::scalar::Scalar;
 use hex::FromHex;
 use monero_wallet;
 use monero_wallet::ViewPair;
 use serde_json::Value;
+use std::cell::RefCell;
 use std::io::{self, Read};
-use your_program::{input, input_string, output_string};
+use your_program::{input, input_string, output, output_string};
 use zeroize::Zeroizing;
 thread_local! {
     static GLOBAL_VIEWPAIR: RefCell<Option<ViewPair>> = RefCell::new(None);
 }
 mod your_program {
+    use std::io::Bytes;
+
     /// implement input & output in your program to share arrays with the monero-wallet-api
     /// rust will take care of allocation and deallocation
     mod yours {
@@ -37,6 +40,12 @@ mod your_program {
     pub fn output(value: &Vec<u8>) {
         unsafe { yours::output(value.as_ptr(), value.len()) };
     }
+    // pub fn output_bytes(bytes: Bytes) {
+    //     // Ensure the Bytes instance remains alive
+    //     let bytes_ref = bytes.as_ref();
+
+    //     unsafe { yours::output(bytes_ref.as_ptr(), bytes_ref.len()) }
+    // }
     pub fn input_string(length: usize) -> String {
         let mut vec = Vec::with_capacity(length);
 
@@ -73,7 +82,22 @@ pub extern "C" fn init_viewpair(
         } else {
             eprintln!("ViewPair has not been initialized");
         }
+        // The expected data.
+        let expected = GetBlocksRequest::default();
+        let data = to_bytes(expected).unwrap();
+        output(data.to_vec().as_ref());
+        let lossy_string: String = String::from_utf8_lossy(data.as_ref()).into_owned();
+        println!("Lossy UTF-8 interpretation: {}", lossy_string);
     });
+}
+#[no_mangle]
+pub extern "C" fn parse_response(response_len: usize) {
+    let response = input(response_len);
+    let val: GetBlocksResponse = from_bytes(&mut response.as_slice()).unwrap();
+    match serde_json::to_string(&val) {
+        Ok(json_string) => println!("{}", json_string),
+        Err(e) => eprintln!("Serialization error: {}", e),
+    }
 }
 ///rust API
 pub fn make_viewpair(primary_address: String, secret_view_key: String) -> ViewPair {
