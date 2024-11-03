@@ -299,13 +299,27 @@ impl EpeeObjectBuilder<GetBlocksResponse> for __GetBlocksResponseEpeeBuilder {
         const ELSE: error::Error = error::Error::Format("Required field was not found!");
 
         let status = self.status.ok_or(ELSE)?;
+        println!("hiiiiiii, after status");
+
         let untrusted = self.untrusted.ok_or(ELSE)?;
+        println!("hiiiiiii, after untrusted");
+        //let blocks_test: Option<Vec<BlockCompleteEntry>> = self.blocks;
+        // TODO relax the requirement to have blocks this can be None and be valid
+        println!("{:#?}", self.blocks);
         let blocks = self.blocks.ok_or(ELSE)?;
+        println!("hiiiiiii, after blocks");
         let start_height = self.start_height.ok_or(ELSE)?;
+        println!("hiiiiiii, after start");
         let current_height = self.current_height.ok_or(ELSE)?;
+        println!("hiiiiiii, after currentheight");
         let output_indices = self.output_indices.ok_or(ELSE)?;
+        println!("hiiiiiii, after output_indices");
         let daemon_time = self.daemon_time.ok_or(ELSE)?;
-        let pool_info_extent = self.pool_info_extent.ok_or(ELSE)?;
+        println!("hiiiiiii, after daemon_time");
+        //let pool_info_extent = self.pool_info_extent.ok_or(ELSE)?;
+        // TODO relax the requirement to have pool_info_extent this can be None and be valid
+        println!("hiiiiiii, after pool_info_extent");
+        let pool_info_extent = PoolInfoExtent::None;
 
         let this = match pool_info_extent {
             PoolInfoExtent::None => {
