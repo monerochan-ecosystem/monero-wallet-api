@@ -305,7 +305,7 @@ impl EpeeObjectBuilder<GetBlocksResponse> for __GetBlocksResponseEpeeBuilder {
         println!("hiiiiiii, after untrusted");
         //let blocks_test: Option<Vec<BlockCompleteEntry>> = self.blocks;
         // TODO relax the requirement to have blocks this can be None and be valid
-        println!("{:#?}", self.blocks);
+        //println!("{:#?}", self.blocks);
         let blocks = self.blocks.ok_or(ELSE)?;
         println!("hiiiiiii, after blocks");
         let start_height = self.start_height.ok_or(ELSE)?;
