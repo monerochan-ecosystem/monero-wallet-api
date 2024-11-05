@@ -1,17 +1,23 @@
+use std::io::Bytes;
+
 use core::str;
 use cuprate_epee_encoding::{from_bytes, to_bytes, EpeeObject, EpeeValue};
 use cuprate_rpc_types::bin::{GetBlocksRequest, GetBlocksResponse};
 use curve25519_dalek::scalar::Scalar;
 use hex::FromHex;
 use monero_wallet;
-use monero_wallet::ViewPair;
+use monero_wallet::block::Block;
+use monero_wallet::rpc::ScannableBlock;
+use monero_wallet::{Scanner, ViewPair};
 use serde_json::Value;
 use std::cell::RefCell;
 use std::io::{self, Read};
+use std::ops::Deref;
 use your_program::{input, input_string, output, output_string};
+
 use zeroize::Zeroizing;
 thread_local! {
-    static GLOBAL_VIEWPAIR: RefCell<Option<ViewPair>> = RefCell::new(None);
+    static GLOBAL_SCANNER: RefCell<Option<Scanner>> = RefCell::new(None);
 }
 mod your_program {
     use std::io::Bytes;
@@ -69,40 +75,52 @@ pub extern "C" fn init_viewpair(
     let primary_address = input_string(primary_address_string_len);
     let secret_view_key = input_string(secret_view_key_string_len);
 
-    GLOBAL_VIEWPAIR.with(|old_viewpair| {
-        let mut viewpair = old_viewpair.borrow_mut();
-        *viewpair = Some(make_viewpair(primary_address, secret_view_key));
-
-        // Check if ViewPair is present and print its legacy address
-        if let Some(vp) = &*viewpair {
-            println!(
-                "HI {:#?}",
-                vp.legacy_address(monero_wallet::address::Network::Stagenet)
-            );
-        } else {
-            eprintln!("ViewPair has not been initialized");
-        }
-        // The expected data.
-        let mut expected = GetBlocksRequest::default();
-        expected.start_height = 100;
-        match serde_json::to_string(&expected) {
-            Ok(json_string) => println!("{}", json_string),
-            Err(e) => eprintln!("Serialization error: {}", e),
-        }
-        let data = to_bytes(expected).unwrap();
-        output(data.to_vec().as_ref());
-        let lossy_string: String = String::from_utf8_lossy(data.as_ref()).into_owned();
-        println!("Lossy UTF-8 interpretation: {}", lossy_string);
+    let viewpair = make_viewpair(primary_address, secret_view_key);
+    GLOBAL_SCANNER.with(|old_scanner| {
+        let mut global_scanner = old_scanner.borrow_mut();
+        *global_scanner = Some(Scanner::new(viewpair))
     });
+    let mut expected = GetBlocksRequest::default();
+    expected.start_height = 398;
+    match serde_json::to_string(&expected) {
+        Ok(json_string) => println!("{}", json_string),
+        Err(e) => eprintln!("Serialization error: {}", e),
+    }
+    let data = to_bytes(expected).unwrap();
+    output(data.to_vec().as_ref());
+    let lossy_string: String = String::from_utf8_lossy(data.as_ref()).into_owned();
+    println!("Lossy UTF-8 interpretation: {}", lossy_string);
 }
 #[no_mangle]
 pub extern "C" fn parse_response(response_len: usize) {
     let response = input(response_len);
-    let val: GetBlocksResponse = from_bytes(&mut response.as_slice()).unwrap();
-    match serde_json::to_string(&val) {
-        Ok(json_string) => println!("{}", json_string),
-        Err(e) => eprintln!("Serialization error: {}", e),
-    }
+    let blocks_response: GetBlocksResponse = from_bytes(&mut response.as_slice()).unwrap();
+    // match serde_json::to_string(&val) {
+    //     Ok(json_string) => println!("{}", json_string),
+    //     Err(e) => eprintln!("Serialization error: {}", e),
+    // }
+    // GLOBAL_VIEWPAIR.with(|old_viewpair| {
+    //     let viewpair_ref = old_viewpair.borrow();
+    //     let viewpair = viewpair_ref.as_ref().unwrap();
+    // })
+    // Now you can use view_pair_ref
+    GLOBAL_SCANNER.with(|old_scanner| {
+        let global_scanner = old_scanner.borrow();
+        let scanner = global_scanner.as_ref().unwrap();
+        match blocks_response {
+            GetBlocksResponse::PoolInfoNone(response) => {
+                for block_entry in &response.blocks {
+                    // Process each block here
+                    let blockhihi = Block::read::<&[u8]>(&mut block_entry.block.as_ref()).unwrap();
+                    println!("Processing block: {:?}", blockhihi);
+                }
+            }
+            _ => println!("Unexpected response variant"),
+        }
+
+        // ScannableBlock
+        //  scanner.scan(block)
+    });
 }
 ///rust API
 pub fn make_viewpair(primary_address: String, secret_view_key: String) -> ViewPair {
