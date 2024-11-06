@@ -3,11 +3,14 @@ use std::io::Bytes;
 use core::str;
 use cuprate_epee_encoding::{from_bytes, to_bytes, EpeeObject, EpeeValue};
 use cuprate_rpc_types::bin::{GetBlocksRequest, GetBlocksResponse};
+use cuprate_types::{BlockCompleteEntry, TransactionBlobs};
 use curve25519_dalek::scalar::Scalar;
 use hex::FromHex;
 use monero_wallet;
 use monero_wallet::block::Block;
 use monero_wallet::rpc::ScannableBlock;
+use monero_wallet::transaction::Pruned;
+use monero_wallet::transaction::Transaction;
 use monero_wallet::{Scanner, ViewPair};
 use serde_json::Value;
 use std::cell::RefCell;
@@ -113,12 +116,57 @@ pub extern "C" fn parse_response(response_len: usize) {
                     // Process each block here
                     let blockhihi = Block::read::<&[u8]>(&mut block_entry.block.as_ref()).unwrap();
                     println!("Processing block: {:?}", blockhihi);
+
+                    //    let mut parsed_transactions = Vec::new();
+
+                    match &block_entry.txs {
+                        TransactionBlobs::Normal(txs) => {
+                            for tx_bytes in txs {
+                                // let tx =
+                                //     Transaction::<Pruned>::read(tx_bytes).map_err(
+                                //         |_| match hash_hex(&res.tx_hash) {
+                                //             Ok(hex_hash) => Error::InvalidTransaction(format!(
+                                //                 "Failed to parse transaction: {}",
+                                //                 hex_hash
+                                //             )),
+                                //             Err(_) => Error::InvalidTransaction(
+                                //                 "Failed to generate transaction hash".to_string(),
+                                //             ),
+                                //         },
+                                //     );
+
+                                // if let Ok(parsed_tx) = tx {
+                                //     parsed_transactions.push(parsed_tx);
+                                // } else {
+                                //     // Handle error case, possibly skip this transaction
+                                //     println!("Warning: Skipping invalid transaction");
+                                // }
+                                println!("Processing normal transaction: {:?}", tx_bytes);
+                            }
+                        }
+                        TransactionBlobs::Pruned(pruned_txs) => {
+                            // Handle pruned transactions separately
+                            for entry in pruned_txs {
+                                // Process PrunedTxBlobEntry here
+                                println!("Processing pruned transaction: {:?}", entry.tx);
+                                // Add parsing logic for pruned transactions if needed
+                            }
+                        }
+                        TransactionBlobs::None => {
+                            println!("No transactions in this block");
+                        }
+                    }
+
+                    // let scanBlock = ScannableBlock {
+                    //     block: blockhihi,
+                    //     transactions,
+                    //     output_index_for_first_ringct_output,
+                    // };
                 }
             }
             _ => println!("Unexpected response variant"),
         }
 
-        // ScannableBlock
         //  scanner.scan(block)
     });
 }

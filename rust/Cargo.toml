@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+cuprate-types = { path = "./cuprate/types", default-features = false, features = [
+    "epee",
+] }
 cuprate-rpc-types = { path = "./cuprate/rpc/types" }
 cuprate-epee-encoding = { path = "./cuprate/net/epee-encoding" }
 monero-serai = { path = "./serai/networks/monero" }
