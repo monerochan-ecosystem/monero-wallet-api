@@ -314,7 +314,9 @@ impl EpeeObjectBuilder<GetBlocksResponse> for __GetBlocksResponseEpeeBuilder {
         println!("hiiiiiii, after currentheight");
         let output_indices = self.output_indices.ok_or(ELSE)?;
         println!("hiiiiiii, after output_indices");
-        let daemon_time = self.daemon_time.ok_or(ELSE)?;
+        // some nodes leave out this field and we get: called `Result::unwrap()` on an `Err` value: Error { format: "Required field was not found!" }
+        //let daemon_time = self.daemon_time.ok_or(ELSE)?;
+        let daemon_time = 1;
         println!("hiiiiiii, after daemon_time");
         //let pool_info_extent = self.pool_info_extent.ok_or(ELSE)?;
         // TODO relax the requirement to have pool_info_extent this can be None and be valid
