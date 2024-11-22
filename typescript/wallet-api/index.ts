@@ -24,6 +24,7 @@ export async function init() {
   );
   tinywasi.initialize(instance);
   console.log(instance.exports);
+  //@ts-ignore
   instance.exports.init_viewpair(1, 3);
 }
 init();

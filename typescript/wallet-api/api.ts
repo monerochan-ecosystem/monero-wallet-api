@@ -1,7 +1,7 @@
 import { monero_wallet_api_wasm } from "./wasmFile";
 import { TinyWASI } from "./wasi";
 export type FFiRegister = (ptr: number, len: number) => void;
-class ViewPair {
+export class ViewPair {
   public ffiRegister = (ptr: number, len: number) => {};
   public outputRegister = (ptr: number, len: number) => {};
   public static async create(
@@ -60,7 +60,7 @@ class ViewPair {
       const memory = tinywasi.getMemory();
       const arri = new Uint8Array(memory.buffer, ptr, len);
       console.log(arri);
-      fetch("http://localhost:48081/getblocks.bin", {
+      fetch("http://stagenet.community.rino.io:38081/getblocks.bin", {
         headers: {
           accept: "*/*",
           "accept-language": "en-US,en;q=0.9",
@@ -88,10 +88,12 @@ class ViewPair {
                 view.setUint8(offset, uint8Array[i]);
               }
             };
+            //@ts-ignore
             instance.exports.parse_response(uint8Array.length);
           });
       });
     };
+    //@ts-ignore
     instance.exports.init_viewpair(
       primary_address.length,
       secret_view_key.length
@@ -107,6 +109,6 @@ class ViewPair {
 }
 
 const viewpair = await ViewPair.create(
-  "55Py9fSwyEeQX1CydtFfPk96uHEFxSxvD9AYBy7dwnYt9cXqKDjix9rS9AWZ5GnH4B1Z7yHr3B2UH2updNw5ZNJEEnv87H1",
-  "1195868d30373aa9d92c1a21514de97670bcd360c209a409ea3234174892770e"
+  "5B5ieVKGSyfAyh68X6AFB48Gnx9diT8jPbWN6UcZHJUZVQSLRhaaHuHQz3dGuxxZDXPYgCXzrkerK3m6Q1tHoougR7VYyd9",
+  "10b9885324933ee6055b001a3ee4b70f6832b866db389ad023b51fe7e2e7ca01"
 );
