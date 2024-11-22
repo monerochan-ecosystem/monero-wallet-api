@@ -1,7 +1,17 @@
 {
   "name": "@spirobel/monero-wallet-api",
-  "module": "index.ts",
+  "license" : "MIT" ,
+  "module": "dist/api.js",
   "type": "module",
+  "main": "dist/api.js",
+  "types": "dist/api.d.ts",
+  "scripts": {
+  "publish": "bun run build && npm publish",
+  "build": "tsc",
+  "clean":"rm -rf ./dist"
+  },
+  "files": ["dist"],
+  "version": "0.0.1",
   "devDependencies": {
     "@types/bun": "latest"
   },
