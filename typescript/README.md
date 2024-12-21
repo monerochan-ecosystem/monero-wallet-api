@@ -19,3 +19,17 @@ rust release build
 ```bash
 cargo wasi build  --target wasm32-wasip1 --release --lib
 ```
+
+## reproducible build with pinned cargo + rust + cargo wasi
+
+make the image
+
+```bash
+docker build -t your-image-name .
+```
+
+build the library -> find the result in target/wasm32-wasip1/release
+
+```bash
+docker run -v $(pwd):/app -it your-image-name
+```
