@@ -3,20 +3,21 @@
 To install dependencies:
 
 ```bash
+cd typescript || cd ../typescript
 bun install
 ```
 
-To run:
+To build:
 
 ```bash
-bun run index.ts
+cd typescript || cd ../typescript
+bun build
 ```
-
-This project was created using `bun init` in bun v1.1.29. [Bun](https://bun.sh) is a fast all-in-one JavaScript runtime.
 
 rust release build
 
 ```bash
+cd rust || cd ../rust
 cargo wasi build  --target wasm32-wasip1 --release --lib
 ```
 
@@ -25,11 +26,12 @@ cargo wasi build  --target wasm32-wasip1 --release --lib
 make the image
 
 ```bash
-docker build -t your-image-name .
+cd rust || cd ../rust
+docker build -t monero-wallet-api-build .
 ```
 
 build the library -> find the result in target/wasm32-wasip1/release
 
 ```bash
-docker run -v $(pwd):/app -it your-image-name
+docker run -v $(pwd):/app -it monero-wallet-api-build
 ```
