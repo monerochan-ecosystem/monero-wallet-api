@@ -35,3 +35,11 @@ build the library -> find the result in target/wasm32-wasip1/release
 ```bash
 docker run -v $(pwd):/app -it monero-wallet-api-build
 ```
+
+```bash
+cd typescript || cd ../typescript
+bun build
+bun run inlinesum
+```
+
+if the content of the checksum.txt file stays the same, the build was reproduced.
