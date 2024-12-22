@@ -6,9 +6,10 @@
   "main": "dist/api.js",
   "types": "dist/api.d.ts",
   "scripts": {
-  "publish": "bun run build && npm publish",
-  "build": "tsc",
-  "clean":"rm -rf ./dist"
+    "publish": "bun run build && npm publish",
+    "inline":"bun build scripts/wasmFile.ts --target=browser --outdir dist",
+    "build": "tsc",
+    "clean":"rm -rf ./dist"
   },
   "files": ["dist"],
   "version": "0.0.1",
