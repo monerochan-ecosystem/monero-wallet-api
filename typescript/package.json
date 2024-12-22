@@ -8,6 +8,8 @@
   "scripts": {
     "publish": "bun run build && npm publish",
     "inline":"bun build scripts/wasmFile.ts --target=browser --outdir dist",
+    "sum": "cat dist/wasmFile.js | sha256sum > checksum.txt",
+    "inlinesum": "bun run inline && bun run sum",
     "build": "tsc",
     "clean":"rm -rf ./dist"
   },
