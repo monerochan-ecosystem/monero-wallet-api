@@ -43,3 +43,13 @@ bun run inlinesum
 ```
 
 if the content of the checksum.txt file stays the same, the build was reproduced.
+
+to verify that the wasm file distributed on npm matches the checksum,
+add the npm package as a dependency to a project and compare the sha256sum output with the checksum.txt file in the git repo.
+
+```bash
+cd /tmp
+bun init
+bun add @spirobel/monero-wallet-api
+cat node_modules/@spirobel/monero-wallet-api/dist/wasmFile.js | sha256sum
+```
