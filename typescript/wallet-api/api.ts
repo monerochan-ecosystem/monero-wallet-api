@@ -2,8 +2,8 @@ import { monero_wallet_api_wasm } from "./wasmFile";
 import { TinyWASI } from "./wasi";
 export type FFiRegister = (ptr: number, len: number) => void;
 export class ViewPair {
-  public ffiRegister = (ptr: number, len: number) => {};
-  public outputRegister = (ptr: number, len: number) => {};
+  public writeToWasmMemory = (ptr: number, len: number) => {};
+  public readFromWasmMemory = (ptr: number, len: number) => {};
   public static async create(
     primary_address: string,
     secret_view_key: string
@@ -15,11 +15,11 @@ export class ViewPair {
       env: {
         input: (ptr: number, len: number) => {
           console.log("input", ptr, len);
-          viewPair.ffiRegister(ptr, len);
+          viewPair.writeToWasmMemory(ptr, len);
         },
         output: (ptr: number, len: number) => {
           console.log("output", ptr, len);
-          viewPair.outputRegister(ptr, len);
+          viewPair.readFromWasmMemory(ptr, len);
         },
       },
       ...tinywasi.imports,
@@ -43,7 +43,7 @@ export class ViewPair {
         const offset = i + ptr;
         view.setUint8(offset, uint8Array[i]);
       }
-      viewPair.ffiRegister = (ptr, len) => {
+      viewPair.writeToWasmMemory = (ptr, len) => {
         const view = tinywasi.getDataView();
         const encoder = new TextEncoder();
         const uint8Array = encoder.encode(secret_view_key);
@@ -55,8 +55,8 @@ export class ViewPair {
         //TODO write secretviewkey to ptr
       };
     };
-    viewPair.ffiRegister = ffiRegister;
-    viewPair.outputRegister = (ptr, len) => {
+    viewPair.writeToWasmMemory = ffiRegister;
+    viewPair.readFromWasmMemory = (ptr, len) => {
       const memory = tinywasi.getMemory();
       const arri = new Uint8Array(memory.buffer, ptr, len);
       console.log(arri);
@@ -80,7 +80,7 @@ export class ViewPair {
           })
           .then((y) => {
             const uint8Array = new Uint8Array(y);
-            viewPair.ffiRegister = (ptr, len) => {
+            viewPair.writeToWasmMemory = (ptr, len) => {
               console.log(uint8Array);
               const view = tinywasi.getDataView();
               for (let i = 0; i < uint8Array.length; i++) {
