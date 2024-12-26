@@ -57,6 +57,22 @@ export class ViewPair {
     const arr = encoder.encode(str);
     this.writeArray(ptr, len, arr);
   };
+  /**
+   * Reads an array of bytes from a specified offset in WebAssembly memory.
+   *
+   * This method is typically used within the function assigned to `readFromWasmMemory`
+   * callback to read data written by Rust functions into Wasm memory.
+   *
+   * @param ptr - The WebAssembly memory address from which the data should be read.
+   * @param len - The number of bytes to read starting from the specified `ptr`.
+   * @returns A Uint8Array containing the bytes read from WebAssembly memory.
+   *
+   * @see {@link readFromWasmMemory}
+   */
+  public readArray = (ptr: number, len: number) => {
+    const memory = this.tinywasi.getMemory();
+    return new Uint8Array(memory.buffer, ptr, len);
+  };
   public static async create(
     primary_address: string,
     secret_view_key: string
