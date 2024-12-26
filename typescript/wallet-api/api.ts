@@ -1,6 +1,6 @@
 import { monero_wallet_api_wasm } from "./wasmFile";
 import { TinyWASI } from "./wasi";
-export type FFiRegister = (ptr: number, len: number) => void;
+export type MemoryCallback = (ptr: number, len: number) => void;
 export class ViewPair {
   public writeToWasmMemory = (ptr: number, len: number) => {};
   public readFromWasmMemory = (ptr: number, len: number) => {};
@@ -31,7 +31,7 @@ export class ViewPair {
     );
     tinywasi.initialize(instance);
     console.log(instance.exports);
-    const ffiRegister: FFiRegister = (ptr, len) => {
+    const ffiRegister: MemoryCallback = (ptr, len) => {
       console.log("ffffiiiiiii");
       //TODO write primary address to ptr
       const view = tinywasi.getDataView();
