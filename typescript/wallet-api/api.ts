@@ -104,31 +104,12 @@ export class ViewPair {
     );
     tinywasi.initialize(instance);
     console.log(instance.exports);
-    const ffiRegister: MemoryCallback = (ptr, len) => {
-      console.log("ffffiiiiiii");
-      //TODO write primary address to ptr
-      const view = tinywasi.getDataView();
-      const encoder = new TextEncoder();
-      const uint8Array = encoder.encode(primary_address);
-      console.log(uint8Array);
-
-      for (let i = 0; i < uint8Array.length; i++) {
-        const offset = i + ptr;
-        view.setUint8(offset, uint8Array[i]);
-      }
+    viewPair.writeToWasmMemory = (ptr, len) => {
+      viewPair.writeString(ptr, len, primary_address);
       viewPair.writeToWasmMemory = (ptr, len) => {
-        const view = tinywasi.getDataView();
-        const encoder = new TextEncoder();
-        const uint8Array = encoder.encode(secret_view_key);
-        console.log(uint8Array);
-        for (let i = 0; i < uint8Array.length; i++) {
-          const offset = i + ptr;
-          view.setUint8(offset, uint8Array[i]);
-        }
-        //TODO write secretviewkey to ptr
+        viewPair.writeString(ptr, len, secret_view_key);
       };
     };
-    viewPair.writeToWasmMemory = ffiRegister;
     viewPair.readFromWasmMemory = (ptr, len) => {
       const memory = tinywasi.getMemory();
       const arri = new Uint8Array(memory.buffer, ptr, len);
