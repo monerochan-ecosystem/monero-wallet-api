@@ -1,7 +1,7 @@
-# Use Rust 1.82.0 as the base image
-FROM rust:1.82.0-alpine
+# Use Rust 1.83.0 as the base image
+FROM rust:1.83.0-alpine
 
-RUN apk add --no-cache musl-dev=1.2.5-r0
+RUN apk add --no-cache musl-dev=1.2.5-r8
 
 # Install cargo-wasi 0.1.28
 RUN cargo install cargo-wasi --version 0.1.28
