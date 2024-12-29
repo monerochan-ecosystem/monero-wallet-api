@@ -38,7 +38,7 @@ docker run -v $(pwd):/app -it monero-wallet-api-build
 
 ```bash
 cd typescript || cd ../typescript
-bun build
+bun run build
 bun run inlinesum
 ```
 
