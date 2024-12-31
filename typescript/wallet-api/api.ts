@@ -1,7 +1,7 @@
 import { monero_wallet_api_wasm } from "./wasmFile";
 import { TinyWASI } from "./wasi";
 export type MemoryCallback = (ptr: number, len: number) => void;
-export class ViewPair {
+class WasmProcessor {
   /**
    * This method is invoked whenever a Rust function expects an array or string parameter.
    * You should use `writeArray` or `writeString` within the function assigned to this callback
@@ -73,6 +73,10 @@ export class ViewPair {
     const memory = this.tinywasi.getMemory();
     return new Uint8Array(memory.buffer, ptr, len);
   };
+  protected constructor(protected tinywasi: TinyWASI) {}
+}
+
+export class ViewPair extends WasmProcessor {
   public static async create(
     primary_address: string,
     secret_view_key: string
@@ -159,8 +163,10 @@ export class ViewPair {
   private constructor(
     private primary_address: string,
     private secret_view_key: string,
-    private tinywasi: TinyWASI
-  ) {}
+    tinywasi: TinyWASI
+  ) {
+    super(tinywasi);
+  }
 }
 
 const viewpair = await ViewPair.create(
