@@ -96,6 +96,29 @@ pub extern "C" fn init_viewpair(
     let lossy_string: String = String::from_utf8_lossy(data.as_ref()).into_owned();
     println!("Lossy UTF-8 interpretation: {}", lossy_string);
 }
+
+#[no_mangle]
+pub extern "C" fn build_getblocksbin_request(
+    requested_info: u8,
+    start_height: u64,
+    prune_num: u8,
+    no_miner_tx_num: u8,
+    pool_info_since: u64,
+) {
+    let mut req_params: GetBlocksRequest = GetBlocksRequest::default();
+    req_params.requested_info = requested_info;
+    req_params.start_height = start_height;
+    if prune_num == 1 {
+        req_params.prune = true;
+    }
+    if no_miner_tx_num == 1 {
+        req_params.no_miner_tx = true;
+    }
+    req_params.pool_info_since = pool_info_since;
+
+    output(to_bytes(req_params).unwrap().to_vec().as_ref());
+}
+
 #[no_mangle]
 pub extern "C" fn parse_response(response_len: usize) {
     let response = input(response_len);
