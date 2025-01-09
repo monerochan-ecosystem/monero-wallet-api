@@ -224,47 +224,12 @@ export class NodeUrl extends WasmProcessor {
     if (params.no_miner_tx) {
       no_miner_tx_num = 1;
     }
-    console.log(
-      requested_info,
-      params.start_height,
-      prune_num,
-      no_miner_tx_num,
-      params.pool_info_since || 0
-    );
-
-    // https://github.com/monero-project/monero/blob/941ecefab21db382e88065c16659864cb8e763ae/src/rpc/core_rpc_server.cpp#L635
-    // switch (req.requested_info)
-    // {
-    //   case COMMAND_RPC_GET_BLOCKS_FAST::BLOCKS_ONLY:
-    //     // Compatibility value 0: Clients that do not set 'requested_info' want blocks, and only blocks
-    //     get_blocks = true;
-    //     break;
-    //   case COMMAND_RPC_GET_BLOCKS_FAST::BLOCKS_AND_POOL:
-    //     get_blocks = true;
-    //     get_pool = true;
-    //     break;
-    //   case COMMAND_RPC_GET_BLOCKS_FAST::POOL_ONLY:
-    //     get_pool = true;
-    //     break;
-    //   default:
-    //     res.status = "Failed, wrong requested info";
-    //     return true;
-    // }
 
     nodeUrl.readFromWasmMemory = (ptr, len) => {
       const memory = nodeUrl.tinywasi.getMemory();
       const arri = new Uint8Array(memory.buffer, ptr, len);
       console.log(arri);
       fetch(nodeUrl.node_url + "/getblocks.bin", {
-        headers: {
-          accept: "*/*",
-          "accept-language": "en-US,en;q=0.9",
-          "sec-fetch-dest": "empty",
-          "sec-fetch-mode": "cors",
-          "sec-fetch-site": "same-site",
-          Referer: "http://localhost:8080/",
-          "Referrer-Policy": "strict-origin-when-cross-origin",
-        },
         body: arri,
         method: "POST",
       }).then((x) => {
@@ -287,6 +252,7 @@ export class NodeUrl extends WasmProcessor {
             nodeUrl.tinywasi.instance.exports.parse_response(uint8Array.length);
           });
       });
+      console.log("return from read");
     };
     //     //@ts-ignore
     //     instance.exports.build_getblocksbin_request(

@@ -135,7 +135,19 @@ pub extern "C" fn parse_response(response_len: usize) {
     GLOBAL_SCANNER.with(|old_scanner| {
         match old_scanner.borrow().clone() {
             None => {
-                println!("Scanner is not initialized. Skipping processing.");
+                println!("Scanner is not initialized.");
+
+                // Convert blocks_response to JSON
+                match serde_json::to_string_pretty(&blocks_response) {
+                    Ok(json_string) => {
+                        println!("Raw response data:");
+                        println!("{}", json_string);
+                    }
+                    Err(e) => {
+                        eprintln!("Error serializing response to JSON: {}", e);
+                    }
+                }
+
                 return;
             }
             Some(mut scanner) => {
