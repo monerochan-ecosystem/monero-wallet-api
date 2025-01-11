@@ -1,5 +1,7 @@
 import { test } from "bun:test";
-import { NodeUrl } from "../wallet-api/api"; // Adjust the import path as needed
+import { NodeUrl } from "../wallet-api/api";
+import { parseGetInfoResponse } from "../wallet-api/api";
+import { sleep } from "bun";
 const STAGENET_URL = "http://stagenet.community.rino.io:38081";
 test("fetch blocks starting from latest height", async () => {
   // Make the initial get_info request
@@ -21,16 +23,19 @@ test("fetch blocks starting from latest height", async () => {
 
   const getInfoResult = await getInfoResponse.json();
 
-  if (!getInfoResult.result?.height) {
+  const parsedResult = parseGetInfoResponse(getInfoResult);
+
+  if (parsedResult === null || !parsedResult.result?.height) {
     throw new Error("Failed to get height from get_info result");
   }
-  console.log(getInfoResult);
-  const startHeight = getInfoResult.result.height;
+
+  console.log(parsedResult);
+  const startHeight = parsedResult.result.height;
 
   // Now fetch blocks starting from the latest height
   const nodeUrl = await NodeUrl.create(STAGENET_URL);
-  const blocks = await nodeUrl.getBlocksBin({ start_height: startHeight });
-
+  const blocks = await nodeUrl.getBlocksBin({ start_height: startHeight - 1 });
+  await sleep(5000);
   // Add assertions here if needed
   console.log(`Fetched blocks starting from height ${startHeight}`);
 });
