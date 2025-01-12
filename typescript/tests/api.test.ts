@@ -2,7 +2,9 @@ import { test } from "bun:test";
 import { NodeUrl } from "../wallet-api/api";
 import { parseGetInfoResponse } from "../wallet-api/api";
 import { sleep } from "bun";
-const STAGENET_URL = "http://stagenet.community.rino.io:38081";
+// git clone monero-playground run:
+// ./monerod --stagenet --rpc-bind-port 38081 --p2p-bind-port 38080
+const STAGENET_URL = "http://localhost:38081";
 test("fetch blocks starting from latest height", async () => {
   // Make the initial get_info request
   const getInfoResponse = await fetch(STAGENET_URL + "/json_rpc", {
