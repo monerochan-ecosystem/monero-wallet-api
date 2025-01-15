@@ -122,6 +122,8 @@ pub extern "C" fn build_getblocksbin_request(
 #[no_mangle]
 pub extern "C" fn parse_response(response_len: usize) {
     let response = input(response_len);
+    // if the daemon is not fully synced this will panic with:
+    // called `Result::unwrap()` on an `Err` value: Error { value: "Invalid utf8 str" }
     let blocks_response: GetBlocksResponse = from_bytes(&mut response.as_slice()).unwrap();
     // match serde_json::to_string(&val) {
     //     Ok(json_string) => println!("{}", json_string),
@@ -142,6 +144,7 @@ pub extern "C" fn parse_response(response_len: usize) {
                     Ok(json_string) => {
                         println!("Raw response data:");
                         println!("{}", json_string);
+                        output_string(&json_string);
                     }
                     Err(e) => {
                         eprintln!("Error serializing response to JSON: {}", e);
