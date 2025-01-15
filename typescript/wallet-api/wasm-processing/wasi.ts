@@ -1,7 +1,7 @@
 import * as crypto from "crypto";
 //vendored from https://github.com/qrdate/tinywasi/blob/main/src/TinyWASI.ts
 export class TinyWASI {
-  private instance?: WebAssembly.Instance = undefined;
+  public instance?: WebAssembly.Instance = undefined;
 
   private WASI_ERRNO_SUCCESS = 0;
   private WASI_ERRNO_BADF = 8;
