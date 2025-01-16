@@ -6,6 +6,34 @@ export type GetBlocksBinRequest = {
   no_miner_tx?: boolean; // default: false
   pool_info_since?: number; // default: 0
 };
+type PoolInfo = {};
+type Transaction = {};
+type Block = {
+  pruned: boolean;
+  block: number[];
+  block_weight: number;
+  txs: "None" | Transaction[];
+};
+
+type OutputIndex = {
+  indices: {
+    indices: number[];
+  }[];
+};
+
+type GetBlocksBinResponse = {
+  status: "OK";
+  untrusted: false;
+  credits: number;
+  top_hash: string;
+  blocks: Block[];
+  start_height: number;
+  current_height: number;
+  output_indices: OutputIndex[];
+  daemon_time: number;
+  pool_info: "None" | PoolInfo;
+};
+
 export async function getBlocksBin<T extends WasmProcessor>(
   processor: T,
   params: GetBlocksBinRequest
@@ -56,8 +84,13 @@ export async function getBlocksBin<T extends WasmProcessor>(
   processor.writeToWasmMemory = (ptr, len) => {
     processor.writeArray(ptr, len, getBlocksBinResponseBuffer);
   };
+  let result: string;
+  processor.readFromWasmMemory = (ptr, len) => {
+    result = processor.readString(ptr, len);
+  };
   //@ts-ignore
   processor.tinywasi.instance.exports.parse_response(
     getBlocksBinResponseBuffer.length
   );
+  return JSON.parse(result!) as GetBlocksBinResponse; //result written in parse_response
 }

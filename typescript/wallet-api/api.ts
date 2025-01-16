@@ -32,7 +32,7 @@ export class ViewPair extends WasmProcessor {
    *
    */
   public getBlocksBin(params: GetBlocksBinRequest) {
-    getBlocksBin(this, params);
+    return getBlocksBin(this, params);
   }
 }
 
@@ -49,7 +49,7 @@ export class NodeUrl extends WasmProcessor {
    *
    */
   public getBlocksBin(params: GetBlocksBinRequest) {
-    getBlocksBin(this, params);
+    return getBlocksBin(this, params);
   }
 }
 // const nodeurl = await NodeUrl.create("http://stagenet.community.rino.io:38081");
