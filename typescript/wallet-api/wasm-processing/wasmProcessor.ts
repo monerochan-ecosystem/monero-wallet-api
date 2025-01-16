@@ -74,6 +74,24 @@ export class WasmProcessor {
     const memory = this.tinywasi.getMemory();
     return new Uint8Array(memory.buffer, ptr, len);
   };
+  /**
+   * Reads a string from a specified offset in WebAssembly memory.
+   *
+   * This method is typically used within `readFromWasmMemory` to read string data from Wasm memory.
+   * For more details, see {@link readFromWasmMemory}.
+   *
+   * @param ptr - The WebAssembly memory address where the data should be read from.
+   * @param len - The number of bytes to read starting from the specified `ptr`.
+   * @param str - The string to read from WebAssembly memory.
+   *
+   * @see {@link readFromWasmMemory}
+   */
+  public readString = (ptr: number, len: number) => {
+    const array = this.readArray(ptr, len);
+    const decoder = new TextDecoder();
+    const str = decoder.decode(array);
+    return str;
+  };
   protected constructor(public tinywasi: TinyWASI, public node_url: string) {}
   public async initWasmModule() {
     const tinywasi = new TinyWASI();
