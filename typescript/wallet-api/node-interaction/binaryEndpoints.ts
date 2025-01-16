@@ -10,8 +10,6 @@ export async function getBlocksBin<T extends WasmProcessor>(
   processor: T,
   params: GetBlocksBinRequest
 ) {
-  const nodeUrl = processor;
-
   // https://github.com/monero-project/monero/blob/941ecefab21db382e88065c16659864cb8e763ae/src/rpc/core_rpc_server_commands_defs.h#L178
   //    enum REQUESTED_INFO
   //   {
@@ -35,49 +33,31 @@ export async function getBlocksBin<T extends WasmProcessor>(
     no_miner_tx_num = 1;
   }
 
-  nodeUrl.readFromWasmMemory = (ptr, len) => {
-    const memory = nodeUrl.tinywasi.getMemory();
-    const arri = new Uint8Array(memory.buffer, ptr, len);
-    console.log(arri);
-    fetch(nodeUrl.node_url + "/getblocks.bin", {
-      body: arri,
-      method: "POST",
-    }).then((x) => {
-      console.log(x);
-      x.blob()
-        .then((z) => {
-          return z.arrayBuffer();
-        })
-        .then((y) => {
-          const uint8Array = new Uint8Array(y);
-          nodeUrl.writeToWasmMemory = (ptr, len) => {
-            console.log(uint8Array);
-            const view = nodeUrl.tinywasi.getDataView();
-            for (let i = 0; i < uint8Array.length; i++) {
-              const offset = i + ptr;
-              view.setUint8(offset, uint8Array[i]);
-            }
-          };
-          //@ts-ignore
-          nodeUrl.tinywasi.instance.exports.parse_response(uint8Array.length);
-        });
-    });
-    console.log("return from read");
+  let getBlocksArray: Uint8Array;
+  processor.readFromWasmMemory = (ptr, len) => {
+    getBlocksArray = processor.readArray(ptr, len);
   };
-  //     //@ts-ignore
-  //     instance.exports.build_getblocksbin_request(
-  //     requested_info: u8,
-  //     start_height: u64,
-  //     prune_num: u8,
-  //     no_miner_tx_num: u8,
-  //     pool_info_since: u64,
-  // )
   //@ts-ignore
-  nodeUrl.tinywasi.instance.exports.build_getblocksbin_request(
+  processor.tinywasi.instance.exports.build_getblocksbin_request(
     requested_info,
     BigInt(params.start_height),
     prune_num,
     no_miner_tx_num,
     BigInt(params.pool_info_since || 0)
+  );
+
+  const response = await fetch(processor.node_url + "/getblocks.bin", {
+    body: getBlocksArray!, // written in build_getblocksbin_request call to readFromWasmMemory
+    method: "POST",
+  })
+    .then((result) => result.blob())
+    .then((blob) => blob.arrayBuffer());
+  const getBlocksBinResponseBuffer = new Uint8Array(response);
+  processor.writeToWasmMemory = (ptr, len) => {
+    processor.writeArray(ptr, len, getBlocksBinResponseBuffer);
+  };
+  //@ts-ignore
+  processor.tinywasi.instance.exports.parse_response(
+    getBlocksBinResponseBuffer.length
   );
 }
