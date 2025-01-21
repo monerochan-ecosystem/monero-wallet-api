@@ -1,3 +1,6 @@
+pub mod block_parsing;
+
+use block_parsing::convert_to_json;
 use cuprate_epee_encoding::{from_bytes, to_bytes, EpeeObject, EpeeValue};
 use cuprate_rpc_types::bin::{GetBlocksRequest, GetBlocksResponse};
 use cuprate_types::{BlockCompleteEntry, TransactionBlobs};
@@ -10,12 +13,8 @@ use monero_wallet::rpc::ScannableBlock;
 use monero_wallet::transaction::Pruned;
 use monero_wallet::transaction::Transaction;
 use monero_wallet::{Scanner, ViewPair};
-use serde_json::json;
 use std::cell::RefCell;
-use std::io::{self, Read};
-use std::ops::Deref;
 use your_program::{input, input_string, output, output_string};
-
 use zeroize::Zeroizing;
 thread_local! {
     static GLOBAL_SCANNER: RefCell<Option<Scanner>> = RefCell::new(None);
@@ -103,33 +102,11 @@ pub extern "C" fn parse_response(response_len: usize) {
     // if the daemon is not fully synced this will panic with:
     // called `Result::unwrap()` on an `Err` value: Error { value: "Invalid utf8 str" }
     let blocks_response: GetBlocksResponse = from_bytes(&mut response.as_slice()).unwrap();
-    // match serde_json::to_string(&val) {
-    //     Ok(json_string) => println!("{}", json_string),
-    //     Err(e) => eprintln!("Serialization error: {}", e),
-    // }
-    // GLOBAL_VIEWPAIR.with(|old_viewpair| {
-    //     let viewpair_ref = old_viewpair.borrow();
-    //     let viewpair = viewpair_ref.as_ref().unwrap();
-    // })
-    // Now you can use view_pair_ref
+
     GLOBAL_SCANNER.with(|old_scanner| {
         match old_scanner.borrow().clone() {
             None => {
-                // Convert blocks_response to JSON
-                match serde_json::to_string_pretty(&blocks_response) {
-                    Ok(json_string) => {
-                        output_string(&json_string);
-                    }
-                    Err(e) => {
-                        let error_message = format!("Error serializing response to JSON: {}", e);
-                        let error_json = json!({
-                            "error": error_message
-                        });
-                        output_string(&error_json.to_string());
-                    }
-                }
-
-                return;
+                output_string(&convert_to_json(&blocks_response));
             }
             Some(mut scanner) => {
                 // println!(
