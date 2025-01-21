@@ -51,9 +51,9 @@ export async function getBlocksBin<T extends WasmProcessor>(
   } else if (params.requested_info === "POOL_ONLY") {
     requested_info = 2;
   }
-  let prune_num = 0;
-  if (params.prune) {
-    prune_num = 1;
+  let prune_num = 1;
+  if (params.prune === false) {
+    prune_num = 0;
   }
 
   let no_miner_tx_num = 0;
