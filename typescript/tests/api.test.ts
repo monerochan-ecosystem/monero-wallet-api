@@ -19,7 +19,7 @@ test("fetch blocks starting from latest height", async () => {
     STAGENET_URL
   );
   const blocks = await viewPair.getBlocksBin({
-    start_height: getInfoResult.height - 1,
+    start_height: getInfoResult.height - 10,
   });
   console.log(`Fetched blocks starting from height ${getInfoResult.height}`);
 });
