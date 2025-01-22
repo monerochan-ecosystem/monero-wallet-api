@@ -1,17 +1,13 @@
 pub mod block_parsing;
 
 use block_parsing::convert_to_json;
+use block_parsing::scan_blocks;
 use cuprate_epee_encoding::{from_bytes, to_bytes, EpeeObject, EpeeValue};
 use cuprate_rpc_types::bin::{GetBlocksRequest, GetBlocksResponse};
-use cuprate_types::{BlockCompleteEntry, TransactionBlobs};
 use curve25519_dalek::scalar::Scalar;
 use hex::FromHex;
-use monero_serai::transaction::NotPruned;
 use monero_wallet;
-use monero_wallet::block::Block;
-use monero_wallet::rpc::ScannableBlock;
-use monero_wallet::transaction::Pruned;
-use monero_wallet::transaction::Transaction;
+
 use monero_wallet::{Scanner, ViewPair};
 use std::cell::RefCell;
 use your_program::{input, input_string, output, output_string};
@@ -103,104 +99,13 @@ pub extern "C" fn parse_response(response_len: usize) {
     // called `Result::unwrap()` on an `Err` value: Error { value: "Invalid utf8 str" }
     let blocks_response: GetBlocksResponse = from_bytes(&mut response.as_slice()).unwrap();
 
-    GLOBAL_SCANNER.with(|old_scanner| {
-        match old_scanner.borrow().clone() {
-            None => {
-                output_string(&convert_to_json(&blocks_response));
-            }
-            Some(mut scanner) => {
-                // println!(
-                //     "Processing normal response: {:?}",
-                //     blocks_response.output_indices[0].indices[0].indices[0]
-                // );
-                // println!(
-                //     "Processing normal response: {:?}",
-                //     blocks_response.output_indices[1].indices[0]
-                // );
-                // println!(
-                //     "Processing normal response: {:?}",
-                //     blocks_response.output_indices[3].indices[0]
-                // );
-                //  println!("Processing normal response: {:?}", response);
-                for (index, block_entry) in blocks_response.blocks.iter().enumerate() {
-                    let output_index_for_first_ringct_output =
-                        Some(blocks_response.output_indices[index].indices[0].indices[0]);
-                    // Process each block here
-                    let blockhihi = Block::read::<&[u8]>(&mut block_entry.block.as_ref()).unwrap();
-                    // println!("Processing block: {:?}", blockhihi.miner_transaction);
-                    //  output_index_for_first_ringct_output +=
-                    //  u64::try_from(tx.prefix().outputs.len()).unwrap();
-                    let mut transactions = Vec::new();
-
-                    match &block_entry.txs {
-                        TransactionBlobs::Normal(txs) => {
-                            println!("Processing normal transaction: {:?}", txs);
-                            for tx_bytes in txs {
-                                let tx = Transaction::<NotPruned>::read(&mut tx_bytes.as_ref());
-                                // transactions.push(tx);
-                                // let tx =
-                                //     Transaction::<Pruned>::read(tx_bytes).map_err(
-                                //         |_| match hash_hex(&res.tx_hash) {
-                                //             Ok(hex_hash) => Error::InvalidTransaction(format!(
-                                //                 "Failed to parse transaction: {}",
-                                //                 hex_hash
-                                //             )),
-                                //             Err(_) => Error::InvalidTransaction(
-                                //                 "Failed to generate transaction hash".to_string(),
-                                //             ),
-                                //         },
-                                //     );
-
-                                // if let Ok(parsed_tx) = tx {
-                                //     parsed_transactions.push(parsed_tx);
-                                // } else {
-                                //     // Handle error case, possibly skip this transaction
-                                //     println!("Warning: Skipping invalid transaction");
-                                // }
-                                println!("Processing normal transaction: {:?}", tx);
-                                // println!("Processing block: {:?}", blockhihi);
-                            }
-                        }
-                        TransactionBlobs::Pruned(pruned_txs) => {
-                            // Handle pruned transactions separately
-                            //println!("Processing pruned transaction: {:?}", pruned_txs[0]);
-                            // let blockhihi =
-                            //     Block::read::<&[u8]>(&mut block_entry.block.as_ref()).unwrap();
-                            //  println!("Processing block: {:?}", blockhihi);
-                            for entry in pruned_txs {
-                                // Process PrunedTxBlobEntry here
-                                let tx =
-                                    Transaction::<Pruned>::read::<&[u8]>(&mut entry.blob.as_ref())
-                                        .unwrap();
-                                transactions.push(tx);
-                                //println!("Processing pruned transaction: {:?}", tx);
-                                // Add parsing logic for pruned transactions if needed
-                            }
-                        }
-                        TransactionBlobs::None => {
-                            //     println!("No transactions in this block");
-                        }
-                    }
-
-                    let scanBlock = ScannableBlock {
-                        block: blockhihi,
-                        transactions,
-                        output_index_for_first_ringct_output,
-                    };
-                    let res = scanner.scan(scanBlock).unwrap().not_additionally_locked();
-                    println!("weijokfjiweioewioewioeweeeeeeeeeeee {:?}", res.len());
-                    // res.
-                    for x in res {
-                        println!("hi there {:?}", x.commitment());
-                        // match serde_json::to_string(&x.) {
-                        //     Ok(json_string) => println!("{}", json_string),
-                        //     Err(e) => eprintln!("Serialization error: {}", e),
-                        // }
-                    }
-                }
-            }
+    GLOBAL_SCANNER.with(|old_scanner| match old_scanner.borrow().clone() {
+        None => {
+            output_string(&convert_to_json(&blocks_response));
         }
-        //  scanner.scan(block)
+        Some(scanner) => {
+            scan_blocks(scanner, blocks_response);
+        }
     });
 }
 ///rust API
