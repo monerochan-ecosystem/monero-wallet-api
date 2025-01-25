@@ -32,11 +32,17 @@ type GetBlocksBinResponse = {
   output_indices: OutputIndex[];
   daemon_time: number;
   pool_info: "None" | PoolInfo;
+  new_height: number; //get_blocks_bin.start_height + get_blocks_bin.blocks.len() aka new start_height to fetch
+};
+type GetBlocksResultMeta = {
+  new_height: number;
+  daemon_height: number;
 };
 
 export async function getBlocksBin<T extends WasmProcessor>(
   processor: T,
-  params: GetBlocksBinRequest
+  params: GetBlocksBinRequest,
+  metaCallBack?: (meta: GetBlocksResultMeta) => void
 ) {
   // https://github.com/monero-project/monero/blob/941ecefab21db382e88065c16659864cb8e763ae/src/rpc/core_rpc_server_commands_defs.h#L178
   //    enum REQUESTED_INFO
@@ -84,13 +90,23 @@ export async function getBlocksBin<T extends WasmProcessor>(
   processor.writeToWasmMemory = (ptr, len) => {
     processor.writeArray(ptr, len, getBlocksBinResponseBuffer);
   };
-  let result: string;
+  let resultMeta: GetBlocksResultMeta;
+  let result: GetBlocksBinResponse;
   processor.readFromWasmMemory = (ptr, len) => {
-    result = processor.readString(ptr, len);
+    resultMeta = JSON.parse(
+      processor.readString(ptr, len)
+    ) as GetBlocksResultMeta;
+    if (metaCallBack) metaCallBack(resultMeta);
+    processor.readFromWasmMemory = (ptr, len) => {
+      result = JSON.parse(
+        processor.readString(ptr, len)
+      ) as GetBlocksBinResponse;
+      result.new_height = resultMeta.new_height;
+    };
   };
   //@ts-ignore
   processor.tinywasi.instance.exports.parse_response(
     getBlocksBinResponseBuffer.length
   );
-  return JSON.parse(result!) as GetBlocksBinResponse; //result written in parse_response
+  return result!; //result written in parse_response
 }
