@@ -1,12 +1,14 @@
 pub mod block_parsing;
 
 use block_parsing::convert_to_json;
+use block_parsing::get_blocks_bin_response_meta;
 use block_parsing::scan_blocks;
 use cuprate_epee_encoding::{from_bytes, to_bytes, EpeeObject, EpeeValue};
 use cuprate_rpc_types::bin::{GetBlocksRequest, GetBlocksResponse};
 use curve25519_dalek::scalar::Scalar;
 use hex::FromHex;
 use monero_wallet;
+use serde_json::json;
 
 use monero_wallet::{Scanner, ViewPair};
 use std::cell::RefCell;
@@ -95,18 +97,33 @@ pub extern "C" fn build_getblocksbin_request(
 #[no_mangle]
 pub extern "C" fn parse_response(response_len: usize) {
     let response = input(response_len);
-    // if the daemon is not fully synced this will panic with:
-    // called `Result::unwrap()` on an `Err` value: Error { value: "Invalid utf8 str" }
-    let blocks_response: GetBlocksResponse = from_bytes(&mut response.as_slice()).unwrap();
 
-    GLOBAL_SCANNER.with(|old_scanner| match old_scanner.borrow().clone() {
-        None => {
-            output_string(&convert_to_json(&blocks_response));
+    match from_bytes(&mut response.as_slice()) {
+        Ok(blocks_response) => {
+            GLOBAL_SCANNER.with(|old_scanner| match old_scanner.borrow().clone() {
+                None => {
+                    output_string(&convert_to_json(&get_blocks_bin_response_meta(
+                        &blocks_response,
+                    )));
+                    output_string(&convert_to_json(&blocks_response));
+                }
+                Some(scanner) => {
+                    output_string(&convert_to_json(&get_blocks_bin_response_meta(
+                        &blocks_response,
+                    )));
+                    scan_blocks(scanner, blocks_response);
+                }
+            });
         }
-        Some(scanner) => {
-            scan_blocks(scanner, blocks_response);
+        Err(error) => {
+            let error_message = format!("Error parsing getBlocksBin response: {}", error);
+            let error_json = json!({
+                "error": error_message
+            })
+            .to_string();
+            output_string(&error_json);
         }
-    });
+    }
 }
 ///rust API
 pub fn make_viewpair(primary_address: String, secret_view_key: String) -> ViewPair {

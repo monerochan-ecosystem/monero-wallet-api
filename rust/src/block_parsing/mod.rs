@@ -25,6 +25,21 @@ where
         }
     }
 }
+pub struct ScanResult {}
+#[derive(serde::Serialize)]
+pub struct GetBlocksResult {
+    new_height: u64,
+    daemon_height: u64,
+}
+pub fn get_blocks_bin_response_meta(get_blocks_bin: &GetBlocksResponse) -> GetBlocksResult {
+    let new_height = get_blocks_bin.start_height + (get_blocks_bin.blocks.len() as u64);
+    let daemon_height = get_blocks_bin.current_height;
+
+    GetBlocksResult {
+        new_height,
+        daemon_height,
+    }
+}
 
 pub fn scan_blocks(mut scanner: Scanner, get_blocks_bin: GetBlocksResponse) {
     for (index, block_entry) in get_blocks_bin.blocks.iter().enumerate() {
