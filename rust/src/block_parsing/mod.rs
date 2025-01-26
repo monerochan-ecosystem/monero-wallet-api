@@ -43,8 +43,12 @@ pub fn get_blocks_bin_response_meta(get_blocks_bin: &GetBlocksResponse) -> GetBl
 
 pub fn scan_blocks(mut scanner: Scanner, get_blocks_bin: GetBlocksResponse) {
     for (index, block_entry) in get_blocks_bin.blocks.iter().enumerate() {
-        let output_index_for_first_ringct_output =
-            Some(get_blocks_bin.output_indices[index].indices[0].indices[0]);
+        let output_index_for_first_ringct_output = get_blocks_bin
+            .output_indices
+            .get(index)
+            .and_then(|outer| outer.indices.get(0))
+            .and_then(|inner| inner.indices.get(0))
+            .map(|&value| value);
         // Process each block here
         let blockhihi = Block::read::<&[u8]>(&mut block_entry.block.as_ref()).unwrap();
         // println!("Processing block: {:?}", blockhihi.miner_transaction);
@@ -54,32 +58,7 @@ pub fn scan_blocks(mut scanner: Scanner, get_blocks_bin: GetBlocksResponse) {
 
         match &block_entry.txs {
             TransactionBlobs::Normal(txs) => {
-                println!("Processing normal transaction: {:?}", txs);
-                for tx_bytes in txs {
-                    let tx = Transaction::<NotPruned>::read(&mut tx_bytes.as_ref());
-                    // transactions.push(tx);
-                    // let tx =
-                    //     Transaction::<Pruned>::read(tx_bytes).map_err(
-                    //         |_| match hash_hex(&res.tx_hash) {
-                    //             Ok(hex_hash) => Error::InvalidTransaction(format!(
-                    //                 "Failed to parse transaction: {}",
-                    //                 hex_hash
-                    //             )),
-                    //             Err(_) => Error::InvalidTransaction(
-                    //                 "Failed to generate transaction hash".to_string(),
-                    //             ),
-                    //         },
-                    //     );
-
-                    // if let Ok(parsed_tx) = tx {
-                    //     parsed_transactions.push(parsed_tx);
-                    // } else {
-                    //     // Handle error case, possibly skip this transaction
-                    //     println!("Warning: Skipping invalid transaction");
-                    // }
-                    println!("Processing normal transaction: {:?}", tx);
-                    // println!("Processing block: {:?}", blockhihi);
-                }
+                // we don't handle non pruned transactions for now
             }
             TransactionBlobs::Pruned(pruned_txs) => {
                 // Handle pruned transactions separately
