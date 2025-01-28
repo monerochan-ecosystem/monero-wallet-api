@@ -49,8 +49,14 @@ pub fn scan_blocks(mut scanner: Scanner, get_blocks_bin: GetBlocksResponse) {
             .and_then(|outer| outer.indices.get(0))
             .and_then(|inner| inner.indices.get(0))
             .map(|&value| value);
-        // Process each block here
-        let blockhihi = Block::read::<&[u8]>(&mut block_entry.block.as_ref()).unwrap();
+
+        let block = match Block::read::<&[u8]>(&mut block_entry.block.as_ref()) {
+            Ok(block) => block,
+            Err(_) => {
+                println!("Error reading block");
+                continue;
+            }
+        };
         // println!("Processing block: {:?}", blockhihi.miner_transaction);
         //  output_index_for_first_ringct_output +=
         //  u64::try_from(tx.prefix().outputs.len()).unwrap();
@@ -76,12 +82,12 @@ pub fn scan_blocks(mut scanner: Scanner, get_blocks_bin: GetBlocksResponse) {
                 }
             }
             TransactionBlobs::None => {
-                //     println!("No transactions in this block");
+                // println!("No transactions in this block");
             }
         }
 
         let scanBlock = ScannableBlock {
-            block: blockhihi,
+            block,
             transactions,
             output_index_for_first_ringct_output,
         };
