@@ -57,28 +57,23 @@ pub fn scan_blocks(mut scanner: Scanner, get_blocks_bin: GetBlocksResponse) {
                 continue;
             }
         };
-        // println!("Processing block: {:?}", blockhihi.miner_transaction);
-        //  output_index_for_first_ringct_output +=
-        //  u64::try_from(tx.prefix().outputs.len()).unwrap();
+
         let mut transactions = Vec::new();
 
         match &block_entry.txs {
-            TransactionBlobs::Normal(txs) => {
+            TransactionBlobs::Normal(_) => {
                 // we don't handle non pruned transactions for now
             }
             TransactionBlobs::Pruned(pruned_txs) => {
-                // Handle pruned transactions separately
-                //println!("Processing pruned transaction: {:?}", pruned_txs[0]);
-                // let blockhihi =
-                //     Block::read::<&[u8]>(&mut block_entry.block.as_ref()).unwrap();
-                //  println!("Processing block: {:?}", blockhihi);
                 for entry in pruned_txs {
-                    // Process PrunedTxBlobEntry here
-                    let tx =
-                        Transaction::<Pruned>::read::<&[u8]>(&mut entry.blob.as_ref()).unwrap();
-                    transactions.push(tx);
-                    //println!("Processing pruned transaction: {:?}", tx);
-                    // Add parsing logic for pruned transactions if needed
+                    match Transaction::<Pruned>::read::<&[u8]>(&mut entry.blob.as_ref()) {
+                        Ok(tx) => {
+                            transactions.push(tx);
+                        }
+                        Err(_) => {
+                            println!("Error reading pruned transaction");
+                        }
+                    }
                 }
             }
             TransactionBlobs::None => {
@@ -86,25 +81,21 @@ pub fn scan_blocks(mut scanner: Scanner, get_blocks_bin: GetBlocksResponse) {
             }
         }
 
-        let scanBlock = ScannableBlock {
+        let scan_block = ScannableBlock {
             block,
             transactions,
             output_index_for_first_ringct_output,
         };
-        let res = scanner.scan(scanBlock).unwrap().not_additionally_locked();
-        println!("weijokfjiweioewioewioeweeeeeeeeeeee {:?}", res.len());
-        println!(
-            "{} , {}",
-            get_blocks_bin.start_height + (get_blocks_bin.blocks.len() as u64),
-            get_blocks_bin.current_height
-        );
-        // res.
-        for x in res {
-            println!("hi there {:?}", x.commitment());
-            // match serde_json::to_string(&x.) {
-            //     Ok(json_string) => println!("{}", json_string),
-            //     Err(e) => eprintln!("Serialization error: {}", e),
-            // }
+        match scanner.scan(scan_block) {
+            Ok(res) => {
+                let unlocked = res.not_additionally_locked();
+                for x in unlocked {
+                    println!("hi there {:?}", x.commitment());
+                }
+            }
+            Err(e) => {
+                println!("Error scanning block: {}", e);
+            }
         }
     }
 }
