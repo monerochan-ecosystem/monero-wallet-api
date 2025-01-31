@@ -80,13 +80,10 @@ export async function getBlocksBin<T extends WasmProcessor>(
     BigInt(params.pool_info_since || 0)
   );
 
-  const response = await fetch(processor.node_url + "/getblocks.bin", {
-    body: getBlocksArray!, // written in build_getblocksbin_request call to readFromWasmMemory
-    method: "POST",
-  })
-    .then((result) => result.blob())
-    .then((blob) => blob.arrayBuffer());
-  const getBlocksBinResponseBuffer = new Uint8Array(response);
+  const getBlocksBinResponseBuffer = await binaryFetchRequest(
+    processor.node_url + "/getblocks.bin",
+    getBlocksArray! // written in build_getblocksbin_request call to readFromWasmMemory
+  );
   processor.writeToWasmMemory = (ptr, len) => {
     processor.writeArray(ptr, len, getBlocksBinResponseBuffer);
   };
@@ -109,4 +106,14 @@ export async function getBlocksBin<T extends WasmProcessor>(
     getBlocksBinResponseBuffer.length
   );
   return result!; //result written in parse_response
+}
+
+async function binaryFetchRequest(url: string, body: Uint8Array) {
+  const response = await fetch(url, {
+    body,
+    method: "POST",
+  })
+    .then((result) => result.blob())
+    .then((blob) => blob.arrayBuffer());
+  return new Uint8Array(response);
 }
