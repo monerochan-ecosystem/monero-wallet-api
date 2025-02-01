@@ -108,7 +108,7 @@ export async function getBlocksBin<T extends WasmProcessor>(
   return result!; //result written in parse_response
 }
 
-async function binaryFetchRequest(url: string, body: Uint8Array) {
+export async function binaryFetchRequest(url: string, body: Uint8Array) {
   const response = await fetch(url, {
     body,
     method: "POST",

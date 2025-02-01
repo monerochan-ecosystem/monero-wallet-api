@@ -1,6 +1,27 @@
-import { test } from "bun:test";
+import { test, mock } from "bun:test";
 import { NodeUrl, ViewPair } from "../wallet-api/api";
 import { get_info } from "../wallet-api/node-interaction/jsonEndpoints";
+import * as binEndponts from "../wallet-api/node-interaction/binaryEndpoints.ts";
+const originalBinaryFetch = binEndponts.binaryFetchRequest;
+let currentFilename = "";
+const mockBinaryFetch = mock(async (url: string, body: Uint8Array) => {
+  let result = await originalBinaryFetch(url, body);
+  const filename = Bun.hash(result);
+  currentFilename = filename + "";
+  await Bun.write("tests/fixtures/getBlocksBinResponse/" + filename, result);
+  result = new Uint8Array(
+    await Bun.file(
+      "tests/fixtures/getBlocksBinResponse/" + filename
+    ).arrayBuffer()
+  );
+  return result;
+});
+mock.module("../wallet-api/node-interaction/binaryEndpoints.ts", () => {
+  return {
+    ...binEndponts,
+    binaryFetchRequest: mockBinaryFetch,
+  };
+});
 // git clone monero-playground run:
 // ./monerod --stagenet --rpc-bind-port 38081 --p2p-bind-port 38080
 const STAGENET_URL = "http://localhost:38081";
@@ -21,7 +42,11 @@ test("fetch blocks starting from latest height", async () => {
   const blocks = await viewPair.getBlocksBin({
     start_height: getInfoResult.height - 10,
   });
-  console.log(`Fetched blocks starting from height ${getInfoResult.height}`);
+  console.log(
+    `${currentFilename} ViewPair, Fetched blocks starting from height ${
+      getInfoResult.height
+    } , ${JSON.stringify(blocks)}`
+  );
 });
 test("fetch blocks starting from latest height", async () => {
   // Make the initial get_info request
@@ -31,5 +56,9 @@ test("fetch blocks starting from latest height", async () => {
   const blocks = await nodeUrl.getBlocksBin({
     start_height: getInfoResult.height - 1,
   });
-  console.log(`Fetched blocks starting from height ${getInfoResult.height}`);
+  console.log(
+    `${currentFilename} NodeUrl, Fetched blocks starting from height ${
+      getInfoResult.height
+    } , ${JSON.stringify(blocks)}`
+  );
 });

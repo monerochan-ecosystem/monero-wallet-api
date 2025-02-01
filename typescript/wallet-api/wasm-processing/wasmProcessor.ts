@@ -115,7 +115,6 @@ export class WasmProcessor {
       imports
     );
     tinywasi.initialize(instance);
-    console.log(instance.exports);
     return tinywasi;
   }
 }
