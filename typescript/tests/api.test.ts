@@ -5,13 +5,18 @@ import * as binEndponts from "../wallet-api/node-interaction/binaryEndpoints.ts"
 const originalBinaryFetch = binEndponts.binaryFetchRequest;
 let currentFilename = "";
 const mockBinaryFetch = mock(async (url: string, body: Uint8Array) => {
-  let result = await originalBinaryFetch(url, body);
-  const filename = Bun.hash(result);
-  currentFilename = filename + "";
-  await Bun.write("tests/fixtures/getBlocksBinResponse/" + filename, result);
-  result = new Uint8Array(
+  // let result = await originalBinaryFetch(url, body);
+  // const filename = Bun.hash(result);
+  // currentFilename = filename + "";
+  // await Bun.write("tests/fixtures/getBlocksBinResponse/" + filename, result);
+  // result = new Uint8Array(
+  //   await Bun.file(
+  //     "tests/fixtures/getBlocksBinResponse/" + filename
+  //   ).arrayBuffer()
+  // );
+  const result = new Uint8Array(
     await Bun.file(
-      "tests/fixtures/getBlocksBinResponse/" + filename
+      "tests/fixtures/getBlocksBinResponse/1490621922843919234"
     ).arrayBuffer()
   );
   return result;
@@ -56,9 +61,9 @@ test("fetch blocks starting from latest height", async () => {
   const blocks = await nodeUrl.getBlocksBin({
     start_height: getInfoResult.height - 1,
   });
-  console.log(
-    `${currentFilename} NodeUrl, Fetched blocks starting from height ${
-      getInfoResult.height
-    } , ${JSON.stringify(blocks)}`
-  );
+  // console.log(
+  //   `${currentFilename} NodeUrl, Fetched blocks starting from height ${
+  //     getInfoResult.height
+  //   } , ${JSON.stringify(blocks)}`
+  // );
 });
