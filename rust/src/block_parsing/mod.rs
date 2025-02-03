@@ -2,8 +2,9 @@ use cuprate_rpc_types::bin::GetBlocksResponse;
 use cuprate_types::TransactionBlobs;
 use monero_wallet::{
     block::Block,
+    extra::PaymentId,
     rpc::ScannableBlock,
-    transaction::{NotPruned, Pruned, Transaction},
+    transaction::{Pruned, Transaction},
     Scanner,
 };
 use serde::Serialize;
@@ -25,7 +26,6 @@ where
         }
     }
 }
-pub struct ScanResult {}
 #[derive(serde::Serialize)]
 pub struct GetBlocksResult {
     new_height: u64,
@@ -89,8 +89,29 @@ pub fn scan_blocks(mut scanner: Scanner, get_blocks_bin: GetBlocksResponse) {
         match scanner.scan(scan_block) {
             Ok(res) => {
                 let unlocked = res.not_additionally_locked();
+                let mut output_jsons = Vec::new();
                 for x in unlocked {
-                    println!("hi there {:?}", x.commitment());
+                    let id = x.key().compress().to_bytes();
+                    let payment_id = match x.payment_id() {
+                        Some(PaymentId::Encrypted(id)) => id,
+                        Some(PaymentId::Unencrypted(_)) => [0, 0, 0, 0, 0, 0, 0, 0],
+                        _ => [0, 0, 0, 0, 0, 0, 0, 0],
+                    };
+
+                    let output_json = json!({
+                        "amount": x.commitment().amount,
+                        "stealth_address": hex::encode(id),
+                        "tx_hash": hex::encode(x.transaction()),
+                        "index_in_transaction":x.index_in_transaction(),
+                        "index_on_blockchain": x.index_on_blockchain(),
+                        "payment_id": u64::from_le_bytes(payment_id)
+                    });
+
+                    output_jsons.push(output_json);
+                }
+                let final_output_json = json!(output_jsons);
+                if output_jsons.len() > 0 {
+                    println!("{}", final_output_json.to_string())
                 }
             }
             Err(e) => {
