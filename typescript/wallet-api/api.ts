@@ -1,10 +1,13 @@
 import {
   getBlocksBinJson,
   getBlocksBinScan,
+  type GetBlocksBinMetaCallback,
   type GetBlocksBinRequest,
 } from "./node-interaction/binaryEndpoints";
 import { TinyWASI } from "./wasm-processing/wasi";
 import { WasmProcessor } from "./wasm-processing/wasmProcessor";
+export * from "./node-interaction/binaryEndpoints";
+export * from "./node-interaction/jsonEndpoints";
 export class ViewPair extends WasmProcessor {
   public static async create(
     primary_address: string,
@@ -32,8 +35,11 @@ export class ViewPair extends WasmProcessor {
   /**
    *
    */
-  public getBlocksBin(params: GetBlocksBinRequest) {
-    return getBlocksBinScan(this, params);
+  public getBlocksBin(
+    params: GetBlocksBinRequest,
+    metaCallBack?: GetBlocksBinMetaCallback
+  ) {
+    return getBlocksBinScan(this, params, metaCallBack);
   }
 }
 

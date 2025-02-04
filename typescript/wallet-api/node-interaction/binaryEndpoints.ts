@@ -6,16 +6,16 @@ export type GetBlocksBinRequest = {
   no_miner_tx?: boolean; // default: false
   pool_info_since?: number; // default: 0
 };
-type PoolInfo = {};
-type Transaction = {};
-type Block = {
+export type PoolInfo = {};
+export type Transaction = {};
+export type Block = {
   pruned: boolean;
   block: number[];
   block_weight: number;
   txs: "None" | Transaction[];
 };
 
-type OutputIndex = {
+export type OutputIndex = {
   indices: {
     indices: number[];
   }[];
@@ -55,11 +55,12 @@ export type ScanResult = {
 export type ErrorResponse = {
   error: string;
 };
+export type GetBlocksBinMetaCallback = (meta: GetBlocksResultMeta) => void;
 
 export async function getBlocksBinScan<T extends WasmProcessor>(
   processor: T,
   params: GetBlocksBinRequest,
-  metaCallBack?: (meta: GetBlocksResultMeta) => void
+  metaCallBack?: GetBlocksBinMetaCallback
 ) {
   // https://github.com/monero-project/monero/blob/941ecefab21db382e88065c16659864cb8e763ae/src/rpc/core_rpc_server_commands_defs.h#L178
   //    enum REQUESTED_INFO
