@@ -99,11 +99,9 @@ export class WasmProcessor {
     const imports = {
       env: {
         input: (ptr: number, len: number) => {
-          console.log("input", ptr, len);
           this.writeToWasmMemory(ptr, len);
         },
         output: (ptr: number, len: number) => {
-          console.log("output", ptr, len);
           this.readFromWasmMemory(ptr, len);
         },
       },

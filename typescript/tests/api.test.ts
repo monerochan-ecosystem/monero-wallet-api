@@ -24,7 +24,7 @@ const mockBinaryFetch = mock(async (url: string, body: Uint8Array) => {
 mock.module("../wallet-api/node-interaction/binaryEndpoints.ts", () => {
   return {
     ...binEndponts,
-    binaryFetchRequest: mockBinaryFetch,
+    //binaryFetchRequest: mockBinaryFetch,
   };
 });
 // git clone monero-playground run:
@@ -66,4 +66,23 @@ test("fetch blocks starting from latest height", async () => {
   //     getInfoResult.height
   //   } , ${JSON.stringify(blocks)}`
   // );
+});
+test("run simple scan", async () => {
+  mock.restore();
+  // Make the initial get_info request
+  const getInfoResult = await get_info(STAGENET_URL);
+  // Now fetch blocks starting from the latest height
+  const viewPair = await ViewPair.create(
+    PRIMARY_ADDRESS,
+    SECRET_VIEW_KEY,
+    STAGENET_URL
+  );
+  const blocks = await viewPair.simpleScan(1731708, (result) =>
+    console.log(result)
+  );
+  console.log(
+    `${currentFilename} simplescan ViewPair, Fetched blocks starting from height ${
+      getInfoResult.height
+    } , ${JSON.stringify(blocks)}`
+  );
 });

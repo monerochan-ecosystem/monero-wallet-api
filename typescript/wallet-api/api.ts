@@ -1,13 +1,17 @@
 import {
   getBlocksBinJson,
   getBlocksBinScan,
+  type ScanResult,
+  type ErrorResponse,
   type GetBlocksBinMetaCallback,
   type GetBlocksBinRequest,
+  type GetBlocksResultMeta,
 } from "./node-interaction/binaryEndpoints";
 import { TinyWASI } from "./wasm-processing/wasi";
 import { WasmProcessor } from "./wasm-processing/wasmProcessor";
 export * from "./node-interaction/binaryEndpoints";
 export * from "./node-interaction/jsonEndpoints";
+export type ScanResultCallback = (result: ScanResult | ErrorResponse) => void;
 export class ViewPair extends WasmProcessor {
   public static async create(
     primary_address: string,
@@ -40,6 +44,24 @@ export class ViewPair extends WasmProcessor {
     metaCallBack?: GetBlocksBinMetaCallback
   ) {
     return getBlocksBinScan(this, params, metaCallBack);
+  }
+  /**
+   * simpleScan
+   */
+  public async simpleScan(start_height: number, callback: ScanResultCallback) {
+    let latest_meta: GetBlocksResultMeta = {
+      new_height: start_height,
+      daemon_height: start_height + 1,
+    };
+    while (latest_meta.new_height < latest_meta.daemon_height) {
+      const res = await this.getBlocksBin(
+        { start_height: latest_meta.new_height },
+        (meta) => {
+          latest_meta = meta;
+        }
+      );
+      callback(res);
+    }
   }
 }
 
