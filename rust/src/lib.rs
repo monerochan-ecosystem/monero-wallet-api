@@ -93,19 +93,21 @@ pub extern "C" fn build_getblocksbin_request(
 
     output(to_bytes(req_params).unwrap().to_vec().as_ref());
 }
-
+// let num = u64::from_le_bytes(bytes);
+// viewpair.legacy_integrated_address(network, payment_id)
 #[no_mangle]
-pub extern "C" fn parse_response(response_len: usize) {
+pub extern "C" fn scan_blocks_with_get_blocks_bin(response_len: usize) {
     let response = input(response_len);
 
     match from_bytes(&mut response.as_slice()) {
         Ok(blocks_response) => {
             GLOBAL_SCANNER.with(|old_scanner| match old_scanner.borrow().clone() {
                 None => {
-                    output_string(&convert_to_json(&get_blocks_bin_response_meta(
-                        &blocks_response,
-                    )));
-                    output_string(&convert_to_json(&blocks_response));
+                    let error_json = json!({
+                        "error": "the scanner / viewpair was not initialized. Blocks didnt get scanned."
+                    })
+                    .to_string();
+                    output_string(&error_json);
                 }
                 Some(scanner) => {
                     output_string(&convert_to_json(&get_blocks_bin_response_meta(
@@ -114,6 +116,27 @@ pub extern "C" fn parse_response(response_len: usize) {
                     output_string(&scan_blocks(scanner, blocks_response));
                 }
             });
+        }
+        Err(error) => {
+            let error_message = format!("Error parsing getBlocksBin response: {}", error);
+            let error_json = json!({
+                "error": error_message
+            })
+            .to_string();
+            output_string(&error_json);
+        }
+    }
+}
+#[no_mangle]
+pub extern "C" fn convert_get_blocks_bin_response_to_json(response_len: usize) {
+    let response = input(response_len);
+
+    match from_bytes(&mut response.as_slice()) {
+        Ok(blocks_response) => {
+            output_string(&convert_to_json(&get_blocks_bin_response_meta(
+                &blocks_response,
+            )));
+            output_string(&convert_to_json(&blocks_response));
         }
         Err(error) => {
             let error_message = format!("Error parsing getBlocksBin response: {}", error);

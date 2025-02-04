@@ -1,5 +1,6 @@
 import {
-  getBlocksBin,
+  getBlocksBinJson,
+  getBlocksBinScan,
   type GetBlocksBinRequest,
 } from "./node-interaction/binaryEndpoints";
 import { TinyWASI } from "./wasm-processing/wasi";
@@ -9,7 +10,7 @@ export class ViewPair extends WasmProcessor {
     primary_address: string,
     secret_view_key: string,
     node_url?: string
-  ): Promise<NodeUrl> {
+  ): Promise<ViewPair> {
     const viewPair = new ViewPair(
       new TinyWASI(),
       node_url || "http://localhost:38081"
@@ -32,7 +33,7 @@ export class ViewPair extends WasmProcessor {
    *
    */
   public getBlocksBin(params: GetBlocksBinRequest) {
-    return getBlocksBin(this, params);
+    return getBlocksBinScan(this, params);
   }
 }
 
@@ -49,7 +50,7 @@ export class NodeUrl extends WasmProcessor {
    *
    */
   public getBlocksBin(params: GetBlocksBinRequest) {
-    return getBlocksBin(this, params);
+    return getBlocksBinJson(this, params);
   }
 }
 // const nodeurl = await NodeUrl.create("http://stagenet.community.rino.io:38081");
