@@ -41,7 +41,9 @@ pub fn get_blocks_bin_response_meta(get_blocks_bin: &GetBlocksResponse) -> GetBl
     }
 }
 
-pub fn scan_blocks(mut scanner: Scanner, get_blocks_bin: GetBlocksResponse) {
+pub fn scan_blocks(mut scanner: Scanner, get_blocks_bin: GetBlocksResponse) -> String {
+    let mut output_jsons = Vec::new();
+
     for (index, block_entry) in get_blocks_bin.blocks.iter().enumerate() {
         let output_index_for_first_ringct_output = get_blocks_bin
             .output_indices
@@ -89,7 +91,6 @@ pub fn scan_blocks(mut scanner: Scanner, get_blocks_bin: GetBlocksResponse) {
         match scanner.scan(scan_block) {
             Ok(res) => {
                 let unlocked = res.not_additionally_locked();
-                let mut output_jsons = Vec::new();
                 for x in unlocked {
                     let id = x.key().compress().to_bytes();
                     let payment_id = match x.payment_id() {
@@ -104,19 +105,23 @@ pub fn scan_blocks(mut scanner: Scanner, get_blocks_bin: GetBlocksResponse) {
                         "tx_hash": hex::encode(x.transaction()),
                         "index_in_transaction":x.index_in_transaction(),
                         "index_on_blockchain": x.index_on_blockchain(),
-                        "payment_id": u64::from_le_bytes(payment_id)
+                        "payment_id": u64::from_le_bytes(payment_id),
+                        "block_height": get_blocks_bin.start_height + (index as u64)
                     });
 
                     output_jsons.push(output_json);
                 }
-                let final_output_json = json!(output_jsons);
-                if output_jsons.len() > 0 {
-                    println!("{}", final_output_json.to_string())
-                }
             }
-            Err(e) => {
-                println!("Error scanning block: {}", e);
+            Err(error) => {
+                let error_message = format!("Error scanning block: {}", error);
+                let error_json = json!({
+                    "error": error_message
+                })
+                .to_string();
+                return error_json;
             }
         }
     }
+    let final_output_json: serde_json::Value = json!({"outputs":output_jsons});
+    return final_output_json.to_string();
 }

@@ -111,7 +111,7 @@ pub extern "C" fn parse_response(response_len: usize) {
                     output_string(&convert_to_json(&get_blocks_bin_response_meta(
                         &blocks_response,
                     )));
-                    scan_blocks(scanner, blocks_response);
+                    output_string(&scan_blocks(scanner, blocks_response));
                 }
             });
         }
