@@ -3,11 +3,12 @@ pub mod block_parsing;
 use block_parsing::convert_to_json;
 use block_parsing::get_blocks_bin_response_meta;
 use block_parsing::scan_blocks;
-use cuprate_epee_encoding::{from_bytes, to_bytes, EpeeObject, EpeeValue};
-use cuprate_rpc_types::bin::{GetBlocksRequest, GetBlocksResponse};
+use cuprate_epee_encoding::{from_bytes, to_bytes};
+use cuprate_rpc_types::bin::GetBlocksRequest;
 use curve25519_dalek::scalar::Scalar;
 use hex::FromHex;
 use monero_wallet;
+use monero_wallet::address::Network;
 use serde_json::json;
 
 use monero_wallet::{Scanner, ViewPair};
@@ -16,6 +17,8 @@ use your_program::{input, input_string, output, output_string};
 use zeroize::Zeroizing;
 thread_local! {
     static GLOBAL_SCANNER: RefCell<Option<Scanner>> = RefCell::new(None);
+    static GLOBAL_VIEWPAIR: RefCell<Option<ViewPair>> = RefCell::new(None);
+    static GLOBAL_NETWORK: RefCell<Option<Network>> = RefCell::new(None);
 }
 mod your_program {
     /// implement input & output in your program to share arrays with the monero-wallet-api
@@ -65,10 +68,67 @@ pub extern "C" fn init_viewpair(
     let primary_address = input_string(primary_address_string_len);
     let secret_view_key = input_string(secret_view_key_string_len);
 
-    let viewpair = make_viewpair(primary_address, secret_view_key);
+    let viewpair = make_viewpair(primary_address.as_str(), secret_view_key.as_str());
     GLOBAL_SCANNER.with(|old_scanner| {
         let mut global_scanner = old_scanner.borrow_mut();
-        *global_scanner = Some(Scanner::new(viewpair))
+        *global_scanner = Some(Scanner::new(viewpair));
+    });
+    GLOBAL_VIEWPAIR.with(|old_viewpair| {
+        let mut global_viewpair = old_viewpair.borrow_mut();
+        *global_viewpair = Some(make_viewpair(
+            primary_address.as_str(),
+            secret_view_key.as_str(),
+        ));
+    });
+    GLOBAL_VIEWPAIR.with(|old_viewpair| {
+        let mut global_viewpair = old_viewpair.borrow_mut();
+        *global_viewpair = Some(make_viewpair(
+            primary_address.as_str(),
+            secret_view_key.as_str(),
+        ));
+    });
+    GLOBAL_NETWORK.with(|old_network| {
+        let mut global_network = old_network.borrow_mut();
+        *global_network = Some(
+            monero_wallet::address::MoneroAddress::from_str_with_unchecked_network(
+                primary_address.as_str(),
+            )
+            .map_err(|e| {
+                eprintln!(
+                    "There is an issue with the primary address that you provided: {}",
+                    primary_address.to_string()
+                );
+                eprintln!("{}", e.to_string());
+            })
+            .unwrap()
+            .network(),
+        );
+    });
+}
+#[no_mangle]
+pub extern "C" fn make_integrated_address(payment_id: u64) {
+    GLOBAL_VIEWPAIR.with(|old_viewpair| match old_viewpair.borrow().clone() {
+        None => {
+            let error_json = json!({
+                "error": "the scanner / viewpair was not initialized. integrated address did not get created."
+            })
+            .to_string();
+            output_string(&error_json);
+        }
+        Some(viewpair) => {
+            GLOBAL_NETWORK.with(|old_network| match old_network.borrow().clone(){
+                None=> {
+                    let error_json = json!({
+                        "error": "the scanner / viewpair was not initialized. integrated address did not get created."
+                    }).to_string();
+                    output_string(&error_json);
+                },
+                Some(network)=> {
+                    let bytes_back: [u8; 8] = payment_id.to_le_bytes();
+                    output_string(&viewpair.legacy_integrated_address(network, bytes_back).to_string());
+                }});
+
+        }
     });
 }
 
@@ -93,8 +153,7 @@ pub extern "C" fn build_getblocksbin_request(
 
     output(to_bytes(req_params).unwrap().to_vec().as_ref());
 }
-// let num = u64::from_le_bytes(bytes);
-// viewpair.legacy_integrated_address(network, payment_id)
+
 #[no_mangle]
 pub extern "C" fn scan_blocks_with_get_blocks_bin(response_len: usize) {
     let response = input(response_len);
@@ -149,22 +208,19 @@ pub extern "C" fn convert_get_blocks_bin_response_to_json(response_len: usize) {
     }
 }
 ///rust API
-pub fn make_viewpair(primary_address: String, secret_view_key: String) -> ViewPair {
+pub fn make_viewpair(primary_address: &str, secret_view_key: &str) -> ViewPair {
     let view_key_bytes = <[u8; 32]>::from_hex(secret_view_key).unwrap();
     monero_wallet::ViewPair::new(
-        monero_wallet::address::MoneroAddress::from_str_with_unchecked_network(
-            primary_address.as_str(),
-        )
-        .map_err(|e| {
-            eprintln!(
-                "There is an issue with the primary address that you provided: {}",
-                primary_address.to_string()
-            );
-            eprintln!("{}", e.to_string());
-            std::process::exit(1);
-        })
-        .unwrap()
-        .spend(),
+        monero_wallet::address::MoneroAddress::from_str_with_unchecked_network(primary_address)
+            .map_err(|e| {
+                eprintln!(
+                    "There is an issue with the primary address that you provided: {}",
+                    primary_address.to_string()
+                );
+                eprintln!("{}", e.to_string());
+            })
+            .unwrap()
+            .spend(),
         Zeroizing::new(Scalar::from_canonical_bytes(view_key_bytes).unwrap()),
     )
     .unwrap()

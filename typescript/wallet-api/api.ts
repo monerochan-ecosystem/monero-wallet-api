@@ -63,6 +63,15 @@ export class ViewPair extends WasmProcessor {
       callback(res);
     }
   }
+  public makeIntegratedAddress(paymentId: number) {
+    let address = "";
+    this.readFromWasmMemory = (ptr, len) => {
+      address = this.readString(ptr, len);
+    };
+    //@ts-ignore
+    this.tinywasi.instance.exports.make_integrated_address(BigInt(paymentId));
+    return address;
+  }
 }
 
 export class NodeUrl extends WasmProcessor {

@@ -44,6 +44,7 @@ test("fetch blocks starting from latest height", async () => {
     SECRET_VIEW_KEY,
     STAGENET_URL
   );
+  console.log(viewPair.makeIntegratedAddress(1337));
   const blocks = await viewPair.getBlocksBin({
     start_height: getInfoResult.height - 20,
   });
