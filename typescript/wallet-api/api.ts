@@ -46,9 +46,9 @@ export class ViewPair extends WasmProcessor {
     return getBlocksBinScan(this, params, metaCallBack);
   }
   /**
-   * simpleScan
+   * scan
    */
-  public async simpleScan(start_height: number, callback: ScanResultCallback) {
+  public async scan(start_height: number, callback: ScanResultCallback) {
     let latest_meta: GetBlocksResultMeta = {
       new_height: start_height,
       daemon_height: start_height + 1,
