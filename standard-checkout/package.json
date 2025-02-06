@@ -1,0 +1,19 @@
+{
+  "name": "standard-checkout",
+  "module": "index.ts",
+  "type": "module",
+  "scripts": {
+    "start": "bun run start.ts",
+    "dev": "bun --hot dev.ts",
+    "build": "bun run build.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@spirobel/mininext": "^0.6.1"
+  }
+}
