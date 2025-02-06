@@ -7,14 +7,8 @@ url.set(
 
     <div class="payment-info">
       <div class="payment-amount">0.1337 XMR</div>
-      <div class="payment-title">CryptoGrampys Green Tea</div>
-      <div class="product-description">
-   Secure your bag of energizing green tea with XMR today. CryptoGrampys Green Tea is a refreshing, organic blend for those who value focus and privacy. This Sencha tea, with a hint of mint, offers a delicious invigorating boost.
-      Perfect for anyone seeking clarity and calm in the digital world.
-       Enjoy the natural benefits of antioxidants and a gentle lift,
-        while being protected by Monero's privacy. Fuel your mind, pay with Monero. 
-          </div>
-      
+      <div class="payment-title">Super Special Green Tea</div>
+
       <div class="payment-steps">
         <div class="step">
           <div class="step-content">
@@ -91,32 +85,6 @@ const styles = html`<style>
     border: 1px solid rgba(124, 58, 237, 0.2);
     border-radius: 20px;
     padding: 2rem;
-  }
-
-  .merchant-info {
-    text-align: center;
-    margin-bottom: 2rem;
-  }
-
-  .merchant-logo {
-    width: 64px;
-    height: 64px;
-    margin: 0 auto 1rem;
-    background: var(--primary);
-    border-radius: 12px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 0 30px rgba(124, 58, 237, 0.3);
-  }
-
-  .merchant-name {
-    font-size: 1.5rem;
-    font-weight: 600;
-    margin-bottom: 0.5rem;
-    background: linear-gradient(135deg, #fff 0%, #a78bfa 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
   }
 
   .payment-info {
