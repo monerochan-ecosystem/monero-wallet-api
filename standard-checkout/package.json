@@ -8,12 +8,14 @@
     "build": "bun run build.ts"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "@types/qrcode": "^1.5.5"
   },
   "peerDependencies": {
     "typescript": "^5.0.0"
   },
   "dependencies": {
-    "@spirobel/mininext": "^0.6.1"
+    "@spirobel/mininext": "^0.6.1",
+    "qrcode": "^1.5.4"
   }
 }

@@ -1,21 +1,27 @@
 import { url, head, commonHead, cssReset, html } from "@spirobel/mininext";
+import QRCode from "qrcode";
 head((mini) => mini.html`<title>hello hello</title>${commonHead}${cssReset}`);
 
-url.set(
-  "/",
-  (mini) => mini.html` <div class="checkout-container">
+url.set("/", async (mini) => {
+  const display_amount = 0.1337;
+  const address =
+    "5LnPfJ8m4FBAyh68X6AFB48Gnx9diT8jPbWN6UcZHJUZVQSLRhaaHuHQz3dGuxxZDXPYgCXzrkerK3m6Q1tHoougcfXbqxdYDNP17DMgxL";
+  const address_qrcode = await QRCode.toDataURL(address);
+  const payment_uri = `monero:${address}?tx_amount=${display_amount}`;
+  const payment_uri_qrcode = await QRCode.toDataURL(payment_uri);
+  return mini.html` <div class="checkout-container">
 
     <div class="payment-info">
-      <div class="payment-amount">0.1337 XMR</div>
+      <div class="payment-amount">${display_amount} XMR</div>
       <div class="payment-title">Super Special Green Tea</div>
 
       <div class="payment-steps">
         <div class="step">
           <div class="step-content">
             <h3>Copy Wallet Address</h3>
-            <p>Send exactly 0.1337 XMR to this address:</p>
+            <p>Send exactly ${display_amount} XMR to this address:</p>
             <div class="wallet-address">
-              5LnPfJ8m4FBAyh68X6AFB48Gnx9diT8jPbWN6UcZHJUZVQSLRhaaHuHQz3dGuxxZDXPYgCXzrkerK3m6Q1tHoougcfXbqxdYDNP17DMgxL
+              ${address}
               
             </div>
           </div>
@@ -26,11 +32,7 @@ url.set(
             <h3>Scan QR Code</h3>
             <p>Or scan this QR code with your wallet app:</p>
             <div class="qr-code">
-              <svg width="100%" height="100%" viewBox="0 0 100 100" fill="none">
-                <rect x="10" y="10" width="80" height="80" fill="#000"/>
-                <rect x="20" y="20" width="60" height="60" fill="#fff"/>
-                <rect x="30" y="30" width="40" height="40" fill="#000"/>
-              </svg>
+              <img src="${payment_uri_qrcode}" width="100%" height="100%" />
             </div>
           </div>
         </div>
@@ -46,8 +48,8 @@ url.set(
     </div>
   </div>
   ${styles}
-  `
-);
+  `;
+});
 
 export default url.install;
 
