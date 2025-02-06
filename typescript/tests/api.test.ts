@@ -78,9 +78,7 @@ test("run simple scan", async () => {
     SECRET_VIEW_KEY,
     STAGENET_URL
   );
-  const blocks = await viewPair.simpleScan(1731708, (result) =>
-    console.log(result)
-  );
+  const blocks = await viewPair.scan(1731708, (result) => console.log(result));
   console.log(
     `${currentFilename} simplescan ViewPair, Fetched blocks starting from height ${
       getInfoResult.height

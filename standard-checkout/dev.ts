@@ -1,6 +1,7 @@
 import type { Subprocess } from "bun";
 import { makeEntrypoint, standardDevReloader } from "@spirobel/mininext";
-
+import runOnStart from "./runOnStart";
+await runOnStart();
 dev();
 export default async function dev() {
   global.Reloader = standardDevReloader;
