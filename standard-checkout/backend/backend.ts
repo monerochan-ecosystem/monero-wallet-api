@@ -1,6 +1,6 @@
 import { url, head, commonHead, cssReset, html } from "@spirobel/mininext";
 import QRCode from "qrcode";
-head((mini) => mini.html`<title>hello hello</title>${commonHead}${cssReset}`);
+head((mini) => mini.html`<title>checkout</title>${commonHead}${cssReset}`);
 
 url.set("/", async (mini) => {
   const display_amount = 0.1337;
