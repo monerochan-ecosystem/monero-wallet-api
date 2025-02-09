@@ -34,9 +34,17 @@ export type GetBlocksBinResponse = {
   pool_info: "None" | PoolInfo;
   new_height: number; //get_blocks_bin.start_height + get_blocks_bin.blocks.len() aka new start_height to fetch
 };
+export type Status =
+  | "OK"
+  | "BUSY"
+  | "NOT MINING"
+  | "PAYMENT REQUIRED"
+  | "Failed." // there are other variations of this. depend on ! === "OK" instead
+  | string;
 export type GetBlocksResultMeta = {
   new_height: number;
   daemon_height: number;
+  status: Status;
 };
 export type Output = {
   amount: number;
