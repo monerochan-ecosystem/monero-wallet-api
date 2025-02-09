@@ -1,8 +1,13 @@
+declare global {
+  var scanworker: Worker;
+}
 export default function runOnStart() {
-  const worker = new Worker("./scanner.ts");
+  if (!global.scanworker) {
+    global.scanworker = new Worker("./scanner.ts");
 
-  worker.postMessage("hello");
-  worker.onmessage = (event) => {
-    console.log(event.data);
-  };
+    scanworker.postMessage("hello");
+    scanworker.onmessage = (event) => {
+      console.log(event.data);
+    };
+  }
 }
