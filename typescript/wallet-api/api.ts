@@ -52,6 +52,7 @@ export class ViewPair extends WasmProcessor {
     let latest_meta: GetBlocksResultMeta = {
       new_height: start_height,
       daemon_height: start_height + 1,
+      status: "",
     };
     while (latest_meta.new_height < latest_meta.daemon_height) {
       const res = await this.getBlocksBin(

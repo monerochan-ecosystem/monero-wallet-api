@@ -1,4 +1,4 @@
-use cuprate_rpc_types::bin::GetBlocksResponse;
+use cuprate_rpc_types::{bin::GetBlocksResponse, misc::Status};
 use cuprate_types::TransactionBlobs;
 use monero_wallet::{
     block::Block,
@@ -30,6 +30,7 @@ where
 pub struct GetBlocksResult {
     new_height: u64,
     daemon_height: u64,
+    status: Status,
 }
 pub fn get_blocks_bin_response_meta(get_blocks_bin: &GetBlocksResponse) -> GetBlocksResult {
     let new_height = get_blocks_bin.start_height + (get_blocks_bin.blocks.len() as u64);
@@ -38,6 +39,7 @@ pub fn get_blocks_bin_response_meta(get_blocks_bin: &GetBlocksResponse) -> GetBl
     GetBlocksResult {
         new_height,
         daemon_height,
+        status: get_blocks_bin.base.response_base.status.clone(),
     }
 }
 
