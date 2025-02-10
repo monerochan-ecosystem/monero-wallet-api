@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "3a3d4846-d928-4054-8866-5a566fd5cfa6",
+  "id": "12ce5347-52e7-4595-9423-3b3e3f1dad1e",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "checkout_session": {
@@ -23,9 +23,16 @@
         },
         "session_id": {
           "name": "session_id",
-          "type": "integer",
+          "type": "text",
           "primaryKey": false,
           "notNull": true,
+          "autoincrement": false
+        },
+        "address": {
+          "name": "address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
           "autoincrement": false
         },
         "paid_status": {

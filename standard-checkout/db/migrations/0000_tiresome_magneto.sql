@@ -1,7 +1,8 @@
 CREATE TABLE `checkout_session` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`amount` integer NOT NULL,
-	`session_id` integer NOT NULL,
+	`session_id` text NOT NULL,
+	`address` text,
 	`paid_status` integer DEFAULT false NOT NULL,
 	`timestamp` text DEFAULT (CURRENT_TIMESTAMP)
 );

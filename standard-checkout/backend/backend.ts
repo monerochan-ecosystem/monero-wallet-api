@@ -1,8 +1,30 @@
 import { url, head, commonHead, cssReset, html } from "@spirobel/mininext";
 import QRCode from "qrcode";
+import { db } from "../db/db";
+import { checkoutSession } from "../db/schema";
+import { ViewPair } from "@spirobel/monero-wallet-api";
+import { PRIMARY_ADDRESS, SECRET_VIEW_KEY, STAGENET_URL } from "../scanner";
 head((mini) => mini.html`<title>checkout</title>${commonHead}${cssReset}`);
+url.set("/new-session", async (mini) => {
+  const secret = crypto.randomUUID();
+  const viewPair = await ViewPair.create(
+    PRIMARY_ADDRESS,
+    SECRET_VIEW_KEY,
+    STAGENET_URL
+  );
+  const insertedRow = db
+    .insert(checkoutSession)
+    .values({ amount: 0.1337, sessionId: secret })
+    .returning()
+    .get();
+  const address = await viewPair.makeIntegratedAddress(insertedRow.id);
+  await db.update(checkoutSession).set({ address }).returning();
+
+  return mini.html`<a href="/checkoutId?=${insertedRow.sessionId}">checkout-session link</a>`;
+});
 
 url.set("/", async (mini) => {
+  const sessionId = mini.params.get("checkoutId");
   const display_amount = 0.1337;
   const address =
     "5LnPfJ8m4FBAyh68X6AFB48Gnx9diT8jPbWN6UcZHJUZVQSLRhaaHuHQz3dGuxxZDXPYgCXzrkerK3m6Q1tHoougcfXbqxdYDNP17DMgxL";
