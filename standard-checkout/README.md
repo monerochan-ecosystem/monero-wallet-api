@@ -1,16 +1,4 @@
-# aldi
-
-quickstart:
-
-```bash
-bun create spirobel/gucci yournewproject
-```
-
-barebones quickstart:
-
-```bash
-bun create spirobel/aldi yournewproject
-```
+# monero checkout implementation
 
 if you don't have bun installed, run first:
 
@@ -23,6 +11,14 @@ To install dependencies:
 ```bash
 bun install
 ```
+
+After installing the dependencies, make yourself a database with:
+
+```bash
+bun run db:migrate
+```
+
+Now you can start the server with the dev command (it will refresh on code changes):
 
 dev:
 
