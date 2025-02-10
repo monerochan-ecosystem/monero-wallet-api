@@ -5,18 +5,22 @@
   "scripts": {
     "start": "bun run start.ts",
     "dev": "bun --hot dev.ts",
-    "build": "bun run build.ts"
+    "build": "bun run build.ts",
+    "db:mm": "bunx drizzle-kit generate --dialect sqlite --schema ./db/schema.ts --out ./db/migrations",
+    "db:migrate": "bun db/migrate.ts"
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "@types/qrcode": "^1.5.5"
+    "@types/qrcode": "^1.5.5",
+    "drizzle-kit": "^0.30.4"
   },
   "peerDependencies": {
     "typescript": "^5.0.0"
   },
   "dependencies": {
-    "@spirobel/monero-wallet-api": "../typescript",
     "@spirobel/mininext": "^0.6.1",
+    "@spirobel/monero-wallet-api": "../typescript",
+    "drizzle-orm": "^0.39.2",
     "qrcode": "^1.5.4"
   }
 }
