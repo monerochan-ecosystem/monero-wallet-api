@@ -1,7 +1,7 @@
 import { sqliteTable, integer, text } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 
-export const payments = sqliteTable("outputs", {
+export const outputs = sqliteTable("outputs", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   amount: integer("amount").notNull(),
   blockHeight: integer("block_height").notNull(),
@@ -16,7 +16,8 @@ export const payments = sqliteTable("outputs", {
 export const checkoutSession = sqliteTable("checkout_session", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   amount: integer("amount").notNull(),
-  sessionId: integer("session_id").notNull(),
+  sessionId: text("session_id").notNull(),
+  address: text("address"),
   paidStatus: integer("paid_status", { mode: "boolean" })
     .notNull()
     .default(false),
