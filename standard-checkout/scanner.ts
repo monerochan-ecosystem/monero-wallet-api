@@ -29,6 +29,21 @@ async function scanLoop() {
       await viewPair.scan(current_height, (result) => {
         //TODO insert scan result
         if ("new_height" in result) {
+          for (const output of result.outputs) {
+            try {
+              const newOutputRow = db
+                .insert(schema.outputs)
+                .values(output)
+                .onConflictDoNothing()
+                .returning()
+                .get();
+              console.log("new row", newOutputRow);
+            } catch (error) {
+              console.log("new output row ", error);
+            }
+          }
+          if (result.outputs.length > 0) {
+          }
           console.log("scanLoop, new height:", current_height, result);
           const syncStateRow = db
             .insert(schema.syncState)

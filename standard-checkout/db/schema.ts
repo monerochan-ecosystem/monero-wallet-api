@@ -4,12 +4,12 @@ import { sql } from "drizzle-orm";
 export const outputs = sqliteTable("outputs", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   amount: integer("amount").notNull(),
-  blockHeight: integer("block_height").notNull(),
-  indexInTransaction: integer("index_in_transaction").notNull(),
-  indexOnBlockchain: integer("index_on_blockchain").notNull(),
-  paymentId: integer("payment_id").notNull(), // payment_id == checkout_session id
-  stealthAddress: text("stealth_address").notNull().unique(),
-  txHash: text("tx_hash").notNull(),
+  block_height: integer("block_height").notNull(),
+  index_in_transaction: integer("index_in_transaction").notNull(),
+  index_on_blockchain: integer("index_on_blockchain").notNull(),
+  payment_id: integer("payment_id").notNull(), // payment_id == checkout_session id
+  stealth_address: text("stealth_address").notNull().unique(),
+  tx_hash: text("tx_hash").notNull(),
   timestamp: text("timestamp").default(sql`(CURRENT_TIMESTAMP)`),
 });
 
