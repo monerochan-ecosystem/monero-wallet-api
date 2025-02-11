@@ -3,9 +3,10 @@ import QRCode from "qrcode";
 import { db } from "../db/db";
 import { checkoutSession } from "../db/schema";
 import { ViewPair } from "@spirobel/monero-wallet-api";
-import { PRIMARY_ADDRESS, SECRET_VIEW_KEY, STAGENET_URL } from "../scanner";
+import { PRIMARY_ADDRESS, SECRET_VIEW_KEY, STAGENET_URL } from "./viewpair";
+import { eq } from "drizzle-orm";
 head((mini) => mini.html`<title>checkout</title>${commonHead}${cssReset}`);
-url.set("/new-session", async (mini) => {
+url.set("/newsession", async (mini) => {
   const secret = crypto.randomUUID();
   const viewPair = await ViewPair.create(
     PRIMARY_ADDRESS,
@@ -20,14 +21,23 @@ url.set("/new-session", async (mini) => {
   const address = await viewPair.makeIntegratedAddress(insertedRow.id);
   await db.update(checkoutSession).set({ address }).returning();
 
-  return mini.html`<a href="/checkoutId?=${insertedRow.sessionId}">checkout-session link</a>`;
+  return mini.html`<a href="/?checkoutId=${insertedRow.sessionId}">checkout-session link</a>`;
 });
 
 url.set("/", async (mini) => {
   const sessionId = mini.params.get("checkoutId");
-  const display_amount = 0.1337;
-  const address =
-    "5LnPfJ8m4FBAyh68X6AFB48Gnx9diT8jPbWN6UcZHJUZVQSLRhaaHuHQz3dGuxxZDXPYgCXzrkerK3m6Q1tHoougcfXbqxdYDNP17DMgxL";
+  if (!sessionId) return mini.html`<h1>checkout session not found </h1>`;
+  const sessionRow = db
+    .select()
+    .from(checkoutSession)
+    .where(eq(checkoutSession.sessionId, sessionId))
+    .get();
+  if (!sessionRow?.address)
+    return mini.html`<h1>checkout session not found </h1>`;
+
+  const display_amount = sessionRow.amount;
+  const address = sessionRow.address;
+
   const address_qrcode = await QRCode.toDataURL(address);
   const payment_uri = `monero:${address}?tx_amount=${display_amount}`;
   const payment_uri_qrcode = await QRCode.toDataURL(payment_uri);
@@ -63,10 +73,6 @@ url.set("/", async (mini) => {
 
     <div class="payment-status pending">
       Waiting for payment...
-    </div>
-    
-    <div class="timer">
-      Payment window expires in: 14:59
     </div>
   </div>
   ${styles}
