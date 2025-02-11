@@ -23,3 +23,9 @@ export const checkoutSession = sqliteTable("checkout_session", {
     .default(false),
   timestamp: text("timestamp").default(sql`(CURRENT_TIMESTAMP)`),
 });
+
+export const syncState = sqliteTable("sync_state", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  height: integer("height").notNull(),
+  timestamp: text("timestamp").default(sql`(CURRENT_TIMESTAMP)`),
+});
