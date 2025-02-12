@@ -8,6 +8,7 @@ import {
   SECRET_VIEW_KEY,
   STAGENET_URL,
 } from "./backend/viewpair";
+import { eq } from "drizzle-orm";
 const db = drizzle(new Database("./db/sqlite.db"), {
   schema,
 });
@@ -38,6 +39,30 @@ async function scanLoop() {
                 .returning()
                 .get();
               console.log("new row", newOutputRow);
+              const checkoutSession = db
+                .select()
+                .from(schema.checkoutSession)
+                .where(eq(schema.checkoutSession.id, output.payment_id))
+                .get();
+              if (checkoutSession) {
+                const allOutputsWithPaymentId = db
+                  .select()
+                  .from(schema.outputs)
+                  .where(eq(schema.outputs.payment_id, output.payment_id))
+                  .all();
+                let totalAmount = 0;
+                for (const savedOutput of allOutputsWithPaymentId) {
+                  totalAmount += savedOutput.amount;
+                }
+                if (totalAmount >= output.amount * 1000000000000)
+                  console.log(output.payment_id, totalAmount, checkoutSession);
+                db.update(schema.checkoutSession)
+                  .set({ paidStatus: true })
+                  .returning()
+                  .get();
+              }
+
+              console.log(output.payment_id, output, checkoutSession);
             } catch (error) {
               console.log("new output row ", error);
             }
