@@ -2,11 +2,11 @@ import { ViewPair } from "@spirobel/monero-wallet-api";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { Database } from "bun:sqlite";
 import * as schema from "./db/schema.ts";
-import { sleep } from "bun";
 import {
   PRIMARY_ADDRESS,
   SECRET_VIEW_KEY,
   STAGENET_URL,
+  START_HEIGHT,
 } from "./backend/viewpair";
 import { eq } from "drizzle-orm";
 const db = drizzle(new Database("./db/sqlite.db"), {
@@ -21,48 +21,48 @@ const viewPair = await ViewPair.create(
   STAGENET_URL
 );
 //TODO:set current height from db
-let current_height = 1788708; //1788708; //3342711;  //1731708;
+let current_height = START_HEIGHT;
+const syncState = db.select().from(schema.syncState).get();
+if (syncState && syncState?.height > current_height)
+  current_height = syncState?.height;
+
 await scanLoop();
 
 async function scanLoop() {
   while (true) {
     try {
       await viewPair.scan(current_height, (result) => {
-        //TODO insert scan result
         if ("new_height" in result) {
-          for (const output of result.outputs) {
+          for (const unsavedOutput of result.outputs) {
             try {
               const newOutputRow = db
                 .insert(schema.outputs)
-                .values(output)
+                .values(unsavedOutput)
                 .onConflictDoNothing()
                 .returning()
                 .get();
-              console.log("new row", newOutputRow);
+              if (!newOutputRow) continue;
               const checkoutSession = db
                 .select()
                 .from(schema.checkoutSession)
-                .where(eq(schema.checkoutSession.id, output.payment_id))
+                .where(eq(schema.checkoutSession.id, newOutputRow.payment_id))
                 .get();
               if (checkoutSession) {
                 const allOutputsWithPaymentId = db
                   .select()
                   .from(schema.outputs)
-                  .where(eq(schema.outputs.payment_id, output.payment_id))
+                  .where(eq(schema.outputs.payment_id, newOutputRow.payment_id))
                   .all();
                 let totalAmount = 0;
                 for (const savedOutput of allOutputsWithPaymentId) {
                   totalAmount += savedOutput.amount;
                 }
-                if (totalAmount >= output.amount * 1000000000000)
-                  console.log(output.payment_id, totalAmount, checkoutSession);
-                db.update(schema.checkoutSession)
-                  .set({ paidStatus: true })
-                  .returning()
-                  .get();
+                if (totalAmount >= newOutputRow.amount * 1000000000000)
+                  db.update(schema.checkoutSession)
+                    .set({ paidStatus: true })
+                    .returning()
+                    .get();
               }
-
-              console.log(output.payment_id, output, checkoutSession);
             } catch (error) {
               console.log("new output row ", error);
             }
