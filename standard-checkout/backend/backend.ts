@@ -43,11 +43,13 @@ url.set(
   }
     .payment-status {
     text-align: center;
-    margin-top: 2rem;
     padding: 1rem;
     border-radius: 12px;
     animation: pulse 2s infinite;
     backdrop-filter: blur(5px);
+  }
+  html {
+        background: rgba(20, 20, 20, 0.8);
   }
 
   .payment-status.pending {
@@ -70,7 +72,6 @@ url.set(
     }
   }
   body {
-    background: var(--bg);
     font-family: "Inter", system-ui, sans-serif;
     color: var(--text);
     background: rgba(20, 20, 20, 0.8);
@@ -125,9 +126,6 @@ url.set("/", async (mini) => {
         </div>
       </div>
     </div>
- <div class="payment-status pending">
-      Waiting for payment...
-    </div>
    <iframe src="/paymentstatus?checkoutId=${sessionRow.sessionId}" scrolling="no" frameBorder="0"></iframe>
   </div>
   ${styles}
@@ -147,7 +145,7 @@ const styles = html`<style>
   iframe {
     border: none;
     width: 100%;
-    height: 100%;
+    height: 50px;
   }
 
   body {
