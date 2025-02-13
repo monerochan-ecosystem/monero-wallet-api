@@ -5,7 +5,15 @@ import { checkoutSession } from "../db/schema";
 import { ViewPair } from "@spirobel/monero-wallet-api";
 import { PRIMARY_ADDRESS, SECRET_VIEW_KEY, STAGENET_URL } from "./viewpair";
 import { eq } from "drizzle-orm";
-head((mini) => mini.html`<title>checkout</title>${commonHead}${cssReset}`);
+head(
+  (mini) => mini.html`
+  <title>checkout</title>
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  />
+${cssReset}`
+);
 url.set("/newsession", async (mini) => {
   const secret = crypto.randomUUID();
   const viewPair = await ViewPair.create(
