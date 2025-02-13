@@ -23,17 +23,36 @@ url.set("/newsession", async (mini) => {
 
   return mini.html`<a href="/?checkoutId=${insertedRow.sessionId}">checkout-session link</a>`;
 });
-url.set(
-  "/paymentstatus",
-  (mini) =>
-    mini.html`${mini.headers({
-      "Cache-Control": "no-cache, no-store, must-revalidate",
-      Pragma: "no-cache",
-      Expires: "0",
-      Refresh: "1",
-    })}    <div class="payment-status pending">
+url.set("/paymentstatus", (mini) => {
+  const sessionId = mini.params.get("checkoutId");
+  if (!sessionId) return mini.html`<h1>checkout session not found </h1>`;
+  const sessionRow = db
+    .select()
+    .from(checkoutSession)
+    .where(eq(checkoutSession.sessionId, sessionId))
+    .get();
+  if (!sessionRow?.address)
+    return mini.html`<h1>checkout session not found </h1>`;
+  return mini.html`${mini.headers({
+    "Cache-Control": "no-cache, no-store, must-revalidate",
+    Pragma: "no-cache",
+    Expires: "0",
+    Refresh: "1",
+  })}
+  
+   ${() => {
+     if (sessionRow.paidStatus) {
+       return mini.html`<div class="payment-status success">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 8px;">
+          <path d="M20 6L9 17l-5-5"/>
+        </svg>
+        <span>Payment received!</span>
+    </div>`;
+     }
+     return mini.html`<div class="payment-status pending">
       Waiting for payment...
-    </div><style> 
+    </div>`;
+   }}<style> 
         :root {
     --primary: #5b21b6;
     --accent: #7c3aed;
@@ -47,9 +66,12 @@ url.set(
     border-radius: 12px;
     animation: pulse 2s infinite;
     backdrop-filter: blur(5px);
+    display: flex;
+    justify-content: center; 
+    align-items: center; 
   }
   html {
-        background: rgba(20, 20, 20, 0.8);
+    background: rgba(20, 20, 20, 0.8);
   }
 
   .payment-status.pending {
@@ -78,8 +100,8 @@ url.set(
 
   }
   
-  </style>`
-);
+  </style>`;
+});
 url.set("/", async (mini) => {
   const sessionId = mini.params.get("checkoutId");
   if (!sessionId) return mini.html`<h1>checkout session not found </h1>`;
@@ -145,7 +167,7 @@ const styles = html`<style>
   iframe {
     border: none;
     width: 100%;
-    height: 50px;
+    height: 55px;
   }
 
   body {
