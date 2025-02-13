@@ -23,7 +23,62 @@ url.set("/newsession", async (mini) => {
 
   return mini.html`<a href="/?checkoutId=${insertedRow.sessionId}">checkout-session link</a>`;
 });
+url.set(
+  "/paymentstatus",
+  (mini) =>
+    mini.html`${mini.headers({
+      "Cache-Control": "no-cache, no-store, must-revalidate",
+      Pragma: "no-cache",
+      Expires: "0",
+      Refresh: "1",
+    })}    <div class="payment-status pending">
+      Waiting for payment...
+    </div><style> 
+        :root {
+    --primary: #5b21b6;
+    --accent: #7c3aed;
+    --text: #f8fafc;
+    --bg: #070707;
+    --success: #10b981;
+  }
+    .payment-status {
+    text-align: center;
+    margin-top: 2rem;
+    padding: 1rem;
+    border-radius: 12px;
+    animation: pulse 2s infinite;
+    backdrop-filter: blur(5px);
+  }
 
+  .payment-status.pending {
+    background: rgba(124, 58, 237, 0.1);
+  }
+
+  .payment-status.success {
+    background: rgba(16, 185, 129, 0.1);
+  }
+
+  @keyframes pulse {
+    0% {
+      opacity: 0.8;
+    }
+    50% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0.8;
+    }
+  }
+  body {
+    background: var(--bg);
+    font-family: "Inter", system-ui, sans-serif;
+    color: var(--text);
+    background: rgba(20, 20, 20, 0.8);
+
+  }
+  
+  </style>`
+);
 url.set("/", async (mini) => {
   const sessionId = mini.params.get("checkoutId");
   if (!sessionId) return mini.html`<h1>checkout session not found </h1>`;
@@ -70,10 +125,10 @@ url.set("/", async (mini) => {
         </div>
       </div>
     </div>
-
-    <div class="payment-status pending">
+ <div class="payment-status pending">
       Waiting for payment...
     </div>
+   <iframe src="/paymentstatus?checkoutId=${sessionRow.sessionId}" scrolling="no" frameBorder="0"></iframe>
   </div>
   ${styles}
   `;
@@ -88,6 +143,11 @@ const styles = html`<style>
     --text: #f8fafc;
     --bg: #070707;
     --success: #10b981;
+  }
+  iframe {
+    border: none;
+    width: 100%;
+    height: 100%;
   }
 
   body {
