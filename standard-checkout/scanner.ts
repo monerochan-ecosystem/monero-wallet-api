@@ -57,7 +57,7 @@ async function scanLoop() {
                 for (const savedOutput of allOutputsWithPaymentId) {
                   totalAmount += savedOutput.amount;
                 }
-                if (totalAmount >= newOutputRow.amount * 1000000000000)
+                if (totalAmount >= checkoutSession.amount * 1000000000000)
                   db.update(schema.checkoutSession)
                     .set({ paidStatus: true })
                     .where(eq(schema.checkoutSession.id, checkoutSession.id))
