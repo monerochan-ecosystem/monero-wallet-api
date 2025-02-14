@@ -60,6 +60,7 @@ async function scanLoop() {
                 if (totalAmount >= newOutputRow.amount * 1000000000000)
                   db.update(schema.checkoutSession)
                     .set({ paidStatus: true })
+                    .where(eq(schema.checkoutSession.id, checkoutSession.id))
                     .returning()
                     .get();
               }
