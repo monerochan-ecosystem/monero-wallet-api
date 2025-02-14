@@ -1,0 +1,30 @@
+{
+  "name": "@spirobel/monero-wallet-api",
+  "license": "MIT",
+  "module": "dist/api.js",
+  "type": "module",
+  "main": "dist/api.js",
+  "types": "dist/api.d.ts",
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "publish": "bun run build && npm publish",
+    "inline": "bun build scripts/wasmFile.ts --target=browser --outdir dist",
+    "sum": "cat dist/wasmFile.js | sha256sum > checksum.txt",
+    "inlinesum": "bun run inline && bun run sum",
+    "build": "tsc",
+    "clean": "rm -rf ./dist"
+  },
+  "files": ["dist"],
+  "version": "0.1.0",
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "zod": "^3.24.1"
+  }
+}
