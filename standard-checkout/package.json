@@ -19,7 +19,7 @@
   },
   "dependencies": {
     "@spirobel/mininext": "^0.6.1",
-    "@spirobel/monero-wallet-api": "../typescript",
+    "@spirobel/monero-wallet-api": "0.1",
     "drizzle-orm": "^0.39.2",
     "qrcode": "^1.5.4"
   }

@@ -9,15 +9,15 @@
     "access": "public"
   },
   "scripts": {
-    "publish": "bun run build && npm publish",
-    "inline": "bun build scripts/wasmFile.ts --target=browser --outdir dist",
-    "sum": "cat dist/wasmFile.js | sha256sum > checksum.txt",
+    "publish": "bun run build && bun run inlinesum && npm publish",
+    "inline": "bun build scripts/wasmFile.ts --target=browser --outdir dist/wasm-processing",
+    "sum": "cat dist/wasm-processing/wasmFile.js | sha256sum > checksum.txt",
     "inlinesum": "bun run inline && bun run sum",
     "build": "tsc",
     "clean": "rm -rf ./dist"
   },
   "files": ["dist"],
-  "version": "0.1.0",
+  "version": "0.1.2",
   "devDependencies": {
     "@types/bun": "latest"
   },
