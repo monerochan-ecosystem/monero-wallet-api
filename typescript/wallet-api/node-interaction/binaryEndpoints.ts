@@ -65,10 +65,15 @@ export type ErrorResponse = {
 };
 export type GetBlocksBinMetaCallback = (meta: GetBlocksResultMeta) => void;
 
-export async function getBlocksBinScan<T extends WasmProcessor>(
+/**
+ *  This function creates a binary request to the get_blocks.bin endpoint of the Monerod node.
+ * @param processor it uses the wasm module to build the request and parse the response.
+ * @param params params that will be turned into epee (moner lib that does binary serialization)
+ * @returns a Uint8Array that can be used to make a fetch request to the get_blocks.bin endpoint.
+ */
+export function getBlocksBinMakeRequest<T extends WasmProcessor>(
   processor: T,
-  params: GetBlocksBinRequest,
-  metaCallBack?: GetBlocksBinMetaCallback
+  params: GetBlocksBinRequest
 ) {
   // https://github.com/monero-project/monero/blob/941ecefab21db382e88065c16659864cb8e763ae/src/rpc/core_rpc_server_commands_defs.h#L178
   //    enum REQUESTED_INFO
@@ -93,9 +98,9 @@ export async function getBlocksBinScan<T extends WasmProcessor>(
     no_miner_tx_num = 1;
   }
 
-  let getBlocksArray: Uint8Array;
+  let getBlocksRequestArray: Uint8Array;
   processor.readFromWasmMemory = (ptr, len) => {
-    getBlocksArray = processor.readArray(ptr, len);
+    getBlocksRequestArray = processor.readArray(ptr, len);
   };
   //@ts-ignore
   processor.tinywasi.instance.exports.build_getblocksbin_request(
@@ -105,10 +110,17 @@ export async function getBlocksBinScan<T extends WasmProcessor>(
     no_miner_tx_num,
     BigInt(params.pool_info_since || 0)
   );
-
+  return getBlocksRequestArray!; // written in build_getblocksbin_request call to readFromWasmMemory
+}
+export async function getBlocksBinScan<T extends WasmProcessor>(
+  processor: T,
+  params: GetBlocksBinRequest,
+  metaCallBack?: GetBlocksBinMetaCallback
+) {
+  const getBlocksRequestArray = getBlocksBinMakeRequest(processor, params);
   const getBlocksBinResponseBuffer = await binaryFetchRequest(
     processor.node_url + "/getblocks.bin",
-    getBlocksArray! // written in build_getblocksbin_request call to readFromWasmMemory
+    getBlocksRequestArray! // written in build_getblocksbin_request call to readFromWasmMemory
   );
   processor.writeToWasmMemory = (ptr, len) => {
     processor.writeArray(ptr, len, getBlocksBinResponseBuffer);
