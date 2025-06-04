@@ -130,3 +130,71 @@ export class NodeUrl extends WasmProcessor {
 //   "5B5ieVKGSyfAyh68X6AFB48Gnx9diT8jPbWN6UcZHJUZVQSLRhaaHuHQz3dGuxxZDXPYgCXzrkerK3m6Q1tHoougR7VYyd9",
 //   "10b9885324933ee6055b001a3ee4b70f6832b866db389ad023b51fe7e2e7ca01"
 // );
+
+export type AddressAndViewKey = {
+  primary_address: string;
+  secret_view_key: string;
+};
+/**
+ * The ViewPairs class contains a set of ViewPair objects that can be used to scan multiple addresses at once.
+ * (while only retrieving the blocks from the node once)
+ */
+export class ViewPairs {
+  private viewPairs: Map<string, ViewPair>;
+
+  protected constructor() {
+    this.viewPairs = new Map<string, ViewPair>();
+  }
+  public static async create(
+    pairs: AddressAndViewKey[],
+    node_url?: string
+  ): Promise<ViewPairs> {
+    const viewPairs = new ViewPairs();
+    for (const element of pairs) {
+      const viewPair = await ViewPair.create(
+        element.primary_address,
+        element.secret_view_key,
+        node_url
+      );
+      viewPairs.viewPairs.set(element.primary_address, viewPair);
+    }
+    return viewPairs;
+  }
+
+  public async addViewPair(
+    primary_address: string,
+    secret_view_key: string,
+    node_url?: string
+  ): Promise<ViewPair> {
+    const viewPair = await ViewPair.create(
+      primary_address,
+      secret_view_key,
+      node_url
+    );
+    this.viewPairs.set(primary_address, viewPair);
+    return viewPair;
+  }
+
+  public getViewPair(primary_address: string): ViewPair | undefined {
+    return this.viewPairs.get(primary_address);
+  }
+}
+
+//57wmxQgZugZRrsaZ2mhcVtZqrUxAB6nXdEj4pnQ975Te2J2djFbBEubUFxTwxurF4cYE1oF8m26BkA9QcZZXLkf3FM7qX9U
+//8e4fe64233b5a0213e06ef4662582f72d47f7304502654485050c8ac06ee0309
+
+// const viewpair = await ViewPairs.create([
+//   {
+//     primary_address:
+//       "5B5ieVKGSyfAyh68X6AFB48Gnx9diT8jPbWN6UcZHJUZVQSLRhaaHuHQz3dGuxxZDXPYgCXzrkerK3m6Q1tHoougR7VYyd9",
+//     secret_view_key:
+//       "10b9885324933ee6055b001a3ee4b70f6832b866db389ad023b51fe7e2e7ca01",
+//   },
+//   {
+//     primary_address:
+//       "57wmxQgZugZRrsaZ2mhcVtZqrUxAB6nXdEj4pnQ975Te2J2djFbBEubUFxTwxurF4cYE1oF8m26BkA9QcZZXLkf3FM7qX9U",
+//     secret_view_key:
+//       "8e4fe64233b5a0213e06ef4662582f72d47f7304502654485050c8ac06ee0309",
+//   },
+// ]);
+// console.log(viewpair);
