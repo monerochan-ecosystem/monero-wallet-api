@@ -112,6 +112,18 @@ export function getBlocksBinMakeRequest<T extends WasmProcessor>(
   );
   return getBlocksRequestArray!; // written in build_getblocksbin_request call to readFromWasmMemory
 }
+
+export async function getBlocksBinExecuteRequest<T extends WasmProcessor>(
+  processor: T,
+  params: GetBlocksBinRequest
+) {
+  const getBlocksRequestArray = getBlocksBinMakeRequest(processor, params);
+  const getBlocksBinResponseBuffer = await binaryFetchRequest(
+    processor.node_url + "/getblocks.bin",
+    getBlocksRequestArray! // written in build_getblocksbin_request call to readFromWasmMemory
+  );
+  return getBlocksBinResponseBuffer;
+}
 export async function getBlocksBinScanResponse<T extends WasmProcessor>(
   processor: T,
   getBlocksBinResponseBuffer: Uint8Array,
@@ -147,10 +159,9 @@ export async function getBlocksBinScan<T extends WasmProcessor>(
   params: GetBlocksBinRequest,
   metaCallBack?: GetBlocksBinMetaCallback
 ) {
-  const getBlocksRequestArray = getBlocksBinMakeRequest(processor, params);
-  const getBlocksBinResponseBuffer = await binaryFetchRequest(
-    processor.node_url + "/getblocks.bin",
-    getBlocksRequestArray! // written in build_getblocksbin_request call to readFromWasmMemory
+  const getBlocksBinResponseBuffer = await getBlocksBinExecuteRequest(
+    processor,
+    params
   );
   return getBlocksBinScanResponse(
     processor,
