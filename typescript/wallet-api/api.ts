@@ -1,6 +1,8 @@
 import {
   getBlocksBinJson,
   getBlocksBinScan,
+  getBlocksBinExecuteRequest,
+  getBlocksBinScanResponse,
   type ScanResult,
   type ErrorResponse,
   type GetBlocksBinMetaCallback,
@@ -44,9 +46,10 @@ export class ViewPair extends WasmProcessor {
     return viewPair;
   }
   /**
-   * This request helps making requests to the get_blocks.bin endpoint of the Monerod nodes.
+   * This function helps with making requests to the get_blocks.bin endpoint of the Monerod nodes. It does the Request and returns the outputs that belong to the ViewPair.
+   * (if outputs are found in the blocks that are returned)
    * @link https://docs.getmonero.org/rpc-library/monerod-rpc/#get_blocksbin
-   * @param params params that will be turned into epee (moner lib that does binary serialization)
+   * @param params params that will be turned into epee (monero lib that does binary serialization)
    * @param metaCallBack contains meta information about the getBlocksbin call (new sync height = start_height param + number of blocks)
    * @returns The difference to the same method on NodeUrl is: It returns {@link ScanResult} (outputs that belong to viewpair) and not just the blocks as json.
    */
@@ -55,6 +58,35 @@ export class ViewPair extends WasmProcessor {
     metaCallBack?: GetBlocksBinMetaCallback
   ) {
     return getBlocksBinScan(this, params, metaCallBack);
+  }
+  /**
+   * This function helps with making requests to the get_blocks.bin endpoint of the Monerod nodes.
+   * The difference compared to the getBlocksBin method is that it returns a Uint8Array that still has to be scanned for outputs.
+   * This is useful if you want to scan multiple viewpairs at once. You can take the Uint8Array and pass it to another ViewPair to scan for outputs.
+   * @param params params that will be turned into epee (monero lib that does binary serialization)
+   * @returns This method will return a Uint8Array that can subsequently be scanned for outputs with the getBlocksBinScanResponse method.
+   */
+  public async getBlocksBinExecuteRequest(params: GetBlocksBinRequest) {
+    return await getBlocksBinExecuteRequest(this, params);
+  }
+  /**
+   * This function helps with scanning the response of the getBlocksBinExecuteRequest method.
+   * It will parse the Uint8Array and return the outputs that belong to the ViewPair.
+   * (if outputs are found in the blocks that are contained in the Uint8Array that was returned by the getBlocksBinExecuteRequest method)
+   * @link https://docs.getmonero.org/rpc-library/monerod-rpc/#get_blocksbin
+   * @param getBlocksBinResponseBuffer the Uint8Array that was returned by the getBlocksBinExecuteRequest method.(which contains the blocks in binary format, returned from the Monerod node)
+   * @param metaCallBack contains meta information about the getBlocksbin call (new sync height = start_height param + number of blocks)
+   * @returns It returns {@link ScanResult} (outputs that belong to viewpair)
+   */
+  public getBlocksBinScanResponse(
+    getBlocksBinResponseBuffer: Uint8Array,
+    metaCallBack?: GetBlocksBinMetaCallback
+  ) {
+    return getBlocksBinScanResponse(
+      this,
+      getBlocksBinResponseBuffer,
+      metaCallBack
+    );
   }
   /**
    * This method will use getBlocks.bin from start height to daemon height.
@@ -183,18 +215,18 @@ export class ViewPairs {
 //57wmxQgZugZRrsaZ2mhcVtZqrUxAB6nXdEj4pnQ975Te2J2djFbBEubUFxTwxurF4cYE1oF8m26BkA9QcZZXLkf3FM7qX9U
 //8e4fe64233b5a0213e06ef4662582f72d47f7304502654485050c8ac06ee0309
 
-// const viewpair = await ViewPairs.create([
-//   {
-//     primary_address:
-//       "5B5ieVKGSyfAyh68X6AFB48Gnx9diT8jPbWN6UcZHJUZVQSLRhaaHuHQz3dGuxxZDXPYgCXzrkerK3m6Q1tHoougR7VYyd9",
-//     secret_view_key:
-//       "10b9885324933ee6055b001a3ee4b70f6832b866db389ad023b51fe7e2e7ca01",
-//   },
-//   {
-//     primary_address:
-//       "57wmxQgZugZRrsaZ2mhcVtZqrUxAB6nXdEj4pnQ975Te2J2djFbBEubUFxTwxurF4cYE1oF8m26BkA9QcZZXLkf3FM7qX9U",
-//     secret_view_key:
-//       "8e4fe64233b5a0213e06ef4662582f72d47f7304502654485050c8ac06ee0309",
-//   },
-// ]);
-// console.log(viewpair);
+const viewpair = await ViewPairs.create([
+  {
+    primary_address:
+      "5B5ieVKGSyfAyh68X6AFB48Gnx9diT8jPbWN6UcZHJUZVQSLRhaaHuHQz3dGuxxZDXPYgCXzrkerK3m6Q1tHoougR7VYyd9",
+    secret_view_key:
+      "10b9885324933ee6055b001a3ee4b70f6832b866db389ad023b51fe7e2e7ca01",
+  },
+  {
+    primary_address:
+      "57wmxQgZugZRrsaZ2mhcVtZqrUxAB6nXdEj4pnQ975Te2J2djFbBEubUFxTwxurF4cYE1oF8m26BkA9QcZZXLkf3FM7qX9U",
+    secret_view_key:
+      "8e4fe64233b5a0213e06ef4662582f72d47f7304502654485050c8ac06ee0309",
+  },
+]);
+console.log(viewpair);
