@@ -45,6 +45,10 @@ export type GetBlocksResultMeta = {
   new_height: number;
   daemon_height: number;
   status: Status;
+  primary_address:
+    | "parsing-monerod-response-without-wallet"
+    | "error-address-not-set"
+    | string;
 };
 export type Output = {
   amount: number;
@@ -54,21 +58,28 @@ export type Output = {
   payment_id: number;
   stealth_address: string;
   tx_hash: string;
+  primary_address: string;
 };
 
 export type ScanResult = {
   outputs: Output[];
   new_height: number;
+  primary_address: string;
 };
 export type ErrorResponse = {
   error: string;
 };
 export type GetBlocksBinMetaCallback = (meta: GetBlocksResultMeta) => void;
 
-export async function getBlocksBinScan<T extends WasmProcessor>(
+/**
+ *  This function creates a binary request to the get_blocks.bin endpoint of the Monerod node.
+ * @param processor it uses the wasm module to build the request and parse the response.
+ * @param params params that will be turned into epee (moner lib that does binary serialization)
+ * @returns a Uint8Array that can be used to make a fetch request to the get_blocks.bin endpoint.
+ */
+export function getBlocksBinMakeRequest<T extends WasmProcessor>(
   processor: T,
-  params: GetBlocksBinRequest,
-  metaCallBack?: GetBlocksBinMetaCallback
+  params: GetBlocksBinRequest
 ) {
   // https://github.com/monero-project/monero/blob/941ecefab21db382e88065c16659864cb8e763ae/src/rpc/core_rpc_server_commands_defs.h#L178
   //    enum REQUESTED_INFO
@@ -93,9 +104,9 @@ export async function getBlocksBinScan<T extends WasmProcessor>(
     no_miner_tx_num = 1;
   }
 
-  let getBlocksArray: Uint8Array;
+  let getBlocksRequestArray: Uint8Array;
   processor.readFromWasmMemory = (ptr, len) => {
-    getBlocksArray = processor.readArray(ptr, len);
+    getBlocksRequestArray = processor.readArray(ptr, len);
   };
   //@ts-ignore
   processor.tinywasi.instance.exports.build_getblocksbin_request(
@@ -105,11 +116,25 @@ export async function getBlocksBinScan<T extends WasmProcessor>(
     no_miner_tx_num,
     BigInt(params.pool_info_since || 0)
   );
+  return getBlocksRequestArray!; // written in build_getblocksbin_request call to readFromWasmMemory
+}
 
+export async function getBlocksBinExecuteRequest<T extends WasmProcessor>(
+  processor: T,
+  params: GetBlocksBinRequest
+) {
+  const getBlocksRequestArray = getBlocksBinMakeRequest(processor, params);
   const getBlocksBinResponseBuffer = await binaryFetchRequest(
     processor.node_url + "/getblocks.bin",
-    getBlocksArray! // written in build_getblocksbin_request call to readFromWasmMemory
+    getBlocksRequestArray! // written in build_getblocksbin_request call to readFromWasmMemory
   );
+  return getBlocksBinResponseBuffer;
+}
+export async function getBlocksBinScanResponse<T extends WasmProcessor>(
+  processor: T,
+  getBlocksBinResponseBuffer: Uint8Array,
+  metaCallBack?: GetBlocksBinMetaCallback
+) {
   processor.writeToWasmMemory = (ptr, len) => {
     processor.writeArray(ptr, len, getBlocksBinResponseBuffer);
   };
@@ -126,6 +151,7 @@ export async function getBlocksBinScan<T extends WasmProcessor>(
         | ErrorResponse;
       if (!("error" in result)) {
         result.new_height = resultMeta.new_height;
+        result.primary_address = resultMeta.primary_address;
       }
     };
   };
@@ -134,6 +160,21 @@ export async function getBlocksBinScan<T extends WasmProcessor>(
     getBlocksBinResponseBuffer.length
   );
   return result!; //result written in scan_blocks_with_get_blocks_bin
+}
+export async function getBlocksBinScan<T extends WasmProcessor>(
+  processor: T,
+  params: GetBlocksBinRequest,
+  metaCallBack?: GetBlocksBinMetaCallback
+) {
+  const getBlocksBinResponseBuffer = await getBlocksBinExecuteRequest(
+    processor,
+    params
+  );
+  return getBlocksBinScanResponse(
+    processor,
+    getBlocksBinResponseBuffer,
+    metaCallBack
+  );
 }
 export async function getBlocksBinJson<T extends WasmProcessor>(
   processor: T,

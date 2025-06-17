@@ -15,10 +15,21 @@ use monero_wallet::{Scanner, ViewPair};
 use std::cell::RefCell;
 use your_program::{input, input_string, output, output_string};
 use zeroize::Zeroizing;
+
 thread_local! {
-    static GLOBAL_SCANNER: RefCell<Option<Scanner>> = RefCell::new(None);
-    static GLOBAL_VIEWPAIR: RefCell<Option<ViewPair>> = RefCell::new(None);
-    static GLOBAL_NETWORK: RefCell<Option<Network>> = RefCell::new(None);
+    static GLOBAL_STATE: RefCell<GlobalState> = RefCell::new(GlobalState {
+        viewpair: None,
+        network: None,
+        primary_address: None,
+        scanner: None,
+    });
+}
+
+struct GlobalState {
+    viewpair: Option<ViewPair>,
+    network: Option<Network>,
+    primary_address: Option<String>,
+    scanner: Option<Scanner>,
 }
 mod your_program {
     /// implement input & output in your program to share arrays with the monero-wallet-api
@@ -59,7 +70,6 @@ mod your_program {
     }
 }
 /// WASM / C ABI
-//TODO init view pair with name (hashmap of view pairs)
 #[no_mangle]
 pub extern "C" fn init_viewpair(
     primary_address_string_len: usize,
@@ -69,65 +79,47 @@ pub extern "C" fn init_viewpair(
     let secret_view_key = input_string(secret_view_key_string_len);
 
     let viewpair = make_viewpair(primary_address.as_str(), secret_view_key.as_str());
-    GLOBAL_SCANNER.with(|old_scanner| {
-        let mut global_scanner = old_scanner.borrow_mut();
-        *global_scanner = Some(Scanner::new(viewpair));
-    });
-    GLOBAL_VIEWPAIR.with(|old_viewpair| {
-        let mut global_viewpair = old_viewpair.borrow_mut();
-        *global_viewpair = Some(make_viewpair(
-            primary_address.as_str(),
-            secret_view_key.as_str(),
-        ));
-    });
-    GLOBAL_VIEWPAIR.with(|old_viewpair| {
-        let mut global_viewpair = old_viewpair.borrow_mut();
-        *global_viewpair = Some(make_viewpair(
-            primary_address.as_str(),
-            secret_view_key.as_str(),
-        ));
-    });
-    GLOBAL_NETWORK.with(|old_network| {
-        let mut global_network = old_network.borrow_mut();
-        *global_network = Some(
+    GLOBAL_STATE.with(|state| {
+        let mut global_state = state.borrow_mut();
+        global_state.viewpair = Some(viewpair.clone());
+        global_state.network = Some(
             monero_wallet::address::MoneroAddress::from_str_with_unchecked_network(
                 primary_address.as_str(),
             )
             .map_err(|e| {
                 eprintln!(
                     "There is an issue with the primary address that you provided: {}",
-                    primary_address.to_string()
+                    primary_address
                 );
-                eprintln!("{}", e.to_string());
+                eprintln!("{}", e);
             })
             .unwrap()
             .network(),
         );
+        global_state.primary_address = Some(primary_address.clone());
+        global_state.scanner = Some(Scanner::new(viewpair));
     });
 }
 #[no_mangle]
 pub extern "C" fn make_integrated_address(payment_id: u64) {
-    GLOBAL_VIEWPAIR.with(|old_viewpair| match old_viewpair.borrow().clone() {
-        None => {
-            let error_json = json!({
-                "error": "the scanner / viewpair was not initialized. integrated address did not get created."
-            })
-            .to_string();
-            output_string(&error_json);
-        }
-        Some(viewpair) => {
-            GLOBAL_NETWORK.with(|old_network| match old_network.borrow().clone(){
-                None=> {
-                    let error_json = json!({
-                        "error": "the scanner / viewpair was not initialized. integrated address did not get created."
-                    }).to_string();
-                    output_string(&error_json);
-                },
-                Some(network)=> {
-                    let bytes_back: [u8; 8] = payment_id.to_le_bytes();
-                    output_string(&viewpair.legacy_integrated_address(network, bytes_back).to_string());
-                }});
-
+    GLOBAL_STATE.with(|state| {
+        let global_state = state.borrow();
+        match (&global_state.viewpair, &global_state.network) {
+            (Some(viewpair), Some(network)) => {
+                let bytes_back: [u8; 8] = payment_id.to_le_bytes();
+                output_string(
+                    &viewpair
+                        .legacy_integrated_address(*network, bytes_back)
+                        .to_string(),
+                );
+            }
+            _ => {
+                let error_json = json!({
+                    "error": "the scanner / viewpair was not initialized. integrated address did not get created."
+                })
+                .to_string();
+                output_string(&error_json);
+            }
         }
     });
 }
@@ -160,19 +152,26 @@ pub extern "C" fn scan_blocks_with_get_blocks_bin(response_len: usize) {
 
     match from_bytes(&mut response.as_slice()) {
         Ok(blocks_response) => {
-            GLOBAL_SCANNER.with(|old_scanner| match old_scanner.borrow().clone() {
-                None => {
-                    let error_json = json!({
-                        "error": "the scanner / viewpair was not initialized. Blocks didnt get scanned."
-                    })
-                    .to_string();
-                    output_string(&error_json);
-                }
-                Some(scanner) => {
-                    output_string(&convert_to_json(&get_blocks_bin_response_meta(
-                        &blocks_response,
-                    )));
-                    output_string(&scan_blocks(scanner, blocks_response));
+            GLOBAL_STATE.with(|state| {
+                let global_state = state.borrow();
+                match &global_state.scanner {
+                    None => {
+                        let error_json = json!({
+                            "error": "the scanner / viewpair was not initialized. Blocks didn't get scanned."
+                        })
+                        .to_string();
+                        output_string(&error_json);
+                    }
+                    Some(scanner) => {
+                        output_string(&convert_to_json(&get_blocks_bin_response_meta(
+                            &blocks_response,global_state.primary_address.as_deref().unwrap_or("error-address-not-set")
+                        )));
+                        output_string(&scan_blocks(
+                            scanner.clone(),
+                            global_state.primary_address.as_deref().unwrap_or("error-address-not-set"),
+                            blocks_response,
+                        ));
+                    }
                 }
             });
         }
@@ -194,6 +193,7 @@ pub extern "C" fn convert_get_blocks_bin_response_to_json(response_len: usize) {
         Ok(blocks_response) => {
             output_string(&convert_to_json(&get_blocks_bin_response_meta(
                 &blocks_response,
+                "parsing-monerod-response-without-wallet",
             )));
             output_string(&convert_to_json(&blocks_response));
         }
