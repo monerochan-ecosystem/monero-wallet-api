@@ -101,6 +101,7 @@ export class ViewPair extends WasmProcessor {
       new_height: start_height,
       daemon_height: start_height + 1,
       status: "",
+      primary_address: "",
     };
     while (latest_meta.new_height < latest_meta.daemon_height) {
       const res = await this.getBlocksBin(
@@ -210,23 +211,37 @@ export class ViewPairs {
   public getViewPair(primary_address: string): ViewPair | undefined {
     return this.viewPairs.get(primary_address);
   }
+  /**
+   * This method will use getBlocks.bin from start height to daemon height.
+   * This is CPU bound work, so it should be executed in a seperate thread (worker).
+   * The scanner.ts worker in the standard-checkout dir shows how to keep scanning after the tip is reached.
+   * It also shows how the outputs are saved (note the unqiue requirement for the stealth_adress).
+   * @param start_height the height to start syncing from.
+   * @param callback this function will get the new outputs as they are found as a parameter
+   */
+  public async scan(start_height: number, callback: ScanResultCallback) {
+    let latest_meta: GetBlocksResultMeta = {
+      new_height: start_height,
+      daemon_height: start_height + 1,
+      status: "",
+      primary_address: "",
+    };
+    while (latest_meta.new_height < latest_meta.daemon_height) {
+      let firstResponse: Uint8Array | undefined;
+      for (const [key, value] of this.viewPairs) {
+        if (!firstResponse) {
+          firstResponse = await value.getBlocksBinExecuteRequest({
+            start_height: latest_meta.new_height - 1,
+          });
+        }
+        const res = await value.getBlocksBinScanResponse(
+          firstResponse,
+          (meta) => {
+            latest_meta = meta;
+          }
+        );
+        callback(res);
+      }
+    }
+  }
 }
-
-//57wmxQgZugZRrsaZ2mhcVtZqrUxAB6nXdEj4pnQ975Te2J2djFbBEubUFxTwxurF4cYE1oF8m26BkA9QcZZXLkf3FM7qX9U
-//8e4fe64233b5a0213e06ef4662582f72d47f7304502654485050c8ac06ee0309
-
-const viewpair = await ViewPairs.create([
-  {
-    primary_address:
-      "5B5ieVKGSyfAyh68X6AFB48Gnx9diT8jPbWN6UcZHJUZVQSLRhaaHuHQz3dGuxxZDXPYgCXzrkerK3m6Q1tHoougR7VYyd9",
-    secret_view_key:
-      "10b9885324933ee6055b001a3ee4b70f6832b866db389ad023b51fe7e2e7ca01",
-  },
-  {
-    primary_address:
-      "57wmxQgZugZRrsaZ2mhcVtZqrUxAB6nXdEj4pnQ975Te2J2djFbBEubUFxTwxurF4cYE1oF8m26BkA9QcZZXLkf3FM7qX9U",
-    secret_view_key:
-      "8e4fe64233b5a0213e06ef4662582f72d47f7304502654485050c8ac06ee0309",
-  },
-]);
-console.log(viewpair);
