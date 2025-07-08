@@ -49,8 +49,39 @@ export const GetInfoResponseSchema = z.object({
     wide_difficulty: z.string(),
   }),
 });
-
 export type GetInfoResponse = z.infer<typeof GetInfoResponseSchema>;
+
+export const GetOutputDistributionResponseSchema = z.object({
+  id: z.string(),
+  jsonrpc: z.literal("2.0"),
+  result: z.object({
+    distributions: z.array(
+      z.object({
+        amount: z.number(),
+        base: z.number(),
+        distribution: z.array(z.number()),
+        start_height: z.number(),
+      })
+    ),
+    status: z.string(),
+  }),
+});
+export type GetOutputDistributionResponse = z.infer<
+  typeof GetOutputDistributionResponseSchema
+>;
+
+export function parseGetOutputDistributionResponse(
+  data: unknown
+): GetOutputDistributionResponse | null {
+  const result = GetOutputDistributionResponseSchema.safeParse(data);
+
+  if (result.success) {
+    return result.data;
+  } else {
+    console.error("Validation failed:", result.error);
+    return null;
+  }
+}
 
 export function parseGetInfoResponse(data: unknown): GetInfoResponse | null {
   const result = GetInfoResponseSchema.safeParse(data);
@@ -86,6 +117,64 @@ export async function get_info(NODE_URL: string) {
 
   if (parsedResult === null || !parsedResult.result?.height) {
     throw new Error("Failed to get height from get_info result");
+  }
+
+  return parsedResult.result;
+}
+/**
+ * Parameters for retrieving output distribution information.
+ *
+ * @property amounts - Array of unsigned integers representing cleartext amounts to look for.
+ *   Use 0 to get all RingCT outputs.
+ * @property cumulative - (Optional) If true, the result will be cumulative. Defaults to false.
+ * @property from_height - (Optional) Starting block height (inclusive) to check from. Defaults to 0.
+ * @property to_height - (Optional) Ending block height (inclusive) to check up to. Set to 0 to get the entire chain after from_height. Defaults to 0.
+ * @property binary - If true, disables epee encoding.
+ * @property compress - (Optional) If true, enables compression. Ignored if binary is set to false.
+ */
+export type GetOutputDistributionParams = {
+  amounts: number[];
+  cumulative?: boolean;
+  from_height?: number;
+  to_height?: number;
+  binary: boolean;
+  compress?: boolean;
+};
+export async function get_output_distribution(
+  NODE_URL: string,
+  params: GetOutputDistributionParams = { amounts: [0], binary: false }
+) {
+  const getOutputDistributionResponse = await fetch(NODE_URL + "/json_rpc", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: "0",
+      method: "get_output_distribution",
+      params,
+    }),
+  });
+
+  if (!getOutputDistributionResponse.ok) {
+    throw new Error(
+      `Failed to get info: ${getOutputDistributionResponse.statusText}`
+    );
+  }
+
+  const getOutputDistributionResult =
+    await getOutputDistributionResponse.json();
+
+  console.log("getOutputDistributionResult", getOutputDistributionResult);
+  const parsedResult = parseGetOutputDistributionResponse(
+    getOutputDistributionResult
+  );
+
+  if (parsedResult === null || !parsedResult.result) {
+    throw new Error(
+      "Failed to receive output distribution from node (get_output_distribution result)"
+    );
   }
 
   return parsedResult.result;
