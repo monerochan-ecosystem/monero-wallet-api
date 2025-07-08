@@ -51,6 +51,19 @@ export const GetInfoResponseSchema = z.object({
 });
 export type GetInfoResponse = z.infer<typeof GetInfoResponseSchema>;
 
+/**
+ * Response schema for the get_output_distribution method.
+ *
+ * @property id - The request ID.
+ * @property jsonrpc - The JSON-RPC version.
+ * @property result - The result object containing:
+ *   - distributions: An array of distribution objects, each with:
+ *     - amount: unsigned int Same as in the request. Use 0 to get all RingCT outputs.
+ *     - base: unsigned int; The total number of outputs of amount in the chain before, not including, the block at start_height.
+ *     - distribution: array of unsigned int
+ *     - start_height:  unsigned int; Note that this is not necessarily equal to from_height, especially for amount=0 where start_height will be no less than the height of the v4 hardfork.
+ *   - status: string; General RPC error code. "OK" means everything looks good.
+ */
 export const GetOutputDistributionResponseSchema = z.object({
   id: z.string(),
   jsonrpc: z.literal("2.0"),
@@ -125,19 +138,19 @@ export async function get_info(NODE_URL: string) {
  * Parameters for retrieving output distribution information.
  *
  * @property amounts - Array of unsigned integers representing cleartext amounts to look for.
- *   Use 0 to get all RingCT outputs.
+ *   Use 0 to get all RingCT outputs. defaults to [0].
  * @property cumulative - (Optional) If true, the result will be cumulative. Defaults to false.
  * @property from_height - (Optional) Starting block height (inclusive) to check from. Defaults to 0.
  * @property to_height - (Optional) Ending block height (inclusive) to check up to. Set to 0 to get the entire chain after from_height. Defaults to 0.
- * @property binary - If true, disables epee encoding.
+ * @property binary - boolean; for disabling epee encoding, defaults to false.
  * @property compress - (Optional) If true, enables compression. Ignored if binary is set to false.
  */
 export type GetOutputDistributionParams = {
-  amounts: number[];
+  amounts?: number[];
   cumulative?: boolean;
   from_height?: number;
   to_height?: number;
-  binary: boolean;
+  binary?: boolean;
   compress?: boolean;
 };
 export async function get_output_distribution(
@@ -166,7 +179,6 @@ export async function get_output_distribution(
   const getOutputDistributionResult =
     await getOutputDistributionResponse.json();
 
-  console.log("getOutputDistributionResult", getOutputDistributionResult);
   const parsedResult = parseGetOutputDistributionResponse(
     getOutputDistributionResult
   );
