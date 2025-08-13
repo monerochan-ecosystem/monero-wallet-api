@@ -222,7 +222,7 @@ export class TinyWASI {
     const memory = this.getMemory();
 
     const buffer = new Uint8Array(memory.buffer, pointer, size);
-
+    //TODO:remove this dependency on crypto
     crypto.randomFillSync(buffer);
 
     return this.WASI_ERRNO_SUCCESS;

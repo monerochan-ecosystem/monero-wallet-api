@@ -118,6 +118,7 @@ pub fn scan_blocks(
                         "payment_id": u64::from_le_bytes(payment_id),
                         "block_height": get_blocks_bin.start_height + (index as u64),
                         "primary_address": primary_address,
+                        "serialized": x.serialize(),
                     });
 
                     output_jsons.push(output_json);
