@@ -18,7 +18,7 @@ rust release build
 
 ```bash
 cd rust || cd ../rust
-cargo wasi build  --target wasm32-wasip1 --release --lib
+cargo build  --target wasm32-wasip1 --release --lib
 ```
 
 prerequisite: install rust
@@ -28,8 +28,8 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
 ```bash
-rustup install 1.83.0
-rustup default 1.83.0
+rustup install 1.89.0
+rustup default 1.89.0
 rustup target add wasm32-wasip1
 ```
 
