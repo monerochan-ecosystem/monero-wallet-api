@@ -248,7 +248,7 @@ export async function getBlocksBinJson<T extends WasmProcessor>(
 
 export async function binaryFetchRequest(url: string, body: Uint8Array) {
   const response = await fetch(url, {
-    body,
+    body: body as BodyInit,
     method: "POST",
   })
     .then((result) => result.blob())
