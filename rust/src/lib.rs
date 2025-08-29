@@ -1,13 +1,13 @@
 pub mod block_parsing;
-
+pub mod transaction_building;
 use block_parsing::convert_to_json;
 use block_parsing::get_blocks_bin_response_meta;
 use block_parsing::scan_blocks;
 use cuprate_epee_encoding::{from_bytes, to_bytes};
 use cuprate_rpc_types::bin::GetBlocksRequest;
 use curve25519_dalek::scalar::Scalar;
+use futures::executor::block_on;
 use hex::FromHex;
-use monero_wallet;
 use monero_wallet::address::Network;
 use serde_json::json;
 
@@ -41,6 +41,9 @@ mod your_program {
         extern "C" {
             pub fn output(ptr: *const u8, length: usize);
         }
+        extern "C" {
+            pub fn functionCall(ptr: *const u8, length: usize) -> usize;
+        }
     }
     /// internal wrappers to handle input and output of strings
     pub fn input(length: usize) -> Vec<u8> {
@@ -68,6 +71,12 @@ mod your_program {
     pub fn output_string(value: &str) {
         unsafe { yours::output(value.as_ptr(), value.len()) };
     }
+    pub fn function_call(value: &str) -> String {
+        unsafe {
+            let output_len = yours::functionCall(value.as_ptr(), value.len());
+            return input_string(output_len);
+        };
+    }
 }
 /// WASM / C ABI
 #[no_mangle]
@@ -77,7 +86,6 @@ pub extern "C" fn init_viewpair(
 ) {
     let primary_address = input_string(primary_address_string_len);
     let secret_view_key = input_string(secret_view_key_string_len);
-
     let viewpair = make_viewpair(primary_address.as_str(), secret_view_key.as_str());
     GLOBAL_STATE.with(|state| {
         let mut global_state = state.borrow_mut();
@@ -122,6 +130,12 @@ pub extern "C" fn make_integrated_address(payment_id: u64) {
             }
         }
     });
+}
+#[no_mangle]
+pub extern "C" fn make_inputs(outputs_json_len: usize) {
+    let outputs_json = input_string(outputs_json_len);
+    println!("{}", outputs_json);
+    block_on(transaction_building::make_inputs(&outputs_json));
 }
 
 #[no_mangle]

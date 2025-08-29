@@ -8,8 +8,9 @@ import {
   type GetBlocksBinMetaCallback,
   type GetBlocksBinRequest,
   type GetBlocksResultMeta,
+  type Output,
 } from "./node-interaction/binaryEndpoints";
-import { TinyWASI } from "./wasm-processing/wasi";
+import { makeInputs } from "./send-functionality/transactionBuilding";
 import { WasmProcessor } from "./wasm-processing/wasmProcessor";
 export * from "./node-interaction/binaryEndpoints";
 export * from "./node-interaction/jsonEndpoints";
@@ -27,10 +28,7 @@ export class ViewPair extends WasmProcessor {
     secret_view_key: string,
     node_url?: string
   ): Promise<ViewPair> {
-    const viewPair = new ViewPair(
-      new TinyWASI(),
-      node_url || "http://localhost:38081"
-    );
+    const viewPair = new ViewPair(node_url || "http://localhost:38081");
     const tinywasi = await viewPair.initWasmModule();
     viewPair.writeToWasmMemory = (ptr, len) => {
       viewPair.writeString(ptr, len, primary_address);
@@ -130,6 +128,12 @@ export class ViewPair extends WasmProcessor {
     this.tinywasi.instance.exports.make_integrated_address(BigInt(paymentId));
     return address;
   }
+  /**
+   * makeInputs
+   */
+  public makeInputs(outputs: Output[]) {
+    return makeInputs(this, outputs);
+  }
 }
 /**
  * This class is useful to interact with Moneros DaemonRpc binary requests in a convenient way.
@@ -139,10 +143,7 @@ export class ViewPair extends WasmProcessor {
  */
 export class NodeUrl extends WasmProcessor {
   public static async create(node_url?: string): Promise<NodeUrl> {
-    const nodeUrl = new NodeUrl(
-      new TinyWASI(),
-      node_url || "http://localhost:38081"
-    );
+    const nodeUrl = new NodeUrl(node_url || "http://localhost:38081");
     await nodeUrl.initWasmModule();
     return nodeUrl;
   }

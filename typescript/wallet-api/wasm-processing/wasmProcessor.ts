@@ -1,6 +1,9 @@
+import { RpcApi } from "../node-interaction/rpcApi";
 import { TinyWASI } from "./wasi";
 import { monero_wallet_api_wasm } from "./wasmFile";
-
+export type FunctionCallMeta = {
+  function: string;
+};
 export type MemoryCallback = (ptr: number, len: number) => void;
 export class WasmProcessor {
   /**
@@ -92,10 +95,14 @@ export class WasmProcessor {
     const str = decoder.decode(array);
     return str;
   };
-  protected constructor(public tinywasi: TinyWASI, public node_url: string) {}
+  public tinywasi!: TinyWASI;
+  public rpcapi!: RpcApi;
+  protected constructor(public node_url: string) {}
   public async initWasmModule() {
     const tinywasi = new TinyWASI();
     this.tinywasi = tinywasi;
+    const rpcapi = new RpcApi();
+    this.rpcapi = rpcapi;
     const imports = {
       env: {
         input: (ptr: number, len: number) => {
@@ -103,6 +110,22 @@ export class WasmProcessor {
         },
         output: (ptr: number, len: number) => {
           this.readFromWasmMemory(ptr, len);
+        },
+        functionCall: (inputPtr: number, inputLen: number) => {
+          let functionCallMeta = JSON.parse(
+            this.readString(inputPtr, inputLen)
+          ) as FunctionCallMeta;
+          // currently only rpc calls for sending need inversion of control
+          // but it is conceivable to handle other function calls this way
+          const functionCallReturnValue = this.rpcapi.callRpc(functionCallMeta);
+
+          // attach input function and then override with the one from before
+          const oldWrite = this.writeToWasmMemory;
+          this.writeToWasmMemory = (ptr, len) => {
+            this.writeString(ptr, len, functionCallReturnValue); // write the return value into wasm memory
+            this.writeToWasmMemory = oldWrite;
+          };
+          return functionCallReturnValue.length; // output length which is needed for wasm to allocate memory to write the return value into
         },
       },
       ...tinywasi.imports,
