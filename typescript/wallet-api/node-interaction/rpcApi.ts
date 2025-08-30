@@ -13,7 +13,7 @@ export class RpcApi {
    * callRpc is a generic method to call any RPC method.
    */
   public callRpc(functionCallMeta: FunctionCallMeta) {
-    console.log("rpc functionCall called" + functionCallMeta);
+    console.log("rpc functionCall called", functionCallMeta);
     return ""; // TODO: implement actual RPC call logic
   }
 }

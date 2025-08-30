@@ -9,6 +9,7 @@ use curve25519_dalek::scalar::Scalar;
 use futures::executor::block_on;
 use hex::FromHex;
 use monero_wallet::address::Network;
+use serde::Serialize;
 use serde_json::json;
 
 use monero_wallet::{Scanner, ViewPair};
@@ -31,7 +32,15 @@ struct GlobalState {
     primary_address: Option<String>,
     scanner: Option<Scanner>,
 }
+
+#[derive(Serialize)]
+struct FunctionCallMeta {
+    function: String,
+    params: String,
+}
 mod your_program {
+    use crate::FunctionCallMeta;
+
     /// implement input & output in your program to share arrays with the monero-wallet-api
     /// rust will take care of allocation and deallocation
     mod yours {
@@ -71,7 +80,13 @@ mod your_program {
     pub fn output_string(value: &str) {
         unsafe { yours::output(value.as_ptr(), value.len()) };
     }
-    pub fn function_call(value: &str) -> String {
+    pub fn function_call(function_name: &str, params: &str) -> String {
+        let meta = FunctionCallMeta {
+            function: function_name.to_string(),
+            params: params.to_string(),
+        };
+        let value =
+            serde_json::to_string(&meta).unwrap_or("cannot-serialize-function-call".to_string());
         unsafe {
             let output_len = yours::functionCall(value.as_ptr(), value.len());
             return input_string(output_len);
