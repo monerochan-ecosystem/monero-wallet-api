@@ -131,8 +131,8 @@ export class ViewPair extends WasmProcessor {
   /**
    * makeInputs
    */
-  public makeInputs(outputs: Output[]) {
-    return makeInputs(this, outputs);
+  public async makeInputs(outputs: Output[]) {
+    return await makeInputs(this, outputs);
   }
 }
 /**

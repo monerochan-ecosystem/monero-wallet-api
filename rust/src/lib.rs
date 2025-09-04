@@ -12,8 +12,10 @@ use monero_wallet::address::Network;
 use serde::Serialize;
 use serde_json::json;
 
+use futures::channel::oneshot;
 use monero_wallet::{Scanner, ViewPair};
 use std::cell::RefCell;
+use std::collections::HashMap;
 use your_program::{input, input_string, output, output_string};
 use zeroize::Zeroizing;
 
@@ -23,6 +25,7 @@ thread_local! {
         network: None,
         primary_address: None,
         scanner: None,
+        promises: HashMap::new(),
     });
 }
 
@@ -31,6 +34,7 @@ struct GlobalState {
     network: Option<Network>,
     primary_address: Option<String>,
     scanner: Option<Scanner>,
+    promises: HashMap<u32, oneshot::Sender<String>>,
 }
 
 #[derive(Serialize)]
@@ -39,7 +43,10 @@ struct FunctionCallMeta {
     params: String,
 }
 mod your_program {
-    use crate::FunctionCallMeta;
+    use futures::channel::oneshot;
+
+    use crate::{FunctionCallMeta, GLOBAL_STATE};
+    use core::future::Future;
 
     /// implement input & output in your program to share arrays with the monero-wallet-api
     /// rust will take care of allocation and deallocation
@@ -52,6 +59,9 @@ mod your_program {
         }
         extern "C" {
             pub fn functionCall(ptr: *const u8, length: usize) -> usize;
+        }
+        extern "C" {
+            pub fn asyncFunctionCall(ptr: *const u8, length: usize, promise_id: u32);
         }
     }
     /// internal wrappers to handle input and output of strings
@@ -92,8 +102,44 @@ mod your_program {
             return input_string(output_len);
         };
     }
+    pub fn async_function_call(function_name: &str, params: &str) -> impl Future<Output = String> {
+        let meta = FunctionCallMeta {
+            function: function_name.to_string(),
+            params: params.to_string(),
+        };
+        let value = serde_json::to_string(&meta)
+            .unwrap_or("cannot-serialize-async-function-call".to_string());
+        unsafe {
+            let (sender, receiver) = oneshot::channel();
+            let promise_id = GLOBAL_STATE.with(|state| {
+                let mut global_state = state.borrow_mut();
+
+                let promise_id = global_state.promises.len() as u32 + 1;
+                global_state.promises.insert(promise_id, sender);
+                return promise_id;
+            });
+            yours::asyncFunctionCall(value.as_ptr(), value.len(), promise_id);
+            return async move {
+                return receiver
+                    .await
+                    .unwrap_or("error-awaiting-promise".to_string());
+            };
+        };
+    }
 }
 /// WASM / C ABI
+#[no_mangle]
+pub extern "C" fn resolve_promise(promise_id: u32, output_length: usize) {
+    let promise_output = input_string(output_length);
+    GLOBAL_STATE.with(|state| {
+        let mut global_state = state.borrow_mut();
+        //trigger oneshot to resolve the promise
+        if let Some(sender) = global_state.promises.remove(&promise_id) {
+            sender.send(promise_output).unwrap_or(());
+        }
+    });
+}
+
 #[no_mangle]
 pub extern "C" fn init_viewpair(
     primary_address_string_len: usize,
@@ -150,7 +196,9 @@ pub extern "C" fn make_integrated_address(payment_id: u64) {
 pub extern "C" fn make_inputs(outputs_json_len: usize) {
     let outputs_json = input_string(outputs_json_len);
     println!("{}", outputs_json);
-    block_on(transaction_building::make_inputs(&outputs_json));
+    block_on(transaction_building::inputs::make_inputs_async(
+        &outputs_json,
+    ));
 }
 
 #[no_mangle]
