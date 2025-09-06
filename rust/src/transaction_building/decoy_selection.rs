@@ -225,7 +225,7 @@ async fn select_decoys<R: RngCore + CryptoRng>(
         rng,
         rpc,
         height,
-        input.relative_id.index_on_blockchain,
+        input.index_on_blockchain(),
         ring_len,
         fingerprintable_deterministic,
     )
@@ -234,7 +234,7 @@ async fn select_decoys<R: RngCore + CryptoRng>(
     // Form the complete ring
     let mut ring = decoys;
     ring.push((
-        input.relative_id.index_on_blockchain,
+        input.index_on_blockchain(),
         [input.key(), input.commitment().calculate()],
     ));
     ring.sort_by(|a, b| a.0.cmp(&b.0));
@@ -263,7 +263,7 @@ async fn select_decoys<R: RngCore + CryptoRng>(
         // Binary searches for the real spend since we don't know where it sorted to
         // TODO: Define our own collection whose `len` function returns `u8` to ensure this bound
         // with types
-        u8::try_from(ring.partition_point(|x| x.0 < input.relative_id.index_on_blockchain))
+        u8::try_from(ring.partition_point(|x| x.0 < input.index_on_blockchain()))
             .expect("ring of size <= u8::MAX had an index exceeding u8::MAX"),
         ring.into_iter().map(|output| output.1).collect(),
     )
