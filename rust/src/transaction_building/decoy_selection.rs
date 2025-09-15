@@ -25,25 +25,25 @@ const TIP_APPLICATION: f64 = (DEFAULT_LOCK_WINDOW * BLOCK_TIME) as f64;
 
 async fn select_n(
     rng: &mut (impl RngCore + CryptoRng),
-    rpc: &impl DecoyRpc,
+    distribution: Vec<u64>,
     height: usize,
     real_output: u64,
     ring_len: u8,
     fingerprintable_deterministic: bool,
 ) -> Result<Vec<(u64, [EdwardsPoint; 2])>, RpcError> {
-    if height < DEFAULT_LOCK_WINDOW {
-        Err(RpcError::InternalError(
-            "not enough blocks to select decoys".to_string(),
-        ))?;
-    }
-    if height > rpc.get_output_distribution_end_height().await? {
-        Err(RpcError::InternalError(
-            "decoys being requested from blocks this node doesn't have".to_string(),
-        ))?;
-    }
+    // if height < DEFAULT_LOCK_WINDOW {
+    //     Err(RpcError::InternalError(
+    //         "not enough blocks to select decoys".to_string(),
+    //     ))?;
+    // }
+    // if height > rpc.get_output_distribution_end_height().await? {
+    //     Err(RpcError::InternalError(
+    //         "decoys being requested from blocks this node doesn't have".to_string(),
+    //     ))?;
+    // }
 
-    // Get the distribution
-    let distribution = rpc.get_output_distribution(..height).await?;
+    // // Get the distribution
+    // let distribution = rpc.get_output_distribution(..height).await?;
     if distribution.len() < DEFAULT_LOCK_WINDOW {
         Err(RpcError::InternalError(
             "not enough blocks to select decoys".to_string(),
