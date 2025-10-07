@@ -1,4 +1,3 @@
-import { RpcApi } from "../node-interaction/rpcApi";
 import { TinyWASI } from "./wasi";
 import { monero_wallet_api_wasm } from "./wasmFile";
 export type FunctionCallMeta = {
@@ -96,13 +95,10 @@ export class WasmProcessor {
     return str;
   };
   public tinywasi!: TinyWASI;
-  public rpcapi!: RpcApi;
   protected constructor(public node_url: string) {}
   public async initWasmModule() {
     const tinywasi = new TinyWASI();
     this.tinywasi = tinywasi;
-    const rpcapi = new RpcApi(this.node_url);
-    this.rpcapi = rpcapi;
     const imports = {
       env: {
         input: (ptr: number, len: number) => {
@@ -110,35 +106,6 @@ export class WasmProcessor {
         },
         output: (ptr: number, len: number) => {
           this.readFromWasmMemory(ptr, len);
-        },
-        functionCall: (inputPtr: number, inputLen: number) => {}, // currently we only need async calls. It would be best if no inversion of control was neeeded at all.
-        asyncFunctionCall: (
-          inputPtr: number,
-          inputLen: number,
-          promise_id: number
-        ) => {
-          let processor = this;
-          let functionCallMeta = JSON.parse(
-            processor.readString(inputPtr, inputLen)
-          ) as FunctionCallMeta;
-          // currently only rpc calls for sending need inversion of control
-          // but it is conceivable to handle other function calls this way
-          processor.rpcapi
-            .callRpc(functionCallMeta)
-            .then((functionCallReturnValue) => {
-              // attach input function and then override with the one from before
-              const oldWrite = processor.writeToWasmMemory;
-              processor.writeToWasmMemory = (ptr, len) => {
-                processor.writeString(ptr, len, functionCallReturnValue); // write the return value into wasm memory
-                processor.writeToWasmMemory = oldWrite;
-              };
-
-              //@ts-ignore
-              processor.tinywasi.instance?.exports.resolve_promise(
-                promise_id,
-                functionCallReturnValue.length // output length which is needed for wasm to allocate memory to write the return value into
-              );
-            });
         },
       },
       ...tinywasi.imports,

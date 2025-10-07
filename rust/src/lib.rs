@@ -6,7 +6,6 @@ use block_parsing::scan_blocks;
 use cuprate_epee_encoding::{from_bytes, to_bytes};
 use cuprate_rpc_types::bin::GetBlocksRequest;
 use curve25519_dalek::scalar::Scalar;
-use futures::executor::block_on;
 use hex::FromHex;
 use monero_wallet::address::Network;
 use serde::Serialize;
@@ -33,11 +32,6 @@ struct GlobalState {
   scanner: Option<Scanner>,
 }
 
-#[derive(Serialize)]
-struct FunctionCallMeta {
-  function: String,
-  params: String,
-}
 mod your_program {
   /// implement input & output in your program to share arrays with the monero-wallet-api
   /// rust will take care of allocation and deallocation
@@ -133,7 +127,7 @@ pub extern "C" fn make_integrated_address(payment_id: u64) {
 pub extern "C" fn make_inputs(outputs_json_len: usize) {
   let outputs_json = input_string(outputs_json_len);
   println!("{}", outputs_json);
-  block_on(transaction_building::inputs::make_inputs_async(&outputs_json));
+  output_string(transaction_building::inputs::make_inputs_sync(&outputs_json));
 }
 
 #[no_mangle]
