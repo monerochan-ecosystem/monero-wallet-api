@@ -4,11 +4,11 @@ use block_parsing::convert_to_json;
 use block_parsing::get_blocks_bin_response_meta;
 use block_parsing::scan_blocks;
 use cuprate_epee_encoding::{from_bytes, to_bytes};
-use cuprate_rpc_types::bin::GetBlocksRequest;
+use cuprate_rpc_types::bin::{GetBlocksRequest, GetOutsRequest, GetOutsResponse};
+use cuprate_rpc_types::misc::GetOutputsOut;
 use curve25519_dalek::scalar::Scalar;
 use hex::FromHex;
 use monero_wallet::address::Network;
-use serde::Serialize;
 use serde_json::json;
 
 use monero_wallet::{Scanner, ViewPair};
@@ -124,10 +124,54 @@ pub extern "C" fn make_integrated_address(payment_id: u64) {
     });
 }
 #[no_mangle]
-pub extern "C" fn make_inputs(outputs_json_len: usize) {
-  let outputs_json = input_string(outputs_json_len);
+pub extern "C" fn sample_decoys(sample_json_str_len: usize) {
+  let sample_json_str = input_string(sample_json_str_len);
+  println!("{}", sample_json_str);
+  match transaction_building::inputs::sample_candidates(&sample_json_str) {
+    Ok(candidates) => {
+      let candidates_json = json!({ "candidates": candidates });
+      output_string(&candidates_json.to_string());
+    }
+    Err(e) => {
+      let error_json = json!({
+          "error": format!("Error sampling decoys: {}", e)
+      })
+      .to_string();
+      output_string(&error_json);
+    }
+  }
+}
+/// turns output into and input with decoys, so a new transaction can be built
+#[no_mangle]
+pub extern "C" fn make_input(output_json_len: usize, getouts_response_len: usize) {
+  let outputs_json = input_string(output_json_len);
+  let getouts_response = input(getouts_response_len);
   println!("{}", outputs_json);
-  output_string(transaction_building::inputs::make_inputs_sync(&outputs_json));
+  match from_bytes(&mut getouts_response.as_slice()) {
+    Ok(blocks_response) => {
+      match transaction_building::inputs::make_input_sync(&outputs_json, blocks_response) {
+        Ok(input) => {
+          let inputs_json = json!({ "input": input.serialize() });
+          output_string(&inputs_json.to_string());
+        }
+        Err(e) => {
+          let error_json = json!({
+              "error": format!("Error making input: {}", e)
+          })
+          .to_string();
+          output_string(&error_json);
+        }
+      }
+    }
+    Err(error) => {
+      let error_message = format!("Error parsing getBlocksBin response: {}", error);
+      let error_json = json!({
+          "error": error_message
+      })
+      .to_string();
+      output_string(&error_json);
+    }
+  }
 }
 
 #[no_mangle]
@@ -150,6 +194,48 @@ pub extern "C" fn build_getblocksbin_request(
   req_params.pool_info_since = pool_info_since;
 
   output(to_bytes(req_params).unwrap().to_vec().as_ref());
+}
+
+#[no_mangle]
+pub extern "C" fn build_getoutsbin_request(outputs_array_len: usize) {
+  let output_indices_array = input_string(outputs_array_len);
+  let output_indices: Vec<u64> = match serde_json::from_str(&output_indices_array) {
+    Ok(v) => v,
+    Err(e) => {
+      let error_json = json!({
+        "error": format!("Failed to parse outputs array as JSON array of u64: {}", e)
+      })
+      .to_string();
+      output_string(&error_json);
+      return;
+    }
+  };
+
+  let mut req_params: GetOutsRequest = GetOutsRequest::default();
+  let outputs_vec =
+    output_indices.into_iter().map(|idx| GetOutputsOut { amount: 0, index: idx }).collect();
+  req_params.outputs = outputs_vec;
+
+  output(to_bytes(req_params).unwrap().to_vec().as_ref());
+}
+
+#[no_mangle]
+pub extern "C" fn convert_get_outs_bin_response_to_json(response_len: usize) {
+  let response = input(response_len);
+
+  match from_bytes::<GetOutsResponse, _>(&mut response.as_slice()) {
+    Ok(outs_response) => {
+      output_string(&convert_to_json(&outs_response));
+    }
+    Err(error) => {
+      let error_message = format!("Error parsing getouts.bin response: {}", error);
+      let error_json = json!({
+          "error": error_message
+      })
+      .to_string();
+      output_string(&error_json);
+    }
+  }
 }
 
 #[no_mangle]
@@ -231,14 +317,4 @@ pub fn make_viewpair(primary_address: &str, secret_view_key: &str) -> ViewPair {
     Zeroizing::new(Scalar::from_canonical_bytes(view_key_bytes).unwrap()),
   )
   .unwrap()
-}
-#[cfg(test)]
-mod tests {
-  use super::*;
-
-  #[test]
-  fn test_monero_serai() {
-    let result = 4;
-    assert_eq!(result, 4);
-  }
 }
