@@ -6,6 +6,15 @@ export type GetBlocksBinRequest = {
   no_miner_tx?: boolean; // default: false
   pool_info_since?: number; // default: 0
 };
+// struct SampleCandidatesJson {
+//   output_being_spent_index: u64,
+//   distribution: Vec<u64>,
+//   candidates_len: usize,
+// }
+/**
+ * array of output indices to fetch
+ */
+export type GetOutsBinRequest = number[];
 export type PoolInfo = {};
 export type Transaction = {};
 export type Block = {
@@ -177,6 +186,7 @@ export async function getBlocksBinScan<T extends WasmProcessor>(
     metaCallBack
   );
 }
+
 export async function getBlocksBinJson<T extends WasmProcessor>(
   processor: T,
   params: GetBlocksBinRequest
@@ -244,6 +254,63 @@ export async function getBlocksBinJson<T extends WasmProcessor>(
     getBlocksBinResponseBuffer.length
   );
   return result!; //result written in convert_get_blocks_bin_response_to_json
+}
+export function getOutsBinMakeRequest<T extends WasmProcessor>(
+  processor: T,
+  getouts_request_indices: GetOutsBinRequest
+) {
+  let getOutsArray: Uint8Array;
+  processor.readFromWasmMemory = (ptr, len) => {
+    getOutsArray = processor.readArray(ptr, len);
+  };
+  //@ts-ignore
+  processor.tinywasi.instance.exports.build_getoutsbin_request(
+    getouts_request_indices.length
+  );
+
+  return getOutsArray!; // written in build_getblocksbin_request call to readFromWasmMemory
+}
+
+export async function getOutsBinExecuteRequest<T extends WasmProcessor>(
+  processor: T,
+  params: GetOutsBinRequest
+) {
+  const getOutsRequestArray = getOutsBinMakeRequest(processor, params);
+  console.log("getOutsRequestArray:", getOutsRequestArray);
+  const getOutsBinResponseBuffer = await binaryFetchRequest(
+    processor.node_url + "/get_outs.bin",
+    getOutsRequestArray! // written in build_getoutsbin_request call to readFromWasmMemory
+  );
+  return getOutsBinResponseBuffer;
+}
+export async function getOutsBinJson<T extends WasmProcessor>(
+  processor: T,
+  params: GetOutsBinRequest
+) {
+  const getOutsBinResponseBuffer = await getOutsBinExecuteRequest(
+    processor,
+    params
+  );
+  console.log(
+    "got outsbin response, converting to json",
+    getOutsBinResponseBuffer
+  );
+  processor.writeToWasmMemory = (ptr, len) => {
+    processor.writeArray(ptr, len, getOutsBinResponseBuffer);
+  };
+  let result;
+  processor.readFromWasmMemory = (ptr, len) => {
+    console.log("reading outsbin response");
+    let res = processor.readString(ptr, len);
+    console.log("outsbin response string:", res);
+    // result = JSON.parse(processor.readString(ptr, len));
+  };
+  //@ts-ignore
+  processor.tinywasi.instance.exports.convert_get_outs_bin_response_to_json(
+    getOutsBinResponseBuffer.length
+  );
+
+  return result;
 }
 
 export async function binaryFetchRequest(url: string, body: Uint8Array) {

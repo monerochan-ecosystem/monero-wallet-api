@@ -215,6 +215,7 @@ pub extern "C" fn build_getoutsbin_request(outputs_array_len: usize) {
   let outputs_vec =
     output_indices.into_iter().map(|idx| GetOutputsOut { amount: 0, index: idx }).collect();
   req_params.outputs = outputs_vec;
+  req_params.get_txid = true;
 
   output(to_bytes(req_params).unwrap().to_vec().as_ref());
 }

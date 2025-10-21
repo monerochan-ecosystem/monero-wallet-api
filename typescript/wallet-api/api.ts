@@ -9,8 +9,10 @@ import {
   type GetBlocksBinRequest,
   type GetBlocksResultMeta,
   type Output,
+  getOutsBinJson,
+  type GetOutsBinRequest,
 } from "./node-interaction/binaryEndpoints";
-import { makeInputs } from "./send-functionality/transactionBuilding";
+import { makeInput } from "./send-functionality/transactionBuilding";
 import { WasmProcessor } from "./wasm-processing/wasmProcessor";
 export * from "./node-interaction/binaryEndpoints";
 export * from "./node-interaction/jsonEndpoints";
@@ -128,12 +130,6 @@ export class ViewPair extends WasmProcessor {
     this.tinywasi.instance.exports.make_integrated_address(BigInt(paymentId));
     return address;
   }
-  /**
-   * makeInputs
-   */
-  public async makeInputs(outputs: Output[]) {
-    return await makeInputs(this, outputs);
-  }
 }
 /**
  * This class is useful to interact with Moneros DaemonRpc binary requests in a convenient way.
@@ -155,6 +151,34 @@ export class NodeUrl extends WasmProcessor {
    */
   public getBlocksBin(params: GetBlocksBinRequest) {
     return getBlocksBinJson(this, params);
+  }
+  /**
+   * This request helps making requests to the get_outs.bin endpoint of the Monerod nodes.
+   *  @link https://docs.getmonero.org/rpc-library/monerod-rpc/#get_outsbin
+   * @param params params that will be turned into epee (moner lib that does binary serialization)
+   * @returns after the request is made it will return epee serialized objects that are then parsed into json.
+   */
+  public getOutsBin(params: GetOutsBinRequest) {
+    return getOutsBinJson(this, params);
+  }
+  /**
+   * makeInput helper that uses the wasm module to create an input for a transaction.
+   * @param outputToBeSpent the output that should be spent
+   * @param candidates array of output indices that can be used as decoys
+   * @param get_outs_Response the response from a get_outs.bin request for the candidates
+   * @returns the input serialized that can be used in transaction building
+   */
+  public async makeInput(
+    outputToBeSpent: Output,
+    candidates: number[],
+    get_outs_Response: Uint8Array
+  ) {
+    return await makeInput(
+      this,
+      outputToBeSpent,
+      candidates,
+      get_outs_Response
+    );
   }
 }
 // const nodeurl = await NodeUrl.create("http://stagenet.community.rino.io:38081");
