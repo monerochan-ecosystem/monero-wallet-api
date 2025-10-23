@@ -265,13 +265,19 @@ export function getOutsBinMakeRequest<T extends WasmProcessor>(
   processor: T,
   getouts_request_indices: GetOutsBinRequest
 ) {
-  let getOutsArray = undefined;
+  let getOutsArray = undefined; // return value
+  const getouts_json = JSON.stringify(getouts_request_indices); // argument
   processor.readFromWasmMemory = (ptr, len) => {
+    // read result
     getOutsArray = processor.readArray(ptr, len);
+  };
+  processor.writeToWasmMemory = (ptr, len) => {
+    // write argument
+    processor.writeString(ptr, len, getouts_json);
   };
   //@ts-ignore
   processor.tinywasi.instance.exports.build_getoutsbin_request(
-    getouts_request_indices.length
+    getouts_json.length
   );
   if (!getOutsArray) {
     throw new Error("Failed to build get_outs.bin request");
