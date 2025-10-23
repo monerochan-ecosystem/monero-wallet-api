@@ -202,12 +202,11 @@ pub extern "C" fn build_getoutsbin_request(outputs_array_len: usize) {
   let output_indices: Vec<u64> = match serde_json::from_str(&output_indices_array) {
     Ok(v) => v,
     Err(e) => {
-      let error_json = json!({
-        "error": format!("Failed to parse outputs array as JSON array of u64: {}", e)
-      })
-      .to_string();
-      output_string(&error_json);
-      return;
+      println!(
+        "build_getoutsbin_request: Failed to parse outputs array as JSON array of u64: {}",
+        e
+      );
+      return; // we don't output anything in this error case
     }
   };
 
@@ -216,8 +215,8 @@ pub extern "C" fn build_getoutsbin_request(outputs_array_len: usize) {
     output_indices.into_iter().map(|idx| GetOutputsOut { amount: 0, index: idx }).collect();
   req_params.outputs = outputs_vec;
   req_params.get_txid = true;
-
-  output(to_bytes(req_params).unwrap().to_vec().as_ref());
+  println!("getoutsbin request: {:?}", req_params);
+  output(to_bytes(req_params).unwrap().to_vec().as_ref()); // in the success case we output the request
 }
 
 #[no_mangle]
