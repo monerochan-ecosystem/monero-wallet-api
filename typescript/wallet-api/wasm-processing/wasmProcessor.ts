@@ -74,7 +74,10 @@ export class WasmProcessor {
    */
   public readArray = (ptr: number, len: number) => {
     const memory = this.tinywasi.getMemory();
-    return new Uint8Array(memory.buffer, ptr, len);
+    const original = new Uint8Array(memory.buffer, ptr, len);
+    const copy = new Uint8Array(len);
+    copy.set(original);
+    return copy;
   };
   /**
    * Reads a string from a specified offset in WebAssembly memory.
