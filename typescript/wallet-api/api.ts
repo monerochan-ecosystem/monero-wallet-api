@@ -12,6 +12,11 @@ import {
   getOutsBinJson,
   type GetOutsBinRequest,
 } from "./node-interaction/binaryEndpoints";
+import {
+  get_output_distribution,
+  type GetOutputDistributionParams,
+} from "./node-interaction/jsonEndpoints";
+
 import { makeInput } from "./send-functionality/transactionBuilding";
 import { WasmProcessor } from "./wasm-processing/wasmProcessor";
 export * from "./node-interaction/binaryEndpoints";
@@ -160,6 +165,14 @@ export class NodeUrl extends WasmProcessor {
    */
   public getOutsBin(params: GetOutsBinRequest) {
     return getOutsBinJson(this, params);
+  }
+  /**
+   * fetch output distribution from node (necessary to make input - also named OutputWithDecoys in Monero-oxide)
+   * @param params defaults to: { amounts: [0], binary: false }
+   * @returns retruns output distribution necessary to sample input candidates
+   */
+  public getOutputDistribution(params?: GetOutputDistributionParams) {
+    return get_output_distribution(this.node_url, params);
   }
   /**
    * makeInput helper that uses the wasm module to create an input for a transaction.
