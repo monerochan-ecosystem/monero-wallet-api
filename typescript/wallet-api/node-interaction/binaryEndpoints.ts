@@ -43,6 +43,19 @@ export type GetBlocksBinResponse = {
   pool_info: "None" | PoolInfo;
   new_height: number; //get_blocks_bin.start_height + get_blocks_bin.blocks.len() aka new start_height to fetch
 };
+export type GetOutsBinResponse = {
+  status: "OK";
+  untrusted: boolean;
+  credits: number;
+  top_hash: string;
+  outs: Array<{
+    key: number[];
+    mask: number[];
+    unlocked: boolean;
+    height: number;
+    txid: number[];
+  }>;
+};
 export type Status =
   | "OK"
   | "BUSY"
@@ -304,26 +317,21 @@ export async function getOutsBinJson<T extends WasmProcessor>(
     processor,
     params
   );
-  console.log(
-    "got outsbin response, converting to json",
-    getOutsBinResponseBuffer
-  );
   processor.writeToWasmMemory = (ptr, len) => {
     processor.writeArray(ptr, len, getOutsBinResponseBuffer);
   };
   let result;
   processor.readFromWasmMemory = (ptr, len) => {
-    console.log("reading outsbin response");
-    let res = processor.readString(ptr, len);
-    console.log("outsbin response string:", res);
-    // result = JSON.parse(processor.readString(ptr, len));
+    result = JSON.parse(processor.readString(ptr, len));
   };
   //@ts-ignore
   processor.tinywasi.instance.exports.convert_get_outs_bin_response_to_json(
     getOutsBinResponseBuffer.length
   );
-
-  return result;
+  if (!result) {
+    throw new Error("Failed to parse get_outs.bin response");
+  }
+  return result as GetOutsBinResponse;
 }
 
 export async function binaryFetchRequest(url: string, body: Uint8Array) {
