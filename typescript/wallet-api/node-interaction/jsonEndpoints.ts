@@ -155,7 +155,11 @@ export type GetOutputDistributionParams = {
 };
 export async function get_output_distribution(
   NODE_URL: string,
-  params: GetOutputDistributionParams = { amounts: [0], binary: false }
+  params: GetOutputDistributionParams = {
+    amounts: [0],
+    binary: false,
+    cumulative: true,
+  }
 ) {
   const getOutputDistributionResponse = await fetch(NODE_URL + "/json_rpc", {
     method: "POST",
