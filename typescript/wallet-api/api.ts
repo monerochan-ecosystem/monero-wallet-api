@@ -17,7 +17,10 @@ import {
   type GetOutputDistributionParams,
 } from "./node-interaction/jsonEndpoints";
 
-import { makeInput } from "./send-functionality/transactionBuilding";
+import {
+  makeInput,
+  sampleDecoys,
+} from "./send-functionality/transactionBuilding";
 import { WasmProcessor } from "./wasm-processing/wasmProcessor";
 export * from "./node-interaction/binaryEndpoints";
 export * from "./node-interaction/jsonEndpoints";
@@ -175,23 +178,37 @@ export class NodeUrl extends WasmProcessor {
     return get_output_distribution(this.node_url, params);
   }
   /**
+   * sample decoys with distibution (cumulative)
+   * @param outputToBeSpentIndex the index of the output to be spent
+   * @param distribution cumulative distribution fetched from the node with getOutputDistribution()
+   * @param candidatesLength the amount of candidates to be sampled + 1 (the result will also contain the original index so in total the length of the resulting array will be this + 2)
+   * @returns SampledDecoys: {candidates: number[]} - an array with output indices including the spent index
+   */
+  public sampleDecoys(
+    outputToBeSpentIndex: number,
+    distribution: number[],
+    candidatesLength: number
+  ) {
+    return sampleDecoys(
+      this,
+      outputToBeSpentIndex,
+      distribution,
+      candidatesLength
+    );
+  }
+  /**
    * makeInput helper that uses the wasm module to create an input for a transaction.
    * @param outputToBeSpent the output that should be spent
    * @param candidates array of output indices that can be used as decoys
    * @param get_outs_Response the response from a get_outs.bin request for the candidates
    * @returns the input serialized that can be used in transaction building
    */
-  public async makeInput(
+  public makeInput(
     outputToBeSpent: Output,
     candidates: number[],
     get_outs_Response: Uint8Array
   ) {
-    return await makeInput(
-      this,
-      outputToBeSpent,
-      candidates,
-      get_outs_Response
-    );
+    return makeInput(this, outputToBeSpent, candidates, get_outs_Response);
   }
 }
 // const nodeurl = await NodeUrl.create("http://stagenet.community.rino.io:38081");

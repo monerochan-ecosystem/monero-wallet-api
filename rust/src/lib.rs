@@ -126,18 +126,14 @@ pub extern "C" fn make_integrated_address(payment_id: u64) {
 #[no_mangle]
 pub extern "C" fn sample_decoys(sample_json_str_len: usize) {
   let sample_json_str = input_string(sample_json_str_len);
-  println!("{}", sample_json_str);
   match transaction_building::inputs::sample_candidates(&sample_json_str) {
     Ok(candidates) => {
       let candidates_json = json!({ "candidates": candidates });
       output_string(&candidates_json.to_string());
     }
     Err(e) => {
-      let error_json = json!({
-          "error": format!("Error sampling decoys: {}", e)
-      })
-      .to_string();
-      output_string(&error_json);
+      println!("Error sampling decoys: {}", e);
+      return; // error handling becomes easier on the ts side if we just return nothing print the error
     }
   }
 }
