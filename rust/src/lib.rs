@@ -143,6 +143,8 @@ pub extern "C" fn make_input(output_json_len: usize, getouts_response_len: usize
   let outputs_json = input_string(output_json_len);
   let getouts_response = input(getouts_response_len);
   println!("{}", outputs_json);
+  println!("REEE {:?}", getouts_response);
+
   match from_bytes(&mut getouts_response.as_slice()) {
     Ok(blocks_response) => {
       match transaction_building::inputs::make_input_sync(&outputs_json, blocks_response) {
@@ -151,21 +153,14 @@ pub extern "C" fn make_input(output_json_len: usize, getouts_response_len: usize
           output_string(&inputs_json.to_string());
         }
         Err(e) => {
-          let error_json = json!({
-              "error": format!("Error making input: {}", e)
-          })
-          .to_string();
-          output_string(&error_json);
+          println!("Error making input: {}", e);
+          return; // error handling becomes easier on the ts side if we just return nothing print the error
         }
       }
     }
-    Err(error) => {
-      let error_message = format!("Error parsing getBlocksBin response: {}", error);
-      let error_json = json!({
-          "error": error_message
-      })
-      .to_string();
-      output_string(&error_json);
+    Err(e) => {
+      println!("Error parsing getBlocksBin response: IO error: {}", e);
+      return; // error handling becomes easier on the ts side if we just return nothing print the error
     }
   }
 }
