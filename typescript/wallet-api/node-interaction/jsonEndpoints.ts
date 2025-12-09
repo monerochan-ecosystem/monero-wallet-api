@@ -195,3 +195,84 @@ export async function get_output_distribution(
 
   return parsedResult.result;
 }
+
+/**
+ * Response schema for the get_fee_estimate method.
+ *
+ * @property id - The request ID.
+ * @property jsonrpc - The JSON-RPC version.
+ * @property result - The result object containing:
+ *   - status: string; General RPC error code. "OK" means everything looks good.
+ *   - fee: unsigned int; Base fee per byte.
+ *   - fees: (Optional) Array of unsigned int; Fee estimates for priorities 1–4.
+ *   - quantization_mask: unsigned int; Mask used for fee rounding.
+ */
+export const GetFeeEstimateResponseSchema = z.object({
+  id: z.string(),
+  jsonrpc: z.literal("2.0"),
+  result: z.object({
+    status: z.string(),
+    fee: z.number(),
+    fees: z.array(z.number()).optional(),
+    quantization_mask: z.number(),
+  }),
+});
+
+export type GetFeeEstimateResponse = z.infer<
+  typeof GetFeeEstimateResponseSchema
+>;
+
+export function parseGetFeeEstimateResponse(
+  data: unknown
+): GetFeeEstimateResponse | null {
+  const result = GetFeeEstimateResponseSchema.safeParse(data);
+
+  if (result.success) {
+    return result.data;
+  } else {
+    console.error("Validation failed:", result.error);
+    return null;
+  }
+}
+export type GetFeeEstimateResult = {
+  status: string;
+  fee: number;
+  fees?: number[];
+  quantization_mask: number;
+};
+
+export async function get_fee_estimate(NODE_URL: string) {
+  // GRACE_BLOCKS_FOR_FEE_ESTIMATE: u64 = 10 (0xA) accoding to monero oxide
+  const GRACE_BLOCKS_FOR_FEE_ESTIMATE = 10;
+
+  const getFeeEstimateResponse = await fetch(NODE_URL + "/json_rpc", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: "0",
+      method: "get_fee_estimate",
+      params: { grace_blocks: GRACE_BLOCKS_FOR_FEE_ESTIMATE },
+    }),
+  });
+
+  if (!getFeeEstimateResponse.ok) {
+    throw new Error(
+      `Failed to get fee estimate: ${getFeeEstimateResponse.statusText}`
+    );
+  }
+
+  const getFeeEstimateResult = await getFeeEstimateResponse.json();
+
+  const parsedResult = parseGetFeeEstimateResponse(getFeeEstimateResult);
+
+  if (parsedResult === null || !parsedResult.result) {
+    throw new Error(
+      "Failed to receive fee estimate from node (get_fee_estimate result)"
+    );
+  }
+
+  return parsedResult.result;
+}

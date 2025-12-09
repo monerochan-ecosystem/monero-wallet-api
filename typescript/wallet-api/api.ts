@@ -14,6 +14,7 @@ import {
   getOutsBinExecuteRequest,
 } from "./node-interaction/binaryEndpoints";
 import {
+  get_fee_estimate,
   get_output_distribution,
   type GetOutputDistributionParams,
 } from "./node-interaction/jsonEndpoints";
@@ -186,6 +187,13 @@ export class NodeUrl extends WasmProcessor {
    */
   public getOutputDistribution(params?: GetOutputDistributionParams) {
     return get_output_distribution(this.node_url, params);
+  }
+  /**
+   * fetch fee estimate from node
+   * @returns fee estimate response
+   */
+  public getFeeEstimate() {
+    return get_fee_estimate(this.node_url);
   }
   /**
    * sample decoys with distibution (cumulative)
