@@ -11,6 +11,7 @@ import {
   type Output,
   getOutsBinJson,
   type GetOutsBinRequest,
+  getOutsBinExecuteRequest,
 } from "./node-interaction/binaryEndpoints";
 import {
   get_output_distribution,
@@ -163,11 +164,20 @@ export class NodeUrl extends WasmProcessor {
   /**
    * This request helps making requests to the get_outs.bin endpoint of the Monerod nodes.
    *  @link https://docs.getmonero.org/rpc-library/monerod-rpc/#get_outsbin
-   * @param params params that will be turned into epee (moner lib that does binary serialization)
+   * @param outputIndexArrayToFetch an array of numbers that represent the output indices to be fetched. (candidates array returned from sampleDecoys for example)
+   * @returns after the request is made it will return epee serialized objects as a binary array.
+   */
+  public getOutsBin(outputIndexArrayToFetch: GetOutsBinRequest) {
+    return getOutsBinExecuteRequest(this, outputIndexArrayToFetch);
+  }
+  /**
+   * This request helps making requests to the get_outs.bin endpoint of the Monerod nodes.
+   *  @link https://docs.getmonero.org/rpc-library/monerod-rpc/#get_outsbin
+   * @param outputIndexArrayToFetch an array of numbers that represent the output indices to be fetched. (candidates array returned from sampleDecoys for example)
    * @returns after the request is made it will return epee serialized objects that are then parsed into json.
    */
-  public getOutsBin(params: GetOutsBinRequest) {
-    return getOutsBinJson(this, params);
+  public getOutsBinJson(outputIndexArrayToFetch: GetOutsBinRequest) {
+    return getOutsBinJson(this, outputIndexArrayToFetch);
   }
   /**
    * fetch output distribution from node (necessary to make input - also named OutputWithDecoys in Monero-oxide)

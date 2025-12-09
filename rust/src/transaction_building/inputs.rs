@@ -35,29 +35,13 @@ pub fn convert_outkey_to_output_information(
   Ok(OutputInformation {
     height: outkey.height as usize,
     unlocked: outkey.unlocked,
-    key: CompressedEdwardsY(
-      hex::decode(&outkey.key)
-        .map_err(|e| e.to_string())?
-        .try_into()
-        .map_err(|_| "output key wasn't 32 bytes".to_string())?,
-    ),
-    commitment: CompressedPoint(
-      hex::decode(&outkey.mask)
-        .map_err(|e| e.to_string())?
-        .try_into()
-        .map_err(|_| "output mask wasn't 32 bytes".to_string())?,
-    )
-    .decompress()
-    .ok_or("invalid point")?,
-    transaction: hex::decode(&outkey.txid)
-      .map_err(|e| e.to_string())?
-      .try_into()
-      .map_err(|_| "output txid wasn't 32 bytes".to_string())?,
+    key: CompressedEdwardsY(outkey.key),
+    commitment: CompressedPoint(outkey.mask).decompress().ok_or("invalid point")?,
+    transaction: outkey.txid,
   })
 }
 #[derive(Debug, Deserialize)]
 struct InputJson {
-  ring_len: u8,
   serialized_input: Vec<u8>,
   candidates: Vec<u64>,
 }
@@ -69,21 +53,16 @@ pub fn make_input_sync(
     .outs
     .into_iter()
     .map(|outkey| convert_outkey_to_output_information(outkey))
-    .collect::<Result<Vec<_>, String>>()
+    .collect()
   {
     Ok(outs) => {
-      let input_json: InputJson = serde_json::from_str(input_sts).unwrap();
+      let input_json: InputJson = serde_json::from_str(input_sts)
+        .map_err(|e| format!("failed to parse arguments JSON (missing or invalid field): {}", e))?;
       let mut reader = Cursor::new(input_json.serialized_input);
-      let output = WalletOutput::read(&mut reader).unwrap();
-      println!("{:?}", output);
+      let output = WalletOutput::read(&mut reader)
+        .map_err(|e| format!("failed to read WalletOutput from serialized input: {:?}", e))?;
       let mut rng = OsRng;
-      let output = OutputWithDecoys::new_sync(
-        &mut rng,
-        input_json.ring_len,
-        output,
-        outs,
-        input_json.candidates,
-      );
+      let output = OutputWithDecoys::new_sync(&mut rng, 16, output, outs, input_json.candidates);
       output.map_err(|e| e.to_string())
     }
     Err(e) => Err(e),

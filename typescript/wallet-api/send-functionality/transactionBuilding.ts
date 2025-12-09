@@ -8,16 +8,30 @@ export function makeInput<T extends WasmProcessor>(
   get_outs_Response: Uint8Array
 ) {
   const makeInputArgs = JSON.stringify({
-    outputToBeSpent,
+    serialized_input: outputToBeSpent.serialized,
     candidates,
-    get_outs_Response,
   });
   processor.writeToWasmMemory = (ptr, len) => {
     processor.writeString(ptr, len, makeInputArgs);
+    processor.writeToWasmMemory = (ptr, len) => {
+      processor.writeArray(ptr, len, get_outs_Response);
+    };
+  };
+  let result: { input: number[] } | null = null;
+  processor.readFromWasmMemory = (ptr, len) => {
+    result = JSON.parse(processor.readString(ptr, len));
   };
   //@ts-ignore
-  processor.tinywasi.instance.exports.make_input(makeInputArgs.length);
-  //todo:  read result
+  processor.tinywasi.instance.exports.make_input(
+    makeInputArgs.length,
+    get_outs_Response.length
+  );
+  if (!result) {
+    throw new Error(
+      "Failed to make Input (combine output with sampled and verified unlocked decoys)"
+    );
+  }
+  return result["input"] as number[];
 }
 type SampledDecoys = {
   candidates: number[];

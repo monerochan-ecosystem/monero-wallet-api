@@ -142,14 +142,13 @@ pub extern "C" fn sample_decoys(sample_json_str_len: usize) {
 pub extern "C" fn make_input(output_json_len: usize, getouts_response_len: usize) {
   let outputs_json = input_string(output_json_len);
   let getouts_response = input(getouts_response_len);
-  println!("{}", outputs_json);
-  println!("REEE {:?}", getouts_response);
 
   match from_bytes(&mut getouts_response.as_slice()) {
     Ok(blocks_response) => {
       match transaction_building::inputs::make_input_sync(&outputs_json, blocks_response) {
         Ok(input) => {
           let inputs_json = json!({ "input": input.serialize() });
+          // input.serialize opposite is input.read
           output_string(&inputs_json.to_string());
         }
         Err(e) => {
