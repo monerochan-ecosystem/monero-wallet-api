@@ -176,7 +176,7 @@ export async function get_output_distribution(
 
   if (!getOutputDistributionResponse.ok) {
     throw new Error(
-      `Failed to get info: ${getOutputDistributionResponse.statusText}`
+      `Failed to get output distribution (for decoy sampling): ${getOutputDistributionResponse.statusText}`
     );
   }
 
