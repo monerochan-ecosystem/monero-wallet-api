@@ -165,6 +165,32 @@ pub extern "C" fn make_input(output_json_len: usize, getouts_response_len: usize
 }
 
 #[no_mangle]
+pub extern "C" fn make_transaction(json_params_len: usize) {
+  let json_params = input_string(json_params_len);
+  GLOBAL_STATE.with(|state| {
+    let global_state = state.borrow();
+    match &global_state.viewpair {
+      Some(viewpair) => {
+        match transaction_building::transaction::make_transaction(&json_params, viewpair.clone()) {
+          Ok(signable_tx) => {
+            let tx_json = json!({ "signable_transaction": signable_tx.serialize() });
+            output_string(&tx_json.to_string());
+          }
+          Err(e) => {
+            println!("Error making transaction: {}", e);
+            return;
+          }
+        }
+      }
+      None => {
+        println!("The viewpair was not initialized. Transaction did not get created.");
+        return;
+      }
+    }
+  });
+}
+
+#[no_mangle]
 pub extern "C" fn build_getblocksbin_request(
   requested_info: u8,
   start_height: u64,

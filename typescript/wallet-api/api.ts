@@ -22,6 +22,8 @@ import {
 import {
   makeInput,
   sampleDecoys,
+  makeTransaction,
+  type MakeTransactionParams,
 } from "./send-functionality/transactionBuilding";
 import { WasmProcessor } from "./wasm-processing/wasmProcessor";
 export * from "./node-interaction/binaryEndpoints";
@@ -139,6 +141,14 @@ export class ViewPair extends WasmProcessor {
     //@ts-ignore
     this.tinywasi.instance.exports.make_integrated_address(BigInt(paymentId));
     return address;
+  }
+  /**
+   * Creates a signable transaction using the provided parameters.
+   * @param params - The transaction parameters.
+   * @returns The serialized transaction as an array of numbers.
+   */
+  public makeTransaction(params: MakeTransactionParams): number[] {
+    return makeTransaction(this, params);
   }
 }
 /**
