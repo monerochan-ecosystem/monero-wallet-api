@@ -127,3 +127,51 @@ function testScReduce32(): boolean {
 
 // usage
 // console.log("Test result:", testScReduce32()); // Should log true
+
+// rpc create new wallet command handling code calls generate() method on wallet2 object instance
+// 3653:       wal->generate(wallet_file, req.password, dummy_key, false, false);
+//https://github.com/monero-project/monero/blob/48ad374b0d6d6e045128729534dc2508e6999afe/src/wallet/wallet_rpc_server.cpp#L3653
+
+// wallet2.cpp generate method definition last few lines, notice it returns retval which is the result of m_account.generate():
+/**
+ *  crypto::secret_key retval = m_account.generate(recovery_param, recover, two_random);
+
+  [ ... ommitted irrelevant wallet key file saving lines... ]
+  return retval;
+}
+ */
+// https://github.com/monero-project/monero/blob/48ad374b0d6d6e045128729534dc2508e6999afe/src/wallet/wallet2.cpp#L5683
+
+// the account.generate() method is defined in account.cpp.
+// Relevant lines show it calls the crypto.cpp generate_keys() method twice.
+// 1. the first call uses a random number generator to make the spend private key
+//    (and calls sc_reduce32 on it to make sure it is a valid ed25519 scalar)
+// 2. then it hashes that spend private key with keccak to make the view private key
+// 3. then it calls generate_keys() again on this hashed value to make the view private key
+//   (to make sure via sc_reduce32 that the view private key is a valid ed25519 scalar)
+//
+// another side effect of this generate_keys function is that it creates the respective public keys from the private keys
+/**
+ *   crypto::secret_key first = generate_keys(m_keys.m_account_address.m_spend_public_key, m_keys.m_spend_secret_key, recovery_key, recover);
+
+    // rng for generating second set of keys is hash of first rng.  means only one set of electrum-style words needed for recovery
+    crypto::secret_key second;
+    keccak((uint8_t *)&m_keys.m_spend_secret_key, sizeof(crypto::secret_key), (uint8_t *)&second, sizeof(crypto::secret_key));
+
+    generate_keys(m_keys.m_account_address.m_view_public_key, m_keys.m_view_secret_key, second, two_random ? false : true);
+    [ ... ommitted irrelevant timestamp lines... ]
+     return first; [... returns first which is the spend private key ... ]
+ */
+// https://github.com/monero-project/monero/blob/48ad374b0d6d6e045128729534dc2508e6999afe/src/cryptonote_basic/account.cpp#L166-L195
+
+// generate_keys() method definition shows it calls sc_reduce32 on the input key material to make sure it is a valid ed25519 scalar
+// https://github.com/monero-project/monero/blob/master/src/crypto/crypto.cpp#L153
+
+// side note: simplewallet cpp codepath is similar to the walletrpc server codepath shown above
+// cryptonote_basic/account.cpp  generate() method returns first (also known as the spend private key) which becomes recovery_val:
+// 4832 recovery_val = m_wallet->generate(m_wallet_file, std::move(rc.second).password(), recovery_key, recover, two_random, create_address_file);
+// https://github.com/monero-project/monero/blob/48ad374b0d6d6e045128729534dc2508e6999afe/src/simplewallet/simplewallet.cpp#L4832
+
+// simple wallet turns spend private key (recovery_val) into mnemonic words with this call:
+// 4849   crypto::ElectrumWords::bytes_to_words(recovery_val, electrum_words, mnemonic_language);
+// https://github.com/monero-project/monero/blob/48ad374b0d6d6e045128729534dc2508e6999afe/src/simplewallet/simplewallet.cpp#L4849
