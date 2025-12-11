@@ -148,11 +148,12 @@ export function getBlocksBinMakeRequest<T extends WasmProcessor>(
 
 export async function getBlocksBinExecuteRequest<
   T extends WasmProcessor & HasNodeUrl
->(processor: T, params: GetBlocksBinRequest) {
+>(processor: T, params: GetBlocksBinRequest, stopSync?: AbortSignal) {
   const getBlocksRequestArray = getBlocksBinMakeRequest(processor, params);
   const getBlocksBinResponseBuffer = await binaryFetchRequest(
     processor.node_url + "/getblocks.bin",
-    getBlocksRequestArray! // written in build_getblocksbin_request call to readFromWasmMemory
+    getBlocksRequestArray!, // written in build_getblocksbin_request call to readFromWasmMemory
+    stopSync
   );
   return getBlocksBinResponseBuffer;
 }
@@ -165,7 +166,7 @@ export async function getBlocksBinScanResponse<T extends WasmProcessor>(
     processor.writeArray(ptr, len, getBlocksBinResponseBuffer);
   };
   let resultMeta: GetBlocksResultMeta;
-  let result: ScanResult | ErrorResponse;
+  let result: ScanResult | ErrorResponse | undefined;
   processor.readFromWasmMemory = (ptr, len) => {
     resultMeta = JSON.parse(
       processor.readString(ptr, len)
@@ -185,16 +186,18 @@ export async function getBlocksBinScanResponse<T extends WasmProcessor>(
   processor.tinywasi.instance.exports.scan_blocks_with_get_blocks_bin(
     getBlocksBinResponseBuffer.length
   );
-  return result!; //result written in scan_blocks_with_get_blocks_bin
+  return result; //result written in scan_blocks_with_get_blocks_bin
 }
 export async function getBlocksBinScan<T extends WasmProcessor & HasNodeUrl>(
   processor: T,
   params: GetBlocksBinRequest,
-  metaCallBack?: GetBlocksBinMetaCallback
+  metaCallBack?: GetBlocksBinMetaCallback,
+  stopSync?: AbortSignal
 ) {
   const getBlocksBinResponseBuffer = await getBlocksBinExecuteRequest(
     processor,
-    params
+    params,
+    stopSync
   );
   return getBlocksBinScanResponse(
     processor,
@@ -336,10 +339,15 @@ export async function getOutsBinJson<T extends WasmProcessor & HasNodeUrl>(
   return result as GetOutsBinResponse;
 }
 
-export async function binaryFetchRequest(url: string, body: Uint8Array) {
+export async function binaryFetchRequest(
+  url: string,
+  body: Uint8Array,
+  stopSync?: AbortSignal
+) {
   const response = await fetch(url, {
     body: body as BodyInit,
     method: "POST",
+    signal: stopSync,
   })
     .then((result) => result.blob())
     .then((blob) => blob.arrayBuffer());

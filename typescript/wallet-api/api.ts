@@ -34,7 +34,9 @@ import {
 import { WasmProcessor } from "./wasm-processing/wasmProcessor";
 export * from "./node-interaction/binaryEndpoints";
 export * from "./node-interaction/jsonEndpoints";
-export type ScanResultCallback = (result: ScanResult | ErrorResponse) => void;
+export type ScanResultCallback = (
+  result: ScanResult | ErrorResponse | undefined
+) => void;
 /**
  * This class is useful to interact with Moneros DaemonRpc binary requests in a convenient way.
  * (similar to how you would interact with a REST api that gives you json back.)
@@ -72,23 +74,29 @@ export class ViewPair extends WasmProcessor {
    * @link https://docs.getmonero.org/rpc-library/monerod-rpc/#get_blocksbin
    * @param params params that will be turned into epee (monero lib that does binary serialization)
    * @param metaCallBack contains meta information about the getBlocksbin call (new sync height = start_height param + number of blocks)
+   * @param stopSync optional AbortSignal to stop the syncing process
    * @returns The difference to the same method on NodeUrl is: It returns {@link ScanResult} (outputs that belong to viewpair) and not just the blocks as json.
    */
   public getBlocksBin(
     params: GetBlocksBinRequest,
-    metaCallBack?: GetBlocksBinMetaCallback
+    metaCallBack?: GetBlocksBinMetaCallback,
+    stopSync?: AbortSignal
   ) {
-    return getBlocksBinScan(this, params, metaCallBack);
+    return getBlocksBinScan(this, params, metaCallBack, stopSync);
   }
   /**
    * This function helps with making requests to the get_blocks.bin endpoint of the Monerod nodes.
    * The difference compared to the getBlocksBin method is that it returns a Uint8Array that still has to be scanned for outputs.
    * This is useful if you want to scan multiple viewpairs at once. You can take the Uint8Array and pass it to another ViewPair to scan for outputs.
    * @param params params that will be turned into epee (monero lib that does binary serialization)
+   * @param stopSync optional AbortSignal to stop the syncing process
    * @returns This method will return a Uint8Array that can subsequently be scanned for outputs with the getBlocksBinScanResponse method.
    */
-  public async getBlocksBinExecuteRequest(params: GetBlocksBinRequest) {
-    return await getBlocksBinExecuteRequest(this, params);
+  public async getBlocksBinExecuteRequest(
+    params: GetBlocksBinRequest,
+    stopSync?: AbortSignal
+  ) {
+    return await getBlocksBinExecuteRequest(this, params, stopSync);
   }
   /**
    * This function helps with scanning the response of the getBlocksBinExecuteRequest method.
@@ -116,11 +124,13 @@ export class ViewPair extends WasmProcessor {
    * It also shows how the outputs are saved (note the unqiue requirement for the stealth_adress).
    * @param start_height the height to start syncing from.
    * @param callback this function will get the new outputs as they are found as a parameter
+   * @param stopSync optional AbortSignal to stop the syncing process
    * @param stop_height optional height to stop scanning at. (final new_height will be >= stop_height)
    */
   public async scan(
     start_height: number,
     callback: ScanResultCallback,
+    stopSync?: AbortSignal,
     stop_height: number | null = null
   ) {
     let latest_meta: GetBlocksResultMeta = {
@@ -136,7 +146,8 @@ export class ViewPair extends WasmProcessor {
         },
         (meta) => {
           latest_meta = meta;
-        }
+        },
+        stopSync
       );
       callback(res);
       if (stop_height !== null && latest_meta.new_height >= stop_height) return;
@@ -335,11 +346,13 @@ export class ViewPairs {
    * It also shows how the outputs are saved (note the unqiue requirement for the stealth_adress).
    * @param start_height the height to start syncing from.
    * @param callback this function will get the new outputs as they are found as a parameter
+   * @param stopSync optional AbortSignal to stop the syncing process
    * @param stop_height optional height to stop scanning at. (final new_height will be >= stop_height)
    */
   public async scan(
     start_height: number,
     callback: ScanResultCallback,
+    stopSync?: AbortSignal,
     stop_height: number | null = null
   ) {
     let latest_meta: GetBlocksResultMeta = {
@@ -352,9 +365,12 @@ export class ViewPairs {
       let firstResponse: Uint8Array | undefined;
       for (const [key, value] of this.viewPairs) {
         if (!firstResponse) {
-          firstResponse = await value.getBlocksBinExecuteRequest({
-            start_height: latest_meta.new_height - 1,
-          });
+          firstResponse = await value.getBlocksBinExecuteRequest(
+            {
+              start_height: latest_meta.new_height - 1,
+            },
+            stopSync
+          );
         }
         const res = await value.getBlocksBinScanResponse(
           firstResponse,
