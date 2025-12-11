@@ -42,7 +42,7 @@ pub fn convert_outkey_to_output_information(
 }
 #[derive(Debug, Deserialize)]
 struct InputJson {
-  serialized_input: Vec<u8>,
+  serialized_input: String,
   candidates: Vec<u64>,
 }
 pub fn make_input_sync(
@@ -58,7 +58,8 @@ pub fn make_input_sync(
     Ok(outs) => {
       let input_json: InputJson = serde_json::from_str(input_sts)
         .map_err(|e| format!("failed to parse arguments JSON (missing or invalid field): {}", e))?;
-      let mut reader = Cursor::new(input_json.serialized_input);
+      let serialized_input: Vec<u8> = hex::decode(input_json.serialized_input).unwrap();
+      let mut reader = Cursor::new(serialized_input);
       let output = WalletOutput::read(&mut reader)
         .map_err(|e| format!("failed to read WalletOutput from serialized input: {:?}", e))?;
       let mut rng = OsRng;

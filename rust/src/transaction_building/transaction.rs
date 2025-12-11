@@ -27,16 +27,17 @@ pub fn sign_transaction(tx: String, sender_spend_key: String) -> Result<String, 
   ))
 }
 
-pub fn read_one_input(input_bytes: &[u8]) -> Result<OutputWithDecoys, String> {
+pub fn read_one_input(input_hex_string: String) -> Result<OutputWithDecoys, String> {
+  let input_bytes: Vec<u8> = hex::decode(input_hex_string).unwrap();
   let mut reader = Cursor::new(input_bytes);
   OutputWithDecoys::read(&mut reader)
     .map_err(|e| format!("failed to read  serialized input: {:?}", e))
 }
 
-pub fn read_inputs(vec_inputs: Vec<Vec<u8>>) -> Result<Vec<OutputWithDecoys>, String> {
+pub fn read_inputs(vec_inputs: Vec<String>) -> Result<Vec<OutputWithDecoys>, String> {
   let mut inputs = Vec::with_capacity(vec_inputs.len());
   for input_bytes in vec_inputs {
-    let input = read_one_input(&input_bytes)?;
+    let input = read_one_input(input_bytes)?;
     inputs.push(input);
   }
   Ok(inputs)
@@ -98,7 +99,7 @@ struct PaymentJson {
 
 #[derive(Debug, Deserialize)]
 struct MakeTransactionParams {
-  inputs: Vec<Vec<u8>>,
+  inputs: Vec<String>,
   payments: Vec<PaymentJson>,
   fee_response: FeeResponse,
   fee_priority: String,

@@ -29,6 +29,7 @@ import {
   type UnsignedTransaction,
   signTransaction,
   type SignedTransaction,
+  type Input,
 } from "./send-functionality/transactionBuilding";
 import { WasmProcessor } from "./wasm-processing/wasmProcessor";
 export * from "./node-interaction/binaryEndpoints";
@@ -255,7 +256,7 @@ export class NodeUrl extends WasmProcessor {
     outputToBeSpent: Output,
     candidates: number[],
     get_outs_Response: Uint8Array
-  ) {
+  ): Input {
     return makeInput(this, outputToBeSpent, candidates, get_outs_Response);
   }
   /**

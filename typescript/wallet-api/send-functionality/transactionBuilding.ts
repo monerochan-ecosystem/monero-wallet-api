@@ -1,6 +1,6 @@
 import type { GetFeeEstimateResult, Output } from "../api";
 import { WasmProcessor } from "../wasm-processing/wasmProcessor";
-export type Input = number[];
+export type Input = string;
 export type UnsignedTransaction = string;
 export type SignedTransaction = string;
 export function makeInput<T extends WasmProcessor>(
@@ -33,7 +33,7 @@ export function makeInput<T extends WasmProcessor>(
       "Failed to make Input (combine output with sampled and verified unlocked decoys)"
     );
   }
-  return result["input"] as number[];
+  return result["input"] as Input;
 }
 export type SampledDecoys = {
   candidates: number[];

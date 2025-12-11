@@ -160,7 +160,7 @@ pub extern "C" fn make_input(output_json_len: usize, getouts_response_len: usize
     Ok(blocks_response) => {
       match transaction_building::inputs::make_input_sync(&outputs_json, blocks_response) {
         Ok(input) => {
-          let inputs_json = json!({ "input": input.serialize() });
+          let inputs_json = json!({ "input": hex::encode(input.serialize()) });
           // input.serialize opposite is input.read
           output_string(&inputs_json.to_string());
         }

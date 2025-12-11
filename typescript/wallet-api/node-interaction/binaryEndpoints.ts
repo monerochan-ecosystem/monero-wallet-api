@@ -81,7 +81,7 @@ export type Output = {
   stealth_address: string;
   tx_hash: string;
   primary_address: string;
-  serialized: number[];
+  serialized: string;
 };
 
 export type ScanResult = {
