@@ -115,8 +115,13 @@ export class ViewPair extends WasmProcessor {
    * It also shows how the outputs are saved (note the unqiue requirement for the stealth_adress).
    * @param start_height the height to start syncing from.
    * @param callback this function will get the new outputs as they are found as a parameter
+   * @param stop_height optional height to stop scanning at. (final new_height will be >= stop_height)
    */
-  public async scan(start_height: number, callback: ScanResultCallback) {
+  public async scan(
+    start_height: number,
+    callback: ScanResultCallback,
+    stop_height: number | null = null
+  ) {
     let latest_meta: GetBlocksResultMeta = {
       new_height: start_height,
       daemon_height: start_height + 1,
@@ -133,6 +138,7 @@ export class ViewPair extends WasmProcessor {
         }
       );
       callback(res);
+      if (stop_height !== null && latest_meta.new_height >= stop_height) return;
     }
   }
   /**
@@ -328,8 +334,13 @@ export class ViewPairs {
    * It also shows how the outputs are saved (note the unqiue requirement for the stealth_adress).
    * @param start_height the height to start syncing from.
    * @param callback this function will get the new outputs as they are found as a parameter
+   * @param stop_height optional height to stop scanning at. (final new_height will be >= stop_height)
    */
-  public async scan(start_height: number, callback: ScanResultCallback) {
+  public async scan(
+    start_height: number,
+    callback: ScanResultCallback,
+    stop_height: number | null = null
+  ) {
     let latest_meta: GetBlocksResultMeta = {
       new_height: start_height,
       daemon_height: start_height + 1,
@@ -351,6 +362,8 @@ export class ViewPairs {
           }
         );
         callback(res);
+        if (stop_height !== null && latest_meta.new_height >= stop_height)
+          return;
       }
     }
   }
