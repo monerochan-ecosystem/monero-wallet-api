@@ -16,7 +16,9 @@ import {
 import {
   get_fee_estimate,
   get_output_distribution,
+  send_raw_transaction,
   type GetOutputDistributionParams,
+  type SendRawTransactionResponse,
 } from "./node-interaction/jsonEndpoints";
 
 import {
@@ -26,6 +28,7 @@ import {
   type MakeTransactionParams,
   type UnsignedTransaction,
   signTransaction,
+  type SignedTransaction,
 } from "./send-functionality/transactionBuilding";
 import { WasmProcessor } from "./wasm-processing/wasmProcessor";
 export * from "./node-interaction/binaryEndpoints";
@@ -248,6 +251,19 @@ export class NodeUrl extends WasmProcessor {
     get_outs_Response: Uint8Array
   ) {
     return makeInput(this, outputToBeSpent, candidates, get_outs_Response);
+  }
+  /**
+   * Send a raw transaction to the node for broadcasting.
+   * @link https://docs.getmonero.org/rpc-library/monerod-rpc/#send_raw_transaction
+   * @param tx_as_hex tx_as_hex - string; Full transaction information as hexadecimal string.
+   * @param do_not_relay (Optional) boolean; Stop relaying transaction to other nodes. Defaults to false.
+   * @returns The response indicating success or failure, with validation details.
+   */
+  public async sendRawTransaction(
+    tx_as_hex: SignedTransaction,
+    do_not_relay: boolean = false
+  ): Promise<SendRawTransactionResponse> {
+    return send_raw_transaction(this.node_url, tx_as_hex, do_not_relay);
   }
 }
 // const nodeurl = await NodeUrl.create("http://stagenet.community.rino.io:38081");

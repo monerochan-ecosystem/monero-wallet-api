@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { SignedTransaction } from "../send-functionality/transactionBuilding";
 
 export const GetInfoResponseSchema = z.object({
   id: z.string(),
@@ -275,4 +276,66 @@ export async function get_fee_estimate(NODE_URL: string) {
   }
 
   return parsedResult.result;
+}
+
+export const SendRawTransactionResponseSchema = z.object({
+  double_spend: z.boolean(), // double_spend - boolean; Transaction is a double spend (true) or not (false).
+  fee_too_low: z.boolean(), // fee_too_low - boolean; Fee is too low (true) or OK (false).
+  invalid_input: z.boolean(), // invalid_input - boolean; Input is invalid (true) or valid (false).
+  invalid_output: z.boolean(), // invalid_output - boolean; Output is invalid (true) or valid (false).
+  low_mixin: z.boolean(), // low_mixin - boolean; Mixin count is too low (true) or OK (false).
+  not_rct: z.boolean().optional(), // not_rct - boolean; Transaction is a standard ring transaction (true) or a ring confidential transaction (false).
+  not_relayed: z.boolean(), // not_relayed - boolean; Transaction was not relayed (true) or relayed (false).
+  overspend: z.boolean(), // overspend - boolean; Transaction uses more money than available (true) or not (false).
+  reason: z.string(), // reason - string; Additional information. Currently empty or "Not relayed" if transaction was accepted but not relayed.
+  status: z.string(), // status - string; General RPC error code. "OK" means everything looks good. Any other value means that something went wrong.
+  too_big: z.boolean(), // too_big - boolean; Transaction size is too big (true) or OK (false).
+  untrusted: z.boolean(), // untrusted - boolean; States if the result is obtained using the bootstrap mode, and is therefore not trusted (true), or when the daemon is fully synced and thus handles the RPC locally (false)
+});
+export type SendRawTransactionResponse = z.infer<
+  typeof SendRawTransactionResponseSchema
+>;
+
+export function parseSendRawTransactionResponse(
+  data: unknown
+): SendRawTransactionResponse | null {
+  const result = SendRawTransactionResponseSchema.safeParse(data);
+  if (result.success) {
+    return result.data;
+  } else {
+    console.error("Validation failed:", result.error);
+    return null;
+  }
+}
+
+export async function send_raw_transaction(
+  NODE_URL: string,
+  tx_as_hex: SignedTransaction, // tx_as_hex - string; Full transaction information as hexadecimal string.
+  do_not_relay: boolean = false // do_not_relay - (Optional) boolean; Stop relaying transaction to other nodes. Defaults to false.
+) {
+  const sendRawTransactionResponse = await fetch(
+    NODE_URL + "/send_raw_transaction",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ tx_as_hex, do_not_relay }),
+    }
+  );
+  if (!sendRawTransactionResponse.ok) {
+    throw new Error(
+      `Failed to send raw transaction: ${sendRawTransactionResponse.statusText}`
+    );
+  }
+  const sendRawTransactionResult = await sendRawTransactionResponse.json();
+  const parsedResult = parseSendRawTransactionResponse(
+    sendRawTransactionResult
+  );
+  if (parsedResult === null) {
+    throw new Error(
+      "Failed to receive response from node (send_raw_transaction result)"
+    );
+  }
+  return parsedResult;
 }

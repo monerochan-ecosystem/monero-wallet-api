@@ -2,6 +2,7 @@ import type { GetFeeEstimateResult, Output } from "../api";
 import { WasmProcessor } from "../wasm-processing/wasmProcessor";
 export type Input = number[];
 export type UnsignedTransaction = string;
+export type SignedTransaction = string;
 export function makeInput<T extends WasmProcessor>(
   processor: T,
   outputToBeSpent: Output,
@@ -98,7 +99,7 @@ export function makeTransaction<T extends WasmProcessor>(
 export async function signTransaction(
   tx: UnsignedTransaction,
   sender_spend_key: string
-) {
+): Promise<SignedTransaction> {
   const wasmProcessor = await WasmProcessor.init();
   wasmProcessor.writeToWasmMemory = (ptr, len) => {
     wasmProcessor.writeString(ptr, len, tx);
