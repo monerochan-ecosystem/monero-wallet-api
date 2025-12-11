@@ -1,6 +1,7 @@
 import type { GetFeeEstimateResult, Output } from "../api";
-import type { WasmProcessor } from "../wasm-processing/wasmProcessor";
+import { WasmProcessor } from "../wasm-processing/wasmProcessor";
 export type Input = number[];
+export type UnsignedTransaction = string;
 export function makeInput<T extends WasmProcessor>(
   processor: T,
   outputToBeSpent: Output,
@@ -91,5 +92,31 @@ export function makeTransaction<T extends WasmProcessor>(
   if (!result) {
     throw new Error("Failed to make transaction");
   }
-  return result["signable_transaction"] as number[];
+  return result["signable_transaction"] as UnsignedTransaction;
+}
+
+export async function signTransaction(
+  tx: UnsignedTransaction,
+  sender_spend_key: string
+) {
+  const wasmProcessor = await WasmProcessor.init();
+  wasmProcessor.writeToWasmMemory = (ptr, len) => {
+    wasmProcessor.writeString(ptr, len, tx);
+    wasmProcessor.writeToWasmMemory = (ptr, len) => {
+      wasmProcessor.writeString(ptr, len, sender_spend_key);
+    };
+  };
+  let result: { signed_transaction: string } | null = null;
+  wasmProcessor.readFromWasmMemory = (ptr, len) => {
+    result = JSON.parse(wasmProcessor.readString(ptr, len));
+  };
+  //@ts-ignore
+  wasmProcessor.tinywasi.instance.exports.sign_transaction(
+    tx.length,
+    sender_spend_key.length
+  );
+  if (!result) {
+    throw new Error("Failed to sign transaction");
+  }
+  return result["signed_transaction"];
 }

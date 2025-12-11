@@ -1,5 +1,6 @@
 pub mod block_parsing;
 pub mod transaction_building;
+pub mod keypairs;
 use block_parsing::convert_to_json;
 use block_parsing::get_blocks_bin_response_meta;
 use block_parsing::scan_blocks;
@@ -72,13 +73,25 @@ mod your_program {
 }
 /// WASM / C ABI
 #[no_mangle]
+pub extern "C" fn make_spendkey() {
+  output_string(hex::encode(keypairs::make_spendkey().to_bytes()).as_str());
+}
+#[no_mangle]
+pub extern "C" fn make_viewkey(spend_key_string_len: usize) {
+  let spend_key_string = input_string(spend_key_string_len);
+  output_string(&convert_to_json(&keypairs::viewpair_from_spendkey(
+    <[u8; 32]>::from_hex(spend_key_string.as_str()).unwrap(),
+  )));
+}
+#[no_mangle]
 pub extern "C" fn init_viewpair(
   primary_address_string_len: usize,
   secret_view_key_string_len: usize,
 ) {
   let primary_address = input_string(primary_address_string_len);
   let secret_view_key = input_string(secret_view_key_string_len);
-  let viewpair = make_viewpair(primary_address.as_str(), secret_view_key.as_str());
+  let viewpair =
+    init_viewpair_from_viewpk_primary(primary_address.as_str(), secret_view_key.as_str());
   GLOBAL_STATE.with(|state| {
     let mut global_state = state.borrow_mut();
     global_state.viewpair = Some(viewpair.clone());
@@ -173,7 +186,7 @@ pub extern "C" fn make_transaction(json_params_len: usize) {
       Some(viewpair) => {
         match transaction_building::transaction::make_transaction(&json_params, viewpair.clone()) {
           Ok(signable_tx) => {
-            let tx_json = json!({ "signable_transaction": signable_tx.serialize() });
+            let tx_json = json!({ "signable_transaction": hex::encode(signable_tx.serialize()) });
             output_string(&tx_json.to_string());
           }
           Err(e) => {
@@ -188,6 +201,22 @@ pub extern "C" fn make_transaction(json_params_len: usize) {
       }
     }
   });
+}
+
+#[no_mangle]
+pub extern "C" fn sign_transaction(tx_len: usize, secret_spend_key_len: usize) {
+  let tx_string = input_string(tx_len);
+  let secret_spend_key_string = input_string(secret_spend_key_len);
+  match transaction_building::transaction::sign_transaction(tx_string, secret_spend_key_string) {
+    Ok(signed_tx) => {
+      let tx_json = json!({ "signed_transaction": signed_tx });
+      output_string(&tx_json.to_string());
+    }
+    Err(e) => {
+      println!("Error signing transaction: {}", e);
+      return;
+    }
+  }
 }
 
 #[no_mangle]
@@ -316,7 +345,7 @@ pub extern "C" fn convert_get_blocks_bin_response_to_json(response_len: usize) {
   }
 }
 ///rust API
-pub fn make_viewpair(primary_address: &str, secret_view_key: &str) -> ViewPair {
+pub fn init_viewpair_from_viewpk_primary(primary_address: &str, secret_view_key: &str) -> ViewPair {
   let view_key_bytes = <[u8; 32]>::from_hex(secret_view_key).unwrap();
   monero_wallet::ViewPair::new(
     monero_wallet::address::MoneroAddress::from_str_with_unchecked_network(primary_address)

@@ -1,3 +1,4 @@
+use curve25519_dalek::Scalar;
 use monero_wallet::{
   OutputWithDecoys, ViewPair,
   address::{MoneroAddress},
@@ -10,6 +11,21 @@ use hex::FromHex;
 use rand_core::{OsRng, RngCore};
 use serde::Deserialize;
 use zeroize::Zeroizing;
+
+pub fn sign_transaction(tx: String, sender_spend_key: String) -> Result<String, String> {
+  let spend_bytes = <[u8; 32]>::from_hex(sender_spend_key).unwrap();
+  let spend_scalar = Zeroizing::new(Scalar::from_canonical_bytes(spend_bytes).unwrap()); // okay to panic if spend_key is invalid
+
+  let mut reader = Cursor::new(hex::decode(tx).unwrap());
+  let transaction = SignableTransaction::read(&mut reader)
+    .map_err(|e| format!("failed to read SignableTransaction: {:?}", e))?;
+  Ok(hex::encode(
+    transaction
+      .sign(&mut OsRng, &spend_scalar)
+      .map_err(|e| format!("failed to sign transaction: {:?}", e))?
+      .serialize(),
+  ))
+}
 
 pub fn read_one_input(input_bytes: &[u8]) -> Result<OutputWithDecoys, String> {
   let mut reader = Cursor::new(input_bytes);

@@ -98,7 +98,7 @@ export class WasmProcessor {
     return str;
   };
   public tinywasi!: TinyWASI;
-  protected constructor(public node_url: string) {}
+  protected constructor() {}
   public async initWasmModule() {
     const tinywasi = new TinyWASI();
     this.tinywasi = tinywasi;
@@ -120,5 +120,11 @@ export class WasmProcessor {
     );
     tinywasi.initialize(instance);
     return tinywasi;
+  }
+
+  static async init() {
+    const wasmProcessor = new WasmProcessor();
+    await wasmProcessor.initWasmModule();
+    return wasmProcessor;
   }
 }

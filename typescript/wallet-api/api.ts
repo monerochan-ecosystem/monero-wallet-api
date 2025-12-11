@@ -24,6 +24,8 @@ import {
   sampleDecoys,
   makeTransaction,
   type MakeTransactionParams,
+  type UnsignedTransaction,
+  signTransaction,
 } from "./send-functionality/transactionBuilding";
 import { WasmProcessor } from "./wasm-processing/wasmProcessor";
 export * from "./node-interaction/binaryEndpoints";
@@ -37,6 +39,9 @@ export type ScanResultCallback = (result: ScanResult | ErrorResponse) => void;
  * {@link https://docs.getmonero.org/rpc-library/monerod-rpc/#get_blocksbin}
  */
 export class ViewPair extends WasmProcessor {
+  protected constructor(public node_url: string) {
+    super();
+  }
   public static async create(
     primary_address: string,
     secret_view_key: string,
@@ -147,10 +152,12 @@ export class ViewPair extends WasmProcessor {
    * @param params - The transaction parameters.
    * @returns The serialized transaction as an array of numbers.
    */
-  public makeTransaction(params: MakeTransactionParams): number[] {
+  public makeTransaction(params: MakeTransactionParams): UnsignedTransaction {
     return makeTransaction(this, params);
   }
 }
+
+export { signTransaction }; // signTransaction is defined in transactionBuilding.ts
 /**
  * This class is useful to interact with Moneros DaemonRpc binary requests in a convenient way.
  * (similar to how you would interact with a REST api that gives you json back.)
@@ -158,6 +165,10 @@ export class ViewPair extends WasmProcessor {
  * {@link https://docs.getmonero.org/rpc-library/monerod-rpc/#get_blocksbin}
  */
 export class NodeUrl extends WasmProcessor {
+  protected constructor(public node_url: string) {
+    super();
+  }
+
   public static async create(node_url?: string): Promise<NodeUrl> {
     const nodeUrl = new NodeUrl(node_url || "http://localhost:38081");
     await nodeUrl.initWasmModule();
