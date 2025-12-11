@@ -92,6 +92,10 @@ export type ScanResult = {
 export type ErrorResponse = {
   error: string;
 };
+
+interface HasNodeUrl {
+  node_url: string;
+}
 export type GetBlocksBinMetaCallback = (meta: GetBlocksResultMeta) => void;
 
 /**
@@ -142,10 +146,9 @@ export function getBlocksBinMakeRequest<T extends WasmProcessor>(
   return getBlocksRequestArray!; // written in build_getblocksbin_request call to readFromWasmMemory
 }
 
-export async function getBlocksBinExecuteRequest<T extends WasmProcessor>(
-  processor: T,
-  params: GetBlocksBinRequest
-) {
+export async function getBlocksBinExecuteRequest<
+  T extends WasmProcessor & HasNodeUrl
+>(processor: T, params: GetBlocksBinRequest) {
   const getBlocksRequestArray = getBlocksBinMakeRequest(processor, params);
   const getBlocksBinResponseBuffer = await binaryFetchRequest(
     processor.node_url + "/getblocks.bin",
@@ -184,7 +187,7 @@ export async function getBlocksBinScanResponse<T extends WasmProcessor>(
   );
   return result!; //result written in scan_blocks_with_get_blocks_bin
 }
-export async function getBlocksBinScan<T extends WasmProcessor>(
+export async function getBlocksBinScan<T extends WasmProcessor & HasNodeUrl>(
   processor: T,
   params: GetBlocksBinRequest,
   metaCallBack?: GetBlocksBinMetaCallback
@@ -200,7 +203,7 @@ export async function getBlocksBinScan<T extends WasmProcessor>(
   );
 }
 
-export async function getBlocksBinJson<T extends WasmProcessor>(
+export async function getBlocksBinJson<T extends WasmProcessor & HasNodeUrl>(
   processor: T,
   params: GetBlocksBinRequest
 ) {
@@ -298,10 +301,9 @@ export function getOutsBinMakeRequest<T extends WasmProcessor>(
   return getOutsArray as Uint8Array; // written in build_getblocksbin_request call to readFromWasmMemory
 }
 
-export async function getOutsBinExecuteRequest<T extends WasmProcessor>(
-  processor: T,
-  params: GetOutsBinRequest
-) {
+export async function getOutsBinExecuteRequest<
+  T extends WasmProcessor & HasNodeUrl
+>(processor: T, params: GetOutsBinRequest) {
   const getOutsRequestArray = getOutsBinMakeRequest(processor, params);
   const getOutsBinResponseBuffer = await binaryFetchRequest(
     processor.node_url + "/get_outs.bin",
@@ -309,7 +311,7 @@ export async function getOutsBinExecuteRequest<T extends WasmProcessor>(
   );
   return getOutsBinResponseBuffer;
 }
-export async function getOutsBinJson<T extends WasmProcessor>(
+export async function getOutsBinJson<T extends WasmProcessor & HasNodeUrl>(
   processor: T,
   params: GetOutsBinRequest
 ) {
