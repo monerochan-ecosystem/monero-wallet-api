@@ -34,8 +34,9 @@ import {
 import { WasmProcessor } from "./wasm-processing/wasmProcessor";
 export * from "./node-interaction/binaryEndpoints";
 export * from "./node-interaction/jsonEndpoints";
+export type EmptyScanResult = {}; // can happen when we abort a scan before any blocks are processed
 export type ScanResultCallback = (
-  result: ScanResult | ErrorResponse | undefined
+  result: ScanResult | ErrorResponse | EmptyScanResult
 ) => void;
 /**
  * This class is useful to interact with Moneros DaemonRpc binary requests in a convenient way.
@@ -149,7 +150,11 @@ export class ViewPair extends WasmProcessor {
         },
         stopSync
       );
-      callback(res);
+      if (res === undefined) {
+        await callback({});
+      } else {
+        await callback(res);
+      }
       if (stop_height !== null && latest_meta.new_height >= stop_height) return;
     }
   }
@@ -380,7 +385,11 @@ export class ViewPairs {
             latest_meta = meta;
           }
         );
-        callback(res);
+        if (res === undefined) {
+          await callback({});
+        } else {
+          await callback(res);
+        }
         if (stop_height !== null && latest_meta.new_height >= stop_height)
           return;
       }
