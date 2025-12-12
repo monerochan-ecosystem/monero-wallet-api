@@ -220,6 +220,22 @@ pub extern "C" fn sign_transaction(tx_len: usize, secret_spend_key_len: usize) {
 }
 
 #[no_mangle]
+pub extern "C" fn compute_key_image(output_hex_string_len: usize, sender_spend_key_len: usize) {
+  let output_hex_string = input_string(output_hex_string_len);
+  let sender_spend_key = input_string(sender_spend_key_len);
+  match transaction_building::inputs::compute_key_image(output_hex_string, sender_spend_key) {
+    Ok(key_image) => {
+      let key_image_json = json!({ "key_image": key_image });
+      output_string(&key_image_json.to_string());
+    }
+    Err(e) => {
+      println!("Error computing key image: {}", e);
+      return;
+    }
+  }
+}
+
+#[no_mangle]
 pub extern "C" fn build_getblocksbin_request(
   requested_info: u8,
   start_height: u64,

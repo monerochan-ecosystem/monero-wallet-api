@@ -179,6 +179,8 @@ export class ViewPair extends WasmProcessor {
 }
 
 export { signTransaction }; // signTransaction is defined in transactionBuilding.ts
+export { computeKeyImage } from "./scanning-syncing/computeKeyImage"; // when scanning outputs,
+//  compute key images for them to identify spends
 /**
  * This class is useful to interact with Moneros DaemonRpc binary requests in a convenient way.
  * (similar to how you would interact with a REST api that gives you json back.)
