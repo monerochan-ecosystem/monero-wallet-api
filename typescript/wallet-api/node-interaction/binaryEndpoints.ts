@@ -83,11 +83,17 @@ export type Output = {
   tx_hash: string;
   primary_address: string;
   serialized: string;
+  spent_in_tx_hash?: string; // scanWithCache will set this, if detected as ownspend (transaction)
+  spent_block_height?: number; // scanWithCache sets this to height, where it was detected as ownspend
+  spent_relative_index?: number; // scanWithCache sets this to relative index in the tx it was spent in
 };
 export type OnchainKeyImage = {
   key_image_hex: KeyImage;
   relative_index: number; // relative index of input in transaction
   tx_hash: string;
+  block_hash: string;
+  block_height: number;
+  block_timestamp: number;
 };
 
 export type ScanResult = {

@@ -51,6 +51,9 @@ struct InputImage {
   key_image_hex: String,
   relative_index: usize,
   tx_hash: String, // Assuming tx has a method like tx.hash() returning [u8; 32]
+  block_timestamp: u64,
+  block_height: u64,
+  block_hash: String,
 }
 pub fn scan_blocks(
   mut scanner: Scanner,
@@ -112,7 +115,14 @@ pub fn scan_blocks(
         monero_wallet::transaction::Input::Gen(_) => {}
         monero_oxide::transaction::Input::ToKey { amount: _, key_offsets: _, key_image } => {
           let key_image_hex = hex::encode(key_image.to_bytes());
-          acc.push(InputImage { key_image_hex, relative_index: i, tx_hash: tx_hash.clone() });
+          acc.push(InputImage {
+            key_image_hex,
+            relative_index: i,
+            tx_hash: tx_hash.clone(),
+            block_timestamp: block.header.timestamp,
+            block_height: get_blocks_bin.start_height + (index as u64),
+            block_hash: hex::encode(block.hash()),
+          });
         }
       });
       acc
