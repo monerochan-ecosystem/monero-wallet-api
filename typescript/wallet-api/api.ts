@@ -35,9 +35,12 @@ import { WasmProcessor } from "./wasm-processing/wasmProcessor";
 export * from "./node-interaction/binaryEndpoints";
 export * from "./node-interaction/jsonEndpoints";
 export type EmptyScanResult = {}; // can happen when we abort a scan before any blocks are processed
-export type ScanResultCallback = (
-  result: ScanResult | ErrorResponse | EmptyScanResult
-) => void;
+export type ScanResultCallback =
+  | ((result: ScanResult | ErrorResponse | EmptyScanResult) => void)
+  | ((result: ScanResult | ErrorResponse | EmptyScanResult) => Promise<void>); // accept async callbacks
+// we will await async callbacks. convenient way to halt a sync + feed back the key image list,
+// to look out for our own spends before proceeding the scan. This happens in the scanWithCache function.
+
 /**
  * This class is useful to interact with Moneros DaemonRpc binary requests in a convenient way.
  * (similar to how you would interact with a REST api that gives you json back.)
