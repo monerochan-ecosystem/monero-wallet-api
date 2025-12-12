@@ -46,13 +46,19 @@ pub fn get_blocks_bin_response_meta(
     primary_address: primary_address.to_string(),
   }
 }
-
+#[derive(serde::Serialize, Debug)]
+struct InputImage {
+  key_image_hex: String,
+  relative_index: usize,
+  tx_hash: String, // Assuming tx has a method like tx.hash() returning [u8; 32]
+}
 pub fn scan_blocks(
   mut scanner: Scanner,
   primary_address: &str,
   get_blocks_bin: GetBlocksResponse,
 ) -> String {
   let mut output_jsons = Vec::new();
+  let mut input_images_jsons: Vec<InputImage> = Vec::new();
 
   for (index, block_entry) in get_blocks_bin.blocks.iter().enumerate() {
     let output_index_for_first_ringct_output = get_blocks_bin
@@ -93,6 +99,26 @@ pub fn scan_blocks(
       }
     }
 
+    let mut txs_with_hashes = vec![(
+      block.miner_transaction().hash(),
+      Transaction::<Pruned>::from(block.miner_transaction().clone()),
+    )];
+    for (hash, tx) in block.transactions.iter().zip(transactions.clone()) {
+      txs_with_hashes.push((*hash, tx));
+    }
+    let input_images = txs_with_hashes.iter().fold(Vec::new(), |mut acc, (hash_bytes, tx)| {
+      let tx_hash = hex::encode(hash_bytes); // hash_bytes is [u8; 32]
+      tx.prefix().inputs.iter().enumerate().for_each(|(i, input)| match input {
+        monero_wallet::transaction::Input::Gen(_) => {}
+        monero_oxide::transaction::Input::ToKey { amount: _, key_offsets: _, key_image } => {
+          let key_image_hex = hex::encode(key_image.to_bytes());
+          acc.push(InputImage { key_image_hex, relative_index: i, tx_hash: tx_hash.clone() });
+        }
+      });
+      acc
+    });
+    input_images_jsons.extend(input_images);
+
     let scan_block = ScannableBlock { block, transactions, output_index_for_first_ringct_output };
     match scanner.scan(scan_block) {
       Ok(res) => {
@@ -130,6 +156,7 @@ pub fn scan_blocks(
       }
     }
   }
-  let final_output_json: serde_json::Value = json!({"outputs":output_jsons});
+  let final_output_json: serde_json::Value =
+    json!({"outputs":output_jsons, "all_key_images": input_images_jsons});
   return final_output_json.to_string();
 }

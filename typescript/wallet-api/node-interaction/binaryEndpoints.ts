@@ -1,3 +1,4 @@
+import type { KeyImage } from "../scanning-syncing/computeKeyImage";
 import type { WasmProcessor } from "../wasm-processing/wasmProcessor";
 export type GetBlocksBinRequest = {
   requested_info?: "BLOCKS_ONLY" | "BLOCKS_AND_POOL" | "POOL_ONLY"; // default: "BLOCKS_ONLY"
@@ -83,9 +84,15 @@ export type Output = {
   primary_address: string;
   serialized: string;
 };
+export type OnchainKeyImage = {
+  key_image_hex: KeyImage;
+  relative_index: number; // relative index of input in transaction
+  tx_hash: string;
+};
 
 export type ScanResult = {
   outputs: Output[];
+  all_key_images: OnchainKeyImage[];
   new_height: number;
   primary_address: string;
 };
