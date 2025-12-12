@@ -49,7 +49,10 @@ export type ScanResultCallback =
  * {@link https://docs.getmonero.org/rpc-library/monerod-rpc/#get_blocksbin}
  */
 export class ViewPair extends WasmProcessor {
-  protected constructor(public node_url: string) {
+  protected constructor(
+    public node_url: string,
+    public primary_address: string
+  ) {
     super();
   }
   public static async create(
@@ -57,7 +60,10 @@ export class ViewPair extends WasmProcessor {
     secret_view_key: string,
     node_url?: string
   ): Promise<ViewPair> {
-    const viewPair = new ViewPair(node_url || "http://localhost:38081");
+    const viewPair = new ViewPair(
+      node_url || "http://localhost:38081",
+      primary_address
+    );
     const tinywasi = await viewPair.initWasmModule();
     viewPair.writeToWasmMemory = (ptr, len) => {
       viewPair.writeString(ptr, len, primary_address);
