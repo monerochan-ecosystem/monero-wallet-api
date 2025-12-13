@@ -20,6 +20,11 @@ import {
   type GetOutputDistributionParams,
   type SendRawTransactionResponse,
 } from "./node-interaction/jsonEndpoints";
+import {
+  scanWithCache,
+  type CacheChangedCallback,
+  type ScanCache,
+} from "./scanning-syncing/scanWithCache";
 
 import {
   makeInput,
@@ -148,7 +153,7 @@ export class ViewPair extends WasmProcessor {
     start_height: number,
     callback: ScanResultCallback,
     stopSync?: AbortSignal,
-    stop_height: number | null = null
+    stop_height: number | undefined | null = null
   ) {
     let latest_meta: GetBlocksResultMeta = {
       new_height: start_height,
@@ -174,6 +179,35 @@ export class ViewPair extends WasmProcessor {
       }
       if (stop_height !== null && latest_meta.new_height >= stop_height) return;
     }
+  }
+
+  /**
+   * Scans blockchain from `start_height` using the provided initialCache, invoking callback cacheChanged() for results and cache changes.
+   *
+   * @param start_height - Starting block height for the scan
+   * @param initialCache - Optional initial scan cache
+   * @param cacheChanged - params: newCache, added, ownspend, reorged {@link CacheChangedCallback} invoked when cache changes
+   * @param stopSync - Optional abort signal to stop scanning
+   * @param spend_private_key - Optional spend key (view-only if omitted = no ownspend will be found and supplied to cacheChanged())
+   * @param stop_height - Optional ending block height (null = keep scanning)
+   */
+  public async scanWithCache(
+    start_height: number,
+    initialCache?: ScanCache,
+    cacheChanged: CacheChangedCallback = (...args) => console.log(args),
+    stopSync?: AbortSignal,
+    spend_private_key?: string,
+    stop_height: number | null = null
+  ) {
+    return scanWithCache(
+      this,
+      start_height,
+      initialCache,
+      cacheChanged,
+      stopSync,
+      spend_private_key,
+      stop_height
+    );
   }
   /**
    * This method makes an integrated Address for the Address of the Viewpair it was opened with.
