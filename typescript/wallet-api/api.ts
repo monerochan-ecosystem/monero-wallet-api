@@ -22,6 +22,7 @@ import {
 } from "./node-interaction/jsonEndpoints";
 import {
   scanWithCache,
+  scanWithCacheFile,
   type CacheChangedCallback,
   type ScanCache,
 } from "./scanning-syncing/scanWithCache";
@@ -191,7 +192,7 @@ export class ViewPair extends WasmProcessor {
    * @param spend_private_key - Optional spend key (view-only if omitted = no ownspend will be found and supplied to cacheChanged())
    * @param stop_height - Optional ending block height (null = keep scanning)
    */
-  public async scanWithCache(
+  public scanWithCache(
     start_height: number,
     initialCache?: ScanCache,
     cacheChanged: CacheChangedCallback = (...args) => console.log(args),
@@ -203,6 +204,35 @@ export class ViewPair extends WasmProcessor {
       this,
       start_height,
       initialCache,
+      cacheChanged,
+      stopSync,
+      spend_private_key,
+      stop_height
+    );
+  }
+  /**
+   * Scans blockchain from `start_height` using the provided the provided initialCachePath file path,
+   *  invoking callback cacheChanged() for results and cache changes
+   *
+   * @param start_height - Starting block height for the scan
+   * @param initialCachePath: string - Optional initial scan cache file path. (will get created if it does not exist)
+   * @param cacheChanged - params: newCache, added, ownspend, reorged {@link CacheChangedCallback} invoked when cache changes
+   * @param stopSync - Optional abort signal to stop scanning
+   * @param spend_private_key - Optional spend key (view-only if omitted = no ownspend will be found and supplied to cacheChanged())
+   * @param stop_height - Optional ending block height (null = keep scanning)
+   */
+  public scanWithCacheFile(
+    start_height: number,
+    initialCachePath: string,
+    cacheChanged: CacheChangedCallback = (...args) => console.log(args),
+    stopSync?: AbortSignal,
+    spend_private_key?: string, // if no spendkey is provided, this will be a view only sync. (no ownspend detected)
+    stop_height: number | null = null
+  ) {
+    scanWithCacheFile(
+      this,
+      start_height,
+      initialCachePath,
       cacheChanged,
       stopSync,
       spend_private_key,

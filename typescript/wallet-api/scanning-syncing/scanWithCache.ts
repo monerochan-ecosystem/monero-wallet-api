@@ -1,7 +1,62 @@
 import type { Output, ScanResult, ScanResultCallback } from "../api";
 import type { WasmProcessor } from "../wasm-processing/wasmProcessor";
 import { computeKeyImage, type KeyImage } from "./computeKeyImage";
-
+/**
+ * Scans blockchain from `start_height` using the provided processor and using the provided initialCachePath file path,
+ *  invoking callback cacheChanged() for results and cache changes
+ *
+ * @param processor - Wasm processor with scan method and primary address (like ViewPair)
+ * @param start_height - Starting block height for the scan
+ * @param initialCachePath: string - Optional initial scan cache file path. (will get created if it does not exist)
+ * @param cacheChanged - params: newCache, added, ownspend, reorged {@link CacheChangedCallback} invoked when cache changes
+ * @param stopSync - Optional abort signal to stop scanning
+ * @param spend_private_key - Optional spend key (view-only if omitted = no ownspend will be found and supplied to cacheChanged())
+ * @param stop_height - Optional ending block height (null = keep scanning)
+ */
+export async function scanWithCacheFile<
+  T extends WasmProcessor &
+    HasScanMethod &
+    HasScanWithCacheMethod &
+    HasPrimaryAddress
+>(
+  processor: T,
+  start_height: number,
+  initialCachePath: string,
+  cacheChanged: CacheChangedCallback = (...args) => console.log(args),
+  stopSync?: AbortSignal,
+  spend_private_key?: string, // if no spendkey is provided, this will be a view only sync. (no ownspend detected)
+  stop_height: number | null = null
+) {
+  const jsonString = await Bun.file(initialCachePath)
+    .text()
+    .catch(() => undefined);
+  const initialScanCache = jsonString
+    ? (JSON.parse(jsonString) as ScanCache)
+    : undefined;
+  const cacheCallback: CacheChangedCallback = async (...args) => {
+    const [newCache] = args;
+    await Bun.write(initialCachePath, JSON.stringify(newCache, null, 2));
+    await cacheChanged(...args);
+  };
+  await processor.scanWithCache(
+    start_height,
+    initialScanCache,
+    cacheCallback,
+    stopSync,
+    spend_private_key,
+    stop_height
+  );
+}
+export interface HasScanWithCacheMethod {
+  scanWithCache: <T extends WasmProcessor & HasScanMethod & HasPrimaryAddress>(
+    start_height: number,
+    initialCache?: ScanCache,
+    cacheChanged?: CacheChangedCallback,
+    stopSync?: AbortSignal,
+    spend_private_key?: string,
+    stop_height?: number | null
+  ) => Promise<void>;
+}
 export interface HasScanMethod {
   scan: (
     start_height: number,
