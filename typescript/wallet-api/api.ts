@@ -35,9 +35,15 @@ import { WasmProcessor } from "./wasm-processing/wasmProcessor";
 export * from "./node-interaction/binaryEndpoints";
 export * from "./node-interaction/jsonEndpoints";
 export type EmptyScanResult = {}; // can happen when we abort a scan before any blocks are processed
+
+export type FastForward = number; // height to fast forward scan to
 export type ScanResultCallback =
-  | ((result: ScanResult | ErrorResponse | EmptyScanResult) => void)
-  | ((result: ScanResult | ErrorResponse | EmptyScanResult) => Promise<void>); // accept async callbacks
+  | ((
+      result: ScanResult | ErrorResponse | EmptyScanResult
+    ) => FastForward | void)
+  | ((
+      result: ScanResult | ErrorResponse | EmptyScanResult
+    ) => Promise<FastForward | void>); // accept async callbacks
 // we will await async callbacks. convenient way to halt a sync + feed back the key image list,
 // to look out for our own spends before proceeding the scan. This happens in the scanWithCache function.
 
@@ -133,7 +139,8 @@ export class ViewPair extends WasmProcessor {
    * The scanner.ts worker in the standard-checkout dir shows how to keep scanning after the tip is reached.
    * It also shows how the outputs are saved (note the unqiue requirement for the stealth_adress).
    * @param start_height the height to start syncing from.
-   * @param callback this function will get the new outputs as they are found as a parameter
+   * @param callback this function will get the new outputs as they are found as a parameter,
+   *  if returned value fastForward is larger than latest new_height, we continue scanning from there
    * @param stopSync optional AbortSignal to stop the syncing process
    * @param stop_height optional height to stop scanning at. (final new_height will be >= stop_height)
    */
@@ -149,10 +156,11 @@ export class ViewPair extends WasmProcessor {
       status: "",
       primary_address: "",
     };
+    let fastForward = 0;
     while (latest_meta.new_height < latest_meta.daemon_height) {
       const res = await this.getBlocksBin(
         {
-          start_height: latest_meta.new_height - 1,
+          start_height: Math.max(latest_meta.new_height - 1, fastForward),
         },
         (meta) => {
           latest_meta = meta;
@@ -162,7 +170,7 @@ export class ViewPair extends WasmProcessor {
       if (res === undefined) {
         await callback({});
       } else {
-        await callback(res);
+        fastForward = (await callback(res)) || 0;
       }
       if (stop_height !== null && latest_meta.new_height >= stop_height) return;
     }
