@@ -229,7 +229,7 @@ export class ViewPair extends WasmProcessor {
     spend_private_key?: string, // if no spendkey is provided, this will be a view only sync. (no ownspend detected)
     stop_height: number | null = null
   ) {
-    scanWithCacheFile(
+    return scanWithCacheFile(
       this,
       start_height,
       initialCachePath,

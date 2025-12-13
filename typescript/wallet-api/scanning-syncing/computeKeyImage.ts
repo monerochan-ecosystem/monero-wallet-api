@@ -27,5 +27,5 @@ export async function computeKeyImage(
         output.index_on_blockchain
     );
   }
-  return result as KeyImage | undefined;
+  return result["key_image"] as KeyImage | undefined;
 }

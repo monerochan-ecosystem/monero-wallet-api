@@ -77,7 +77,7 @@ export type CacheRange = {
 
 export type GlobalOutputId = string; // output.index_on_blockchain.toString()
 export type OutputsCache = Record<GlobalOutputId, Output>; // { "123": Output, "456": Output } keyed by index_on_blockchain.toString()
-export type OwnKeyImages = Record<GlobalOutputId, KeyImage>;
+export type OwnKeyImages = Record<KeyImage, GlobalOutputId>;
 export type ScanCache = {
   outputs: OutputsCache;
   own_key_images: OwnKeyImages;
@@ -172,7 +172,7 @@ export async function scanWithCache<
                     spend_private_key
                   );
                   if (keyImage) {
-                    cache.own_key_images[globalId] = keyImage;
+                    cache.own_key_images[keyImage] = globalId;
                   }
                 }
               }
@@ -220,7 +220,6 @@ export async function scanWithCache<
               );
 
               if (fastForward) current_height = fastForward;
-
               await cacheChanged(cache, added, ownspend);
               return current_height;
             }
