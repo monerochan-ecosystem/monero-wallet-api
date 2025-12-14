@@ -160,6 +160,37 @@ export async function scanWithCache<
               let added = [];
               let ownspend = [];
               for (const output of result.outputs) {
+                // 0. prevent burning bug and avoid overwriting earlier found outputs
+                const duplicate = Object.values(cache.outputs).find(
+                  (ex) =>
+                    ex.stealth_address === output.stealth_address && !ex.burned
+                  // we expect to find only one output that could be a duplicate.
+                  // we don't care about all the burned duplicates already inserted.
+                );
+
+                let burned = false;
+                if (
+                  duplicate?.index_on_blockchain !== output.index_on_blockchain
+                ) {
+                  burned = true;
+                }
+
+                if (duplicate && burned) {
+                  //mark burned output
+                  const existingIndex = duplicate.index_on_blockchain;
+                  const liveIndex = Math.min(
+                    existingIndex,
+                    output.index_on_blockchain
+                  );
+                  if (liveIndex === existingIndex) {
+                    output.burned = existingIndex;
+                  } else {
+                    duplicate.burned = output.index_on_blockchain;
+                  }
+                } else if (duplicate && !burned) {
+                  continue; // if it is just a duplicate we continue the loop to avoid overwriting (ereasing spent status)
+                }
+
                 // 1. add to outputs cache 2. add to added array for cacheChanged callback
                 const globalId = output.index_on_blockchain.toString();
                 cache.outputs[globalId] = output;

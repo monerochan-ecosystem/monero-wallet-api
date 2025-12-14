@@ -87,6 +87,7 @@ export type Output = {
   spent_in_tx_hash?: string; // scanWithCache will set this, if detected as ownspend (transaction)
   spent_block_height?: number; // scanWithCache sets this to height, where it was detected as ownspend
   spent_block_timestamp?: number; // scanWithCache sets this to timestamp, where it was detected as ownspend
+  burned?: number; // index of the earlier output, that lives, while this one got burned. https://monerochan.news/article/8
 };
 export type OnchainKeyImage = {
   key_image_hex: KeyImage;

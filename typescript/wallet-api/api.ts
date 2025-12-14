@@ -372,13 +372,6 @@ export class NodeUrl extends WasmProcessor {
     return send_raw_transaction(this.node_url, tx_as_hex, do_not_relay);
   }
 }
-// const nodeurl = await NodeUrl.create("http://stagenet.community.rino.io:38081");
-// nodeurl.getBlocksBin({ start_height: 1731707 });
-
-// const viewpair = await ViewPair.create(
-//   "5B5ieVKGSyfAyh68X6AFB48Gnx9diT8jPbWN6UcZHJUZVQSLRhaaHuHQz3dGuxxZDXPYgCXzrkerK3m6Q1tHoougR7VYyd9",
-//   "10b9885324933ee6055b001a3ee4b70f6832b866db389ad023b51fe7e2e7ca01"
-// );
 
 export type AddressAndViewKey = {
   primary_address: string;
