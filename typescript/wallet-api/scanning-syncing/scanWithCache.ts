@@ -1,6 +1,74 @@
 import type { Output, ScanResult, ScanResultCallback } from "../api";
 import type { WasmProcessor } from "../wasm-processing/wasmProcessor";
 import { computeKeyImage, type KeyImage } from "./computeKeyImage";
+export const scanSettingsStoreNameDefault = "ScanSettings.json";
+export type ScanSetting = {
+  primary_address: string;
+  secret_view_key: string;
+  start_height: number;
+  halted?: boolean;
+  spend_private_key?: string;
+  stop_height?: number | null;
+};
+export type ScanSettings = {
+  wallets: (ScanSetting | undefined)[]; // ts should treat arrays like this by default. (value|undefined)[]
+  node_urls: string[];
+};
+// to be used by scanWithCacheFromSettings() function on ViewPairs instance
+/**
+ * Writes scan settings to the default or specified storage file in json.
+ *
+ * @example
+ * ```
+ * const settings: ScanSettings = {
+ *   wallets: [{
+ *     primary_address: "5dsf...",
+ *     secret_view_key: "jklsdf...",
+ *     spend_private_key: "9e561...",
+ *     start_height: 1741707,
+ *   }],
+ *   node_urls: ["https://monerooo.roooo"]
+ * };
+ * await writeScanSettings(settings);
+ * ```
+ *
+ * @param scan_settings - The complete {@link ScanSettings} configuration to persist.
+ * @param settingsStorePath - Optional path for the settings file. Defaults to `scanSettingsStoreNameDefault`.
+ * @returns A promise that resolves when the file is successfully written.
+ * @throws Will throw if file writing fails (e.g., permissions, disk space).
+ */
+export async function writeScanSettings(
+  scan_settings: ScanSettings,
+  settingsStorePath: string = scanSettingsStoreNameDefault
+) {
+  const scan_settings_json = JSON.stringify(scan_settings, null, 2);
+  return await Bun.write(
+    settingsStorePath,
+    JSON.stringify(scan_settings_json, null, 2)
+  );
+}
+/**
+ * Reads scan settings from the default or specified storage file.
+ *
+ * @example
+ * ```
+ * const settings = await readScanSettings();
+ * if (settings) {
+ *   console.log(settings.wallets?.primary_address);
+ * }
+ * ```
+ *
+ * @param settingsStorePath - Path to the settings file. Defaults to `scanSettingsStoreNameDefault`.
+ * @returns The parsed {@link ScanSettings} object if file exists and is valid JSON, otherwise `undefined`.
+ */
+export async function readScanSettings(
+  settingsStorePath: string = scanSettingsStoreNameDefault
+) {
+  const jsonString = await Bun.file(settingsStorePath)
+    .text()
+    .catch(() => undefined);
+  return jsonString ? (JSON.parse(jsonString) as ScanSettings) : undefined;
+}
 /**
  * Scans blockchain from `start_height` using the provided processor and using the provided initialCachePath file path,
  *  invoking callback cacheChanged() for results and cache changes
@@ -47,8 +115,18 @@ export async function scanWithCacheFile<
     stop_height
   );
 }
+export interface HasScanWithCacheFileMethod {
+  scanWithCacheFile: (
+    start_height: number,
+    initialCachePath: string,
+    cacheChanged?: CacheChangedCallback,
+    stopSync?: AbortSignal,
+    spend_private_key?: string,
+    stop_height?: number | null
+  ) => Promise<void>;
+}
 export interface HasScanWithCacheMethod {
-  scanWithCache: <T extends WasmProcessor & HasScanMethod & HasPrimaryAddress>(
+  scanWithCache: (
     start_height: number,
     initialCache?: ScanCache,
     cacheChanged?: CacheChangedCallback,
@@ -269,11 +347,18 @@ export async function scanWithCache<
           console.log("Scan was aborted.");
           return;
         }
+        // treat errno 0 code "ConnectionRefused" as non fatal outcome, and rethrow,
+        // so that UI can be informed after catching it higher up
+        if (isConnectionError(error)) {
+          console.log(
+            "Scan stopped. node might be offline. Connection Refused"
+          );
+          throw error;
+        }
         console.log(
           error,
           "\n, scanWithCache in scanning-syncing/scanWithCache.ts`"
         );
-        break;
       }
       // sleep for 1 second before calling scan() again
       // (scan call will send a getBlocks.bin request)
@@ -306,3 +391,16 @@ const findRangeEnd = (
 ) => ranges.find((r) => value >= r.start && value < r.end)?.end ?? null;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+export function isConnectionError(error: unknown) {
+  if (
+    error &&
+    typeof error === "object" &&
+    (("code" in error && error.code === "ConnectionRefused") ||
+      ("errno" in error && error.errno === 0))
+  ) {
+    return true;
+  } else {
+    false;
+  }
+}
