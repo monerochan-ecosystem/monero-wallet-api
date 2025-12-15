@@ -41,10 +41,9 @@ export async function writeScanSettings(
   scan_settings: ScanSettings,
   settingsStorePath: string = scanSettingsStoreNameDefault
 ) {
-  const scan_settings_json = JSON.stringify(scan_settings, null, 2);
   return await Bun.write(
     settingsStorePath,
-    JSON.stringify(scan_settings_json, null, 2)
+    JSON.stringify(scan_settings, null, 2)
   );
 }
 /**
