@@ -4,8 +4,8 @@ import { computeKeyImage, type KeyImage } from "./computeKeyImage";
 export const scanSettingsStoreNameDefault = "ScanSettings.json";
 export type ScanSetting = {
   primary_address: string;
-  secret_view_key: string;
   start_height: number;
+  secret_view_key?: string;
   halted?: boolean;
   spend_private_key?: string;
   stop_height?: number | null;
