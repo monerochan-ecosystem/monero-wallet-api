@@ -358,13 +358,37 @@ export async function binaryFetchRequest(
   url: string,
   body: Uint8Array,
   stopSync?: AbortSignal
-) {
+): Promise<Uint8Array> {
   const response = await fetch(url, {
     body: body as BodyInit,
     method: "POST",
     signal: stopSync,
-  })
-    .then((result) => result.blob())
-    .then((blob) => blob.arrayBuffer());
-  return new Uint8Array(response);
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+  const reader = response.body!.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  const MAX_SIZE = 125829120; // 120MB
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.length;
+      if (totalBytes > MAX_SIZE)
+        throw new Error(`Response exceeds 120MB (${totalBytes} bytes)`);
+      chunks.push(value);
+    }
+  } catch (readError) {
+    console.error("Reader error:", readError, "Partial bytes:", totalBytes);
+    // Eat the error - continue to return partial data
+  } finally {
+    reader.releaseLock();
+  }
+
+  // Always return what we got (even if partial)
+  return Uint8Array.from(
+    chunks.reduce((acc: number[], chunk) => [...acc, ...chunk], [])
+  );
 }
