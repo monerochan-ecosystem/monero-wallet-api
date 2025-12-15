@@ -1,4 +1,3 @@
-import * as crypto from "crypto";
 //vendored from https://github.com/qrdate/tinywasi/blob/main/src/TinyWASI.ts
 export class TinyWASI {
   public instance?: WebAssembly.Instance = undefined;
@@ -220,11 +219,8 @@ export class TinyWASI {
 
   private random_get(pointer: number, size: number): number {
     const memory = this.getMemory();
-
     const buffer = new Uint8Array(memory.buffer, pointer, size);
-    //TODO:remove this dependency on crypto
-    crypto.randomFillSync(buffer);
-
+    crypto.getRandomValues(buffer);
     return this.WASI_ERRNO_SUCCESS;
   }
   private environ_sizes_get(environCount: number, environBufSize: number) {
