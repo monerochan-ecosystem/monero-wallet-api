@@ -1,4 +1,5 @@
 import type { BunFile, FileSink, Bun, TypedArray } from "./BunFileInterface";
+
 class IndexedDBBun implements Bun {
   stdin: BunFile = new IndexedDBFile();
   stdout: BunFile = new IndexedDBFile();
@@ -88,4 +89,8 @@ class BunFileSink implements FileSink {
   unref(): void {
     throw new Error("not implemented");
   }
+}
+
+if (typeof globalThis.Bun === "undefined" && typeof window !== "undefined") {
+  window.Bun = new IndexedDBBun() as typeof import("bun");
 }
