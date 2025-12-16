@@ -69,6 +69,8 @@ export type ChangedOutputs = {
   output: Output;
   change_reason: ChangeReason;
 };
+export type CacheChangedCallbackParameters =
+  Parameters<CacheChangedCallbackSync>;
 export type CacheChangedCallbackSync<R = void> = (
   newCache: ScanCache,
   changed_outputs: ChangedOutputs[]
