@@ -1,4 +1,4 @@
-import type { KeyImage } from "../scanning-syncing/computeKeyImage";
+import type { ScanResult } from "../scanning-syncing/scanResult";
 import type { WasmProcessor } from "../wasm-processing/wasmProcessor";
 export type GetBlocksBinRequest = {
   requested_info?: "BLOCKS_ONLY" | "BLOCKS_AND_POOL" | "POOL_ONLY"; // default: "BLOCKS_ONLY"
@@ -89,21 +89,7 @@ export type Output = {
   spent_block_timestamp?: number; // scanWithCache sets this to timestamp, where it was detected as ownspend
   burned?: number; // index of the earlier output, that lives, while this one got burned. https://monerochan.news/article/8
 };
-export type OnchainKeyImage = {
-  key_image_hex: KeyImage;
-  relative_index: number; // relative index of input in transaction
-  tx_hash: string;
-  block_hash: string;
-  block_height: number;
-  block_timestamp: number;
-};
 
-export type ScanResult = {
-  outputs: Output[];
-  all_key_images: OnchainKeyImage[];
-  new_height: number;
-  primary_address: string;
-};
 export type ErrorResponse = {
   error: string;
 };

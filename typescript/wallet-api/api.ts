@@ -1,11 +1,11 @@
 import "./io/indexedDB";
-
+import { type ScanResult } from "./scanning-syncing/scanResult";
+export { type ScanResult };
 import {
   getBlocksBinJson,
   getBlocksBinScan,
   getBlocksBinExecuteRequest,
   getBlocksBinScanResponse,
-  type ScanResult,
   type ErrorResponse,
   type GetBlocksBinMetaCallback,
   type GetBlocksBinRequest,
