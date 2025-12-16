@@ -42,6 +42,10 @@ import {
 import { WasmProcessor } from "./wasm-processing/wasmProcessor";
 export * from "./node-interaction/binaryEndpoints";
 export * from "./node-interaction/jsonEndpoints";
+export {
+  writeScanSettings,
+  readScanSettings,
+} from "./scanning-syncing/scanSettings";
 export type EmptyScanResult = {}; // can happen when we abort a scan before any blocks are processed
 
 export type FastForward = number; // height to fast forward scan to

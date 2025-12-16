@@ -1,9 +1,6 @@
 import { ViewPair } from "../api";
-import {
-  readScanSettings,
-  scanSettingsStoreNameDefault,
-  type CacheChangedCallback,
-} from "./scanWithCache";
+import { type CacheChangedCallback } from "./scanWithCache";
+import { readScanSettings, scanSettingsStoreNameDefault } from "./scanSettings";
 export async function scanWithCacheFromSettings(
   cacheChanged: CacheChangedCallback = (...args) => console.log(args),
   settingsStorePath: string = scanSettingsStoreNameDefault,
