@@ -69,18 +69,21 @@ export type ScanResultCallback =
 export class ViewPair extends WasmProcessor {
   protected constructor(
     public node_url: string,
-    public primary_address: string
+    public primary_address: string,
+    public fallback_node_urls: string[] = []
   ) {
     super();
   }
   public static async create(
     primary_address: string,
     secret_view_key: string,
-    node_url?: string
+    node_url?: string,
+    fallback_node_urls?: string[]
   ): Promise<ViewPair> {
     const viewPair = new ViewPair(
       node_url || "http://localhost:38081",
-      primary_address
+      primary_address,
+      fallback_node_urls
     );
     const tinywasi = await viewPair.initWasmModule();
     viewPair.writeToWasmMemory = (ptr, len) => {
