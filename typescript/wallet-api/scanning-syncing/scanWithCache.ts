@@ -1,6 +1,7 @@
 import type { Output, ScanResult, ScanResultCallback } from "../api";
 import type { WasmProcessor } from "../wasm-processing/wasmProcessor";
 import { type KeyImage } from "./computeKeyImage";
+import type { ConnectionStatus } from "./connectionStatus";
 import { detectOutputs, detectOwnspends } from "./scanResult";
 
 /**
@@ -10,7 +11,7 @@ import { detectOutputs, detectOwnspends } from "./scanResult";
  * @param processor - Wasm processor with scan method and primary address (like ViewPair)
  * @param start_height - Starting block height for the scan
  * @param initialCachePath: string - Optional initial scan cache file path. (will get created if it does not exist)
- * @param cacheChanged - params: newCache, changed_outputs {@link CacheChangedCallback} invoked when cache changes
+ * @param cacheChanged - params: {newCache,changed_outputs,connection_status} {@link CacheChangedCallback} invoked when cache changes {@link CacheChangedCallbackParameters}
  * @param stopSync - Optional abort signal to stop scanning
  * @param spend_private_key - Optional spend key (view-only if omitted = no ownspend will be found and supplied to cacheChanged())
  * @param stop_height - Optional ending block height (null = keep scanning)
@@ -24,7 +25,7 @@ export async function scanWithCacheFile<
   processor: T,
   start_height: number,
   initialCachePath: string,
-  cacheChanged: CacheChangedCallback = (...args) => console.log(args),
+  cacheChanged: CacheChangedCallback = (params) => console.log(params),
   stopSync?: AbortSignal,
   spend_private_key?: string, // if no spendkey is provided, this will be a view only sync. (no ownspend detected)
   stop_height: number | null = null
@@ -69,22 +70,39 @@ export type ChangedOutputs = {
   output: Output;
   change_reason: ChangeReason;
 };
-export type CacheChangedCallbackParameters =
-  Parameters<CacheChangedCallbackSync>;
+
+export type CacheChangedCallbackParameters = {
+  newCache: ScanCache;
+  changed_outputs: ChangedOutputs[];
+  connection_status: ConnectionStatus;
+};
 export type CacheChangedCallbackSync<R = void> = (
-  newCache: ScanCache,
-  changed_outputs: ChangedOutputs[]
+  params: CacheChangedCallbackParameters
 ) => R;
 
 export type CacheChangedCallbackAsync = CacheChangedCallbackSync<Promise<void>>;
 /**
  * Callback invoked when the scan cache changes.
  *
- * @param newCache - The updated scan cache
- * @param changed_outputs - contains output, change_reason {@link ChangedOutputs} invoked when cache changes
+ * @param params - The callback parameters.
+ * @param params.newCache - The updated scan cache.
+ * @param params.changed_outputs - Contains output and change_reason. {@link ChangedOutputs}
+ *
+ * @param params.connection_status - Connection status information.
+ * @param params.connection_status.status_updates - Array of connection status messages:
+ * - { message: "node_url_changed"; old_node_url: string; new_node_url: string }
+ * - { message: "connection_error"; error: {} }
+ * - { message: "connection_ok" }
+ * - undefined
+ *
+ * @param params.connection_status.last_packet - Information about the last packet:
+ * `{ connection_status: "OK" | "partial read" | "connection failed"; bytes_read: number; node_url: string; timestamp: string }`.
+ *
  * @remarks
- * - `scanned_ranges` is expected to change on every invocation
+ * - `scanned_ranges` is expected to change on every invocation,
+ *   except when there was a connection error, then only `connection_status` changes.
  */
+
 export type CacheChangedCallback =
   | CacheChangedCallbackSync
   | CacheChangedCallbackAsync; // accept async callbacks
@@ -96,18 +114,21 @@ export type CacheChangedCallback =
  * @param processor - Wasm processor with scan method and primary address (like ViewPair)
  * @param start_height - Starting block height for the scan
  * @param initialCache - Optional initial scan cache
- * @param cacheChanged - params: newCache, changed_outputs {@link CacheChangedCallback} invoked when cache changes
+ * @param cacheChanged - params: {newCache,changed_outputs,connection_status} {@link CacheChangedCallback} invoked when cache changes {@link CacheChangedCallbackParameters}
  * @param stopSync - Optional abort signal to stop scanning
  * @param spend_private_key - Optional spend key (view-only if omitted = no ownspend will be found and supplied to cacheChanged())
  * @param stop_height - Optional ending block height (null = keep scanning)
  */
 export async function scanWithCache<
-  T extends WasmProcessor & HasScanMethod & HasPrimaryAddress
+  T extends WasmProcessor &
+    HasScanMethod &
+    HasPrimaryAddress &
+    HasConnectionStatus
 >(
   processor: T,
   start_height: number,
   initialCache?: ScanCache,
-  cacheChanged: CacheChangedCallback = (...args) => console.log(args),
+  cacheChanged: CacheChangedCallback = (params) => console.log(params),
   stopSync?: AbortSignal,
   spend_private_key?: string, // if no spendkey is provided, this will be a view only sync. (no ownspend detected)
   stop_height: number | null = null
@@ -136,7 +157,11 @@ export async function scanWithCache<
                 changed_outputs.push(...detectOwnspends(result, cache));
 
               current_height = updateScanHeight(current_height, result, cache);
-              await cacheChanged(cache, changed_outputs);
+              await cacheChanged({
+                newCache: cache,
+                changed_outputs,
+                connection_status: processor.connection_status,
+              });
               return current_height;
             }
           },
@@ -144,6 +169,11 @@ export async function scanWithCache<
           stop_height
         );
       } catch (error) {
+        await cacheChanged({
+          newCache: cache,
+          changed_outputs: [],
+          connection_status: processor.connection_status,
+        });
         handleScanError(error);
       }
       // sleep for 1 second before calling scan() again
@@ -290,4 +320,7 @@ export interface HasScanMethod {
 
 export interface HasPrimaryAddress {
   primary_address: string;
+}
+export interface HasConnectionStatus {
+  connection_status: ConnectionStatus;
 }

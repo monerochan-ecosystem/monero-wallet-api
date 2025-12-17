@@ -40,6 +40,7 @@ import {
   type Input,
 } from "./send-functionality/transactionBuilding";
 import { WasmProcessor } from "./wasm-processing/wasmProcessor";
+import type { ConnectionStatus } from "./scanning-syncing/connectionStatus";
 export * from "./node-interaction/binaryEndpoints";
 export * from "./node-interaction/jsonEndpoints";
 export {
@@ -70,7 +71,16 @@ export class ViewPair extends WasmProcessor {
   protected constructor(
     public node_url: string,
     public primary_address: string,
-    public fallback_node_urls: string[] = []
+    public fallback_node_urls: string[] = [],
+    public connection_status: ConnectionStatus = {
+      status_updates: [],
+      last_packet: {
+        status: "no_connection_yet",
+        bytes_read: 0,
+        node_url: "",
+        timestamp: new Date().toISOString(),
+      },
+    }
   ) {
     super();
   }

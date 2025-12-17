@@ -2,7 +2,7 @@ import { ViewPair } from "../api";
 import { type CacheChangedCallback } from "./scanWithCache";
 import { readScanSettings, scanSettingsStoreNameDefault } from "./scanSettings";
 export async function scanWithCacheFromSettings(
-  cacheChanged: CacheChangedCallback = (...args) => console.log(args),
+  cacheChanged: CacheChangedCallback = (params) => console.log(params),
   settingsStorePath: string = scanSettingsStoreNameDefault,
   settingsIndex: number = 0, // which wallet in the Settings wallets array do you want to scan
   nodeUrlIndex: number = 0, // which nodeurl in the Settings nodeurls array do you want to use
