@@ -33,7 +33,7 @@ export class NodeUrl extends WasmProcessor {
   }
 
   public static async create(node_url?: string): Promise<NodeUrl> {
-    const nodeUrl = new NodeUrl(node_url || "http://localhost:38081");
+    const nodeUrl = new NodeUrl(node_url || LOCAL_NODE_DEFAULT_URL);
     await nodeUrl.initWasmModule();
     return nodeUrl;
   }
@@ -126,3 +126,4 @@ export class NodeUrl extends WasmProcessor {
     return send_raw_transaction(this.node_url, tx_as_hex, do_not_relay);
   }
 }
+export const LOCAL_NODE_DEFAULT_URL = "http://localhost:38081";
