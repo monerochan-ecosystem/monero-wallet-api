@@ -63,13 +63,13 @@ export async function initScanSettings(
       scan_settings_path
     );
   } else {
-    writeWalletToScanSettings(
+    writeWalletToScanSettings({
       primary_address,
       start_height,
       halted,
       stop_height,
-      scan_settings_path
-    );
+      scan_settings_path,
+    });
   }
 }
 

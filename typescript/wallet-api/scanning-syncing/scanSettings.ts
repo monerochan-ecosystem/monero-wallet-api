@@ -5,6 +5,13 @@ export type ScanSetting = {
   halted?: boolean;
   stop_height?: number | null;
 };
+export type WriteScanSettingParams = {
+  primary_address: string;
+  start_height?: number;
+  halted?: boolean;
+  stop_height?: number | null;
+  scan_settings_path: string; // write your settings to a different path
+};
 export type ScanSettingOpened = {
   primary_address: string;
   start_height: number;
@@ -96,35 +103,35 @@ export async function readWalletFromScanSettings(
 }
 
 export async function writeWalletToScanSettings(
-  primary_address: string,
-  start_height?: number,
-  halted?: boolean,
-  stop_height?: number | null,
-  scan_settings_path: string = SCAN_SETTINGS_STORE_NAME_DEFAULT // write your settings to a different path
+  params: WriteScanSettingParams
 ) {
-  const scanSettings = await openScanSettingsFile(scan_settings_path);
+  if (!params.scan_settings_path)
+    params.scan_settings_path = SCAN_SETTINGS_STORE_NAME_DEFAULT;
+  const scanSettings = await openScanSettingsFile(params.scan_settings_path);
   if (!scanSettings)
-    throw new Error(`Scan settings file not found at ${scan_settings_path}`);
+    throw new Error(
+      `Scan settings file not found at ${params.scan_settings_path}`
+    );
   const already_has_settings = scanSettings.wallets.findIndex(
-    (wallet) => wallet?.primary_address === primary_address
+    (wallet) => wallet?.primary_address === params.primary_address
   );
   if (already_has_settings === -1) {
     // wallet does not exist yet in settings
     scanSettings.wallets.push({
-      primary_address,
-      start_height: start_height || 0,
+      primary_address: params.primary_address,
+      start_height: params.start_height || 0,
     });
   } else {
     // wallet already exists
     const wallet = scanSettings.wallets[already_has_settings];
     if (wallet) {
-      wallet.start_height = start_height || wallet.start_height;
-      wallet.halted = halted;
-      wallet.stop_height = stop_height;
+      wallet.start_height = params.start_height || wallet.start_height;
+      wallet.halted = params.halted;
+      wallet.stop_height = params.stop_height;
     }
   }
   return await Bun.write(
-    scan_settings_path,
+    params.scan_settings_path,
     JSON.stringify(scanSettings, null, 2)
   );
 }
