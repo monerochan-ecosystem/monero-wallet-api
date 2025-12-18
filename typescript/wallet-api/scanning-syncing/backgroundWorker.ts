@@ -1,6 +1,9 @@
 import { ViewPair } from "../api";
 import { type CacheChangedCallback } from "./scanWithCache";
-import { readScanSettings, scanSettingsStoreNameDefault } from "./scanSettings";
+import {
+  readScanSettings,
+  SCAN_SETTINGS_STORE_NAME_DEFAULT,
+} from "./scanSettings";
 /**
  * scans with cache from settings file (Bun.file uses indexedDB on web,
  * provide Bun.file(), Bun.write() methods + Bun.env according to your platform)
@@ -8,7 +11,7 @@ import { readScanSettings, scanSettingsStoreNameDefault } from "./scanSettings";
  */
 export async function scanWithCacheFromSettings(
   cacheChanged: CacheChangedCallback = (params) => console.log(params),
-  settingsStorePath: string = scanSettingsStoreNameDefault,
+  settingsStorePath: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
   settingsIndex: number = 0, // which wallet in the Settings wallets array do you want to scan
   nodeUrlIndex: number = 0, // which nodeurl in the Settings nodeurls array do you want to use
   stopSync?: AbortSignal // in MV3 extension Background Workers this is not needed (context nuke on every event)
