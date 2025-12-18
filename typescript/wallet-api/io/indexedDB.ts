@@ -1,3 +1,4 @@
+import { writeEnvLineToDotEnvRefresh } from "../keypairs-seeds/writeKeypairs";
 import type { BunFile, FileSink, Bun, TypedArray } from "./BunFileInterface";
 
 export type PossibleBunFileContent =
@@ -184,27 +185,16 @@ export async function refreshEnvIndexedDB() {
   window.Bun.env = await readEnvIndexedDB();
 }
 
-// fill in Bun.env
+// we need this to change the env at runtime from inside the Browser extension,
+// or react native app. Or to persist view keys in bun web backend.
+
+// this one is specifically for indexedDB (convention of treating .env as Bun.env)
 export async function writeEnvIndexedDB(key: string, value: string) {
   // this file should be treated as ephemeral
   // private spendkeys + viewkeys are deterministically derived from seedphrase and password
   // we have to go through indexedDB just so the background worker has access to this.
   // (after waking up from an alarm or onmessage event)
-  const file = Bun.file(".env");
-  const content = await file
-    .text()
-    .catch(() => {})
-    .then((c) => c || "");
-  const lines = content.split("\n");
-
-  const idx = lines.findIndex((line) => line.startsWith(key));
-  const updatedLines =
-    idx === -1
-      ? [...lines, `${key}=${value}`]
-      : lines.with(idx, `${key}=${value}`);
-
-  await Bun.write(".env", updatedLines.join("\n"));
-  await refreshEnvIndexedDB();
+  await writeEnvLineToDotEnvRefresh(key, value, ".env");
 }
 export async function readEnvIndexedDB() {
   const file = Bun.file(".env");
@@ -217,8 +207,9 @@ export async function readEnvIndexedDB() {
   for (const line of lines) {
     const keyValue = line.split("=");
     const key = keyValue[0];
+    if (!key) continue;
     const value = keyValue[1];
-    result[key] = value;
+    result[key.trim()] = value?.trim();
   }
 
   return result;
@@ -234,6 +225,6 @@ export async function readEnvIndexedDBLine(key: string): Promise<string> {
   const content = await file.text();
   const lines = content.split("\n");
 
-  const idx = lines.findIndex((line) => line.startsWith(key));
-  return lines[idx].split("=")[1];
+  const idx = lines.findIndex((line) => line.startsWith(key.trim()));
+  return lines[idx].split("=")[1].trim();
 }
