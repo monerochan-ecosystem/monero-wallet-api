@@ -79,9 +79,10 @@ pub extern "C" fn make_spendkey() {
 #[no_mangle]
 pub extern "C" fn make_viewkey(spend_key_string_len: usize) {
   let spend_key_string = input_string(spend_key_string_len);
-  output_string(&convert_to_json(&keypairs::viewpair_from_spendkey(
-    <[u8; 32]>::from_hex(spend_key_string.as_str()).unwrap(),
-  )));
+  output_string(&convert_to_json(
+    &keypairs::viewpair_from_spendkey(<[u8; 32]>::from_hex(spend_key_string.as_str()).unwrap())
+      .unwrap(),
+  ));
 }
 #[no_mangle]
 pub extern "C" fn init_viewpair(

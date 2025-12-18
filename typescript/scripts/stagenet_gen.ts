@@ -1,0 +1,28 @@
+#!/usr/bin/env bun
+import { get_info } from "../wallet-api/api";
+import {
+  initScanSettings,
+  STAGENET_FRESH_WALLET_HEIGHT_DEFAULT,
+  writeStagenetSpendViewKeysToDotEnv,
+} from "../wallet-api/keypairs-seeds/writeKeypairs";
+import { LOCAL_NODE_DEFAULT_URL } from "../wallet-api/node-interaction/nodeUrl";
+
+// adds a wallet entry to ScanSettings.json
+
+// will make new spend keys if no Bun.env["sk"] is present
+
+// writes "vkPRIMARY_KEY=<view_key> \n skPRIMARY_KEY=<spend_key>" to .env for stagenet
+
+// optional first arg is the path to custom location for settings file: scripts/stagenet_gen.ts  mysettings.json
+const height = (await get_info(LOCAL_NODE_DEFAULT_URL)).height;
+// || STAGENET_FRESH_WALLET_HEIGHT_DEFAULT // if you want to create wallets without node present
+
+const primary_address = await writeStagenetSpendViewKeysToDotEnv(Bun.env["sk"]);
+await initScanSettings(
+  primary_address,
+  height,
+  undefined,
+  undefined,
+  undefined,
+  Bun.argv[2]
+);
