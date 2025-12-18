@@ -2,6 +2,12 @@ export const scanSettingsStoreNameDefault = "ScanSettings.json";
 export type ScanSetting = {
   primary_address: string;
   start_height: number;
+  halted?: boolean;
+  stop_height?: number | null;
+};
+export type ScanSettingOpened = {
+  primary_address: string;
+  start_height: number;
   secret_view_key?: string;
   halted?: boolean;
   spend_private_key?: string;
@@ -9,6 +15,10 @@ export type ScanSetting = {
 };
 export type ScanSettings = {
   wallets: (ScanSetting | undefined)[]; // ts should treat arrays like this by default. (value|undefined)[]
+  node_urls: string[];
+};
+export type ScanSettingsOpened = {
+  wallets: (ScanSettingOpened | undefined)[]; // ts should treat arrays like this by default. (value|undefined)[]
   node_urls: string[];
 };
 // to be used by scanWithCacheFromSettings() function on ViewPairs instance
@@ -20,8 +30,6 @@ export type ScanSettings = {
  * const settings: ScanSettings = {
  *   wallets: [{
  *     primary_address: "5dsf...",
- *     secret_view_key: "jklsdf...",
- *     spend_private_key: "9e561...",
  *     start_height: 1741707,
  *   }],
  *   node_urls: ["https://monerooo.roooo"]
@@ -45,6 +53,7 @@ export async function writeScanSettings(
 }
 /**
  * Reads scan settings from the default or specified storage file.
+ * secret_view_key and spend_private_key are read from environment variables
  *
  * @example
  * ```
@@ -59,9 +68,25 @@ export async function writeScanSettings(
  */
 export async function readScanSettings(
   settingsStorePath: string = scanSettingsStoreNameDefault
-) {
+): Promise<ScanSettingsOpened | undefined> {
   const jsonString = await Bun.file(settingsStorePath)
     .text()
     .catch(() => undefined);
-  return jsonString ? (JSON.parse(jsonString) as ScanSettings) : undefined;
+
+  const scanSettings = jsonString
+    ? (JSON.parse(jsonString) as ScanSettings)
+    : undefined;
+  const openScanSettings = Object.assign(
+    {},
+    scanSettings
+  ) as ScanSettingsOpened;
+  if (!scanSettings) return undefined;
+  for (const [i, wallet] of scanSettings.wallets.entries()) {
+    const primary_address = wallet!.primary_address;
+    const secret_view_key = Bun.env["v" + primary_address];
+    const spend_private_key = Bun.env["s" + primary_address];
+    openScanSettings.wallets[i]!.secret_view_key = secret_view_key;
+    openScanSettings.wallets[i]!.spend_private_key = spend_private_key;
+  }
+  return openScanSettings;
 }
