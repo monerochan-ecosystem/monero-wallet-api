@@ -25,6 +25,7 @@ import {
 } from "./send-functionality/transactionBuilding";
 import { WasmProcessor } from "./wasm-processing/wasmProcessor";
 import type { ConnectionStatus } from "./scanning-syncing/connectionStatus";
+import { LOCAL_NODE_DEFAULT_URL } from "./node-interaction/nodeUrl";
 export * from "./node-interaction/binaryEndpoints";
 export * from "./node-interaction/jsonEndpoints";
 export {
@@ -75,7 +76,7 @@ export class ViewPair extends WasmProcessor {
     fallback_node_urls?: string[]
   ): Promise<ViewPair> {
     const viewPair = new ViewPair(
-      node_url || "http://localhost:38081",
+      node_url || LOCAL_NODE_DEFAULT_URL,
       primary_address,
       fallback_node_urls
     );
