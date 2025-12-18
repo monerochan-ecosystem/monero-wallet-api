@@ -67,15 +67,9 @@ export async function writeScanSettings(
  * @returns The parsed {@link ScanSettings} object if file exists and is valid JSON, otherwise `undefined`.
  */
 export async function readScanSettings(
-  settingsStorePath: string = SCAN_SETTINGS_STORE_NAME_DEFAULT
+  scan_settings_path: string = SCAN_SETTINGS_STORE_NAME_DEFAULT
 ): Promise<ScanSettingsOpened | undefined> {
-  const jsonString = await Bun.file(settingsStorePath)
-    .text()
-    .catch(() => undefined);
-
-  const scanSettings = jsonString
-    ? (JSON.parse(jsonString) as ScanSettings)
-    : undefined;
+  const scanSettings = await openScanSettingsFile(scan_settings_path);
   const openScanSettings = Object.assign(
     {},
     scanSettings
@@ -98,15 +92,9 @@ export async function writeWalletToScanSettings(
   stop_height?: number | null,
   scan_settings_path: string = SCAN_SETTINGS_STORE_NAME_DEFAULT // write your settings to a different path
 ) {
-  const jsonString = await Bun.file(scan_settings_path)
-    .text()
-    .catch(() => undefined);
-
-  const scanSettings = jsonString
-    ? (JSON.parse(jsonString) as ScanSettings)
-    : undefined;
-
-  if (!scanSettings) return undefined;
+  const scanSettings = await openScanSettingsFile(scan_settings_path);
+  if (!scanSettings)
+    throw new Error(`Scan settings file not found at ${scan_settings_path}`);
   const already_has_settings = scanSettings.wallets.findIndex(
     (wallet) => wallet?.primary_address === primary_address
   );
@@ -129,4 +117,13 @@ export async function writeWalletToScanSettings(
     scan_settings_path,
     JSON.stringify(scanSettings, null, 2)
   );
+}
+export async function openScanSettingsFile(
+  scan_settings_path: string = SCAN_SETTINGS_STORE_NAME_DEFAULT
+): Promise<ScanSettings | undefined> {
+  const jsonString = await Bun.file(scan_settings_path)
+    .text()
+    .catch(() => undefined);
+
+  return jsonString ? (JSON.parse(jsonString) as ScanSettings) : undefined;
 }
