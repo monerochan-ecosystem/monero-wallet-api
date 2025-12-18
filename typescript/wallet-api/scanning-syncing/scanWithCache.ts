@@ -30,12 +30,7 @@ export async function scanWithCacheFile<
   spend_private_key?: string, // if no spendkey is provided, this will be a view only sync. (no ownspend detected)
   stop_height: number | null = null
 ) {
-  const jsonString = await Bun.file(initialCachePath)
-    .text()
-    .catch(() => undefined);
-  const initialScanCache = jsonString
-    ? (JSON.parse(jsonString) as ScanCache)
-    : undefined;
+  const initialScanCache = await readCacheFile(initialCachePath);
   const cacheCallback: CacheChangedCallback = async (params) => {
     await Bun.write(initialCachePath, JSON.stringify(params.newCache, null, 2));
     await cacheChanged(params);
@@ -48,6 +43,14 @@ export async function scanWithCacheFile<
     spend_private_key,
     stop_height
   );
+}
+export async function readCacheFile(
+  cacheFilePath: string
+): Promise<ScanCache | undefined> {
+  const jsonString = await Bun.file(cacheFilePath)
+    .text()
+    .catch(() => undefined);
+  return jsonString ? (JSON.parse(jsonString) as ScanCache) : undefined;
 }
 
 export type CacheRange = {
