@@ -10,7 +10,7 @@ export type WriteScanSettingParams = {
   start_height?: number;
   halted?: boolean;
   stop_height?: number | null;
-  scan_settings_path: string; // write your settings to a different path
+  scan_settings_path?: string; // write your settings to a different path
 };
 export type ScanSettingOpened = {
   primary_address: string;
