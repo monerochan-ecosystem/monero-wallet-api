@@ -84,6 +84,16 @@ export async function readScanSettings(
   }
   return openScanSettings;
 }
+export async function readWalletFromScanSettings(
+  primary_address: string,
+  scan_settings_path: string = SCAN_SETTINGS_STORE_NAME_DEFAULT
+) {
+  const scanSettings = await openScanSettingsFile(scan_settings_path);
+  if (!scanSettings) return undefined;
+  return scanSettings.wallets.find(
+    (wallet) => wallet?.primary_address === primary_address
+  );
+}
 
 export async function writeWalletToScanSettings(
   primary_address: string,
