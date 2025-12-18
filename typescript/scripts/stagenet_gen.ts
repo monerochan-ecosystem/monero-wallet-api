@@ -1,11 +1,11 @@
 #!/usr/bin/env bun
 import { get_info } from "../wallet-api/api";
 import {
-  initScanSettings,
   STAGENET_FRESH_WALLET_HEIGHT_DEFAULT,
   writeStagenetSpendViewKeysToDotEnv,
 } from "../wallet-api/keypairs-seeds/writeKeypairs";
 import { LOCAL_NODE_DEFAULT_URL } from "../wallet-api/node-interaction/nodeUrl";
+import { writeWalletToScanSettings } from "../wallet-api/scanning-syncing/scanSettings";
 
 // adds a wallet entry to ScanSettings.json
 
@@ -18,11 +18,9 @@ const height = (await get_info(LOCAL_NODE_DEFAULT_URL)).height;
 // || STAGENET_FRESH_WALLET_HEIGHT_DEFAULT // if you want to create wallets without node present
 
 const primary_address = await writeStagenetSpendViewKeysToDotEnv(Bun.env["sk"]);
-await initScanSettings(
+
+await writeWalletToScanSettings({
   primary_address,
-  height,
-  undefined,
-  undefined,
-  undefined,
-  Bun.argv[2]
-);
+  start_height: height,
+  scan_settings_path: Bun.argv[2],
+});

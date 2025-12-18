@@ -1,3 +1,5 @@
+import { LOCAL_NODE_DEFAULT_URL } from "../node-interaction/nodeUrl";
+
 export const SCAN_SETTINGS_STORE_NAME_DEFAULT = "ScanSettings.json";
 export type ScanSetting = {
   primary_address: string;
@@ -11,6 +13,7 @@ export type WriteScanSettingParams = {
   halted?: boolean;
   stop_height?: number | null;
   scan_settings_path?: string; // write your settings to a different path
+  node_url?: string;
 };
 export type ScanSettingOpened = {
   primary_address: string;
@@ -105,13 +108,29 @@ export async function readWalletFromScanSettings(
 export async function writeWalletToScanSettings(
   params: WriteScanSettingParams
 ) {
+  if (!params.node_url) params.node_url = LOCAL_NODE_DEFAULT_URL;
   if (!params.scan_settings_path)
     params.scan_settings_path = SCAN_SETTINGS_STORE_NAME_DEFAULT;
   const scanSettings = await openScanSettingsFile(params.scan_settings_path);
-  if (!scanSettings)
-    throw new Error(
-      `Scan settings file not found at ${params.scan_settings_path}`
+
+  if (!scanSettings) {
+    // case: no scan settings exist yet
+    return await writeScanSettings(
+      {
+        wallets: [
+          {
+            primary_address: params.primary_address,
+            start_height: params.start_height || 0,
+            halted: params.halted,
+            stop_height: params.stop_height,
+          },
+        ],
+        node_urls: [params.node_url],
+      },
+      params.scan_settings_path
     );
+  }
+
   const already_has_settings = scanSettings.wallets.findIndex(
     (wallet) => wallet?.primary_address === params.primary_address
   );
@@ -130,6 +149,7 @@ export async function writeWalletToScanSettings(
       wallet.stop_height = params.stop_height;
     }
   }
+
   return await Bun.write(
     params.scan_settings_path,
     JSON.stringify(scanSettings, null, 2)

@@ -3,12 +3,6 @@
 // write mainnet keys to stdout can > redirect to the place of your desires
 // (but you really shouldnt, use a seedphrase instead)
 
-import { writeScanSettings } from "../api";
-import { LOCAL_NODE_DEFAULT_URL } from "../node-interaction/nodeUrl";
-import {
-  SCAN_SETTINGS_STORE_NAME_DEFAULT,
-  writeWalletToScanSettings,
-} from "../scanning-syncing/scanSettings";
 import { makeSpendKey, makeViewKey } from "./keypairs";
 
 export const stagenet_pk_path = ".env";
@@ -31,46 +25,6 @@ export async function writeStagenetSpendViewKeysToDotEnv(spend_key?: string) {
   );
 
   return primary_address;
-}
-// if you want to feed current_height use: (await get_info(node_url)).height
-export async function initScanSettings(
-  primary_address: string,
-  start_height: number, // current height of stagenet dec 18 2025 will be set used as default if not provided
-  halted?: boolean,
-  stop_height?: number | null,
-  node_url: string = LOCAL_NODE_DEFAULT_URL, // initial node url
-  scan_settings_path: string = SCAN_SETTINGS_STORE_NAME_DEFAULT // write your settings to a different path
-) {
-  const scan_settings_string = await Bun.file(scan_settings_path)
-    .text()
-    .catch(() => {})
-    .then((c) => c || null);
-
-  if (!scan_settings_string) {
-    // case: no scan settings exist yet
-    const len = await writeScanSettings(
-      {
-        wallets: [
-          {
-            primary_address,
-            start_height: start_height,
-            halted,
-            stop_height,
-          },
-        ],
-        node_urls: [node_url],
-      },
-      scan_settings_path
-    );
-  } else {
-    writeWalletToScanSettings({
-      primary_address,
-      start_height,
-      halted,
-      stop_height,
-      scan_settings_path,
-    });
-  }
 }
 
 // writes "vkPRIMARY_KEY=<view_key> \n skPRIMARY_KEY=<spend_key>" to .env.local for testnet
