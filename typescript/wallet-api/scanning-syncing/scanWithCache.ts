@@ -36,10 +36,9 @@ export async function scanWithCacheFile<
   const initialScanCache = jsonString
     ? (JSON.parse(jsonString) as ScanCache)
     : undefined;
-  const cacheCallback: CacheChangedCallback = async (...args) => {
-    const [newCache] = args;
-    await Bun.write(initialCachePath, JSON.stringify(newCache, null, 2));
-    await cacheChanged(...args);
+  const cacheCallback: CacheChangedCallback = async (params) => {
+    await Bun.write(initialCachePath, JSON.stringify(params.newCache, null, 2));
+    await cacheChanged(params);
   };
   await processor.scanWithCache(
     start_height,
