@@ -97,7 +97,7 @@ export async function readWalletFromScanSettings(
 
 export async function writeWalletToScanSettings(
   primary_address: string,
-  start_height: number,
+  start_height?: number,
   halted?: boolean,
   stop_height?: number | null,
   scan_settings_path: string = SCAN_SETTINGS_STORE_NAME_DEFAULT // write your settings to a different path
@@ -112,13 +112,13 @@ export async function writeWalletToScanSettings(
     // wallet does not exist yet in settings
     scanSettings.wallets.push({
       primary_address,
-      start_height: start_height,
+      start_height: start_height || 0,
     });
   } else {
     // wallet already exists
     const wallet = scanSettings.wallets[already_has_settings];
     if (wallet) {
-      wallet.start_height = start_height;
+      wallet.start_height = start_height || wallet.start_height;
       wallet.halted = halted;
       wallet.stop_height = stop_height;
     }
