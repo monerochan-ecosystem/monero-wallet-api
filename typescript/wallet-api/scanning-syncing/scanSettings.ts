@@ -83,8 +83,8 @@ export async function readScanSettings(
   if (!scanSettings) return undefined;
   for (const [i, wallet] of scanSettings.wallets.entries()) {
     const primary_address = wallet!.primary_address;
-    const secret_view_key = Bun.env["v" + primary_address];
-    const spend_private_key = Bun.env["s" + primary_address];
+    const secret_view_key = Bun.env["vk" + primary_address];
+    const spend_private_key = Bun.env["sk" + primary_address];
     openScanSettings.wallets[i]!.secret_view_key = secret_view_key;
     openScanSettings.wallets[i]!.spend_private_key = spend_private_key;
   }
