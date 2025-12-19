@@ -1,5 +1,6 @@
 import { ViewPair } from "../api";
 import { startWebworker } from "./backgroundWorker";
+import { spendable } from "./scanResult";
 import {
   readWalletFromScanSettings,
   walletSettingsPlusKeys,
@@ -197,10 +198,20 @@ export class ScanCacheOpened {
       });
   }
   /**
-   * selectInputs
+   * selectInputs larger than amount, sorted from smallest to largest
    */
-  public selectInputs() {
-    //TODO: do this now
+  public selectInputs(amount: number) {
+    return Object.values(this._cache.outputs)
+      .filter((output) => spendable(output) && output.amount >= amount)
+      .sort((a, b) => a.amount - b.amount);
+  }
+  /**
+   * get spendableInputs
+   */
+  public spendableInputs() {
+    return Object.values(this._cache.outputs).filter((output) =>
+      spendable(output)
+    );
   }
   /**
    * feed

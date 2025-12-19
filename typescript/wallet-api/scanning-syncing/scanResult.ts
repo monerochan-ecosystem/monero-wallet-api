@@ -97,3 +97,7 @@ export function detectOwnspends(result: ScanResult, cache: ScanCache) {
   }
   return changed_outputs;
 }
+
+export function spendable(output: Output) {
+  return !output.burned && !output.spent_relative_index;
+}
