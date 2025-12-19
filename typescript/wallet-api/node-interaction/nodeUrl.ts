@@ -67,10 +67,13 @@ export class NodeUrl extends WasmProcessor {
   /**
    * fetch output distribution from node (necessary to make input - also named OutputWithDecoys in Monero-oxide)
    * @param params defaults to: { amounts: [0], binary: false }
-   * @returns retruns output distribution necessary to sample input candidates
+   * @returns returns output distribution necessary to sample input candidates
    */
-  public getOutputDistribution(params?: GetOutputDistributionParams) {
-    return get_output_distribution(this.node_url, params);
+  public async getOutputDistribution(
+    params?: GetOutputDistributionParams
+  ): Promise<number[]> {
+    return (await get_output_distribution(this.node_url, params))
+      .distributions[0].distribution;
   }
   /**
    * fetch fee estimate from node
