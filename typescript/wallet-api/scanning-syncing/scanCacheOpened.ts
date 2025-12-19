@@ -1,4 +1,16 @@
-import { ViewPair } from "../api";
+import {
+  NodeUrl,
+  ViewPair,
+  type GetOutsResponseBuffer,
+  type Output,
+} from "../api";
+import {
+  prepareInput,
+  sumPayments,
+  type Payment,
+  type PreparedInput,
+} from "../send-functionality/inputSelection";
+import type { Input } from "../send-functionality/transactionBuilding";
 import { startWebworker } from "./backgroundWorker";
 import { spendable } from "./scanResult";
 import {
@@ -87,6 +99,9 @@ export async function loadCacheAndScanSettings(
   };
   return [theCatchToBeOpened, walletSettings];
 }
+export type CreateTransactionParams = {
+  payments: Payment[];
+};
 export class ScanCacheOpened {
   public static async create(params: ScanCacheOpenedCreateParams) {
     const [theCatchToBeOpened, walletSettings] = await loadCacheAndScanSettings(
@@ -135,14 +150,42 @@ export class ScanCacheOpened {
   /**
    * makeTransaction
    */
-  public makeTransaction() {
-    // TODO do this fourth
+  public async makeTransaction(params: CreateTransactionParams) {
+    const sum = sumPayments(params.payments);
+    const selectedInputs = this.selectInputs(sum);
+    if (!selectedInputs.length) throw new Error("not enough funds");
+    const node = await NodeUrl.create(this.node_url);
+    const distibution = await node.getOutputDistribution();
+    const preparedInputs: PreparedInput[] = [];
+    for (const input of selectedInputs) {
+      preparedInputs.push(prepareInput(node, distibution, input));
+    }
+    const inputs: Input[] = [];
+    for (const preparedInput of preparedInputs) {
+      const input = node.makeInput(
+        preparedInput.input,
+        preparedInput.sample.candidates,
+        await preparedInput.outsResponse
+      );
+      inputs.push(input);
+    }
+
+    const feeEstimate = await node.getFeeEstimate();
+    const unsignedTx = this.view_pair.makeTransaction({
+      inputs,
+      payments: params.payments,
+      fee_response: feeEstimate,
+      fee_priority: "normal",
+    });
+    return unsignedTx;
   }
   /**
    * makeStandardTransaction
    */
-  public makeStandardTransaction() {
-    // TODO do this last
+  public makeStandardTransaction(destination_address: string, amount: string) {
+    return this.makeTransaction({
+      payments: [{ address: destination_address, amount }],
+    });
   }
   /**
    * notify     //ChangeReason = "added" | "ownspend" | "reorged" | "burned";
@@ -198,20 +241,44 @@ export class ScanCacheOpened {
       });
   }
   /**
-   * selectInputs larger than amount, sorted from smallest to largest
+   * selectInputs returns array of inputs, whose sum is larger than amount
    */
   public selectInputs(amount: number) {
+    const oneInputIsEnough = this.selectOneInput(amount);
+    if (oneInputIsEnough) return [oneInputIsEnough];
+    return this.selectMultipleInputs(amount);
+  }
+  /**
+   * selectOneInput larger than amount, (smallest one matching this amount)
+   */
+  public selectOneInput(amount: number): Output | undefined {
     return Object.values(this._cache.outputs)
       .filter((output) => spendable(output) && output.amount >= amount)
-      .sort((a, b) => a.amount - b.amount);
+      .sort((a, b) => a.amount - b.amount)[0];
   }
+  /**
+   * selectMultipleInputs larger than amount, sorted from largest to smallest until total reaches amount
+   */
+  public selectMultipleInputs(amount: number) {
+    const selected = [];
+    let total = 0;
+
+    for (const output of this.spendableInputs()) {
+      selected.push(output);
+      total += output.amount;
+      if (total >= amount) return selected;
+    }
+
+    return [];
+  }
+
   /**
    * get spendableInputs
    */
   public spendableInputs() {
-    return Object.values(this._cache.outputs).filter((output) =>
-      spendable(output)
-    );
+    return Object.values(this._cache.outputs)
+      .filter((output) => spendable(output))
+      .sort((a, b) => b.amount - a.amount);
   }
   /**
    * feed

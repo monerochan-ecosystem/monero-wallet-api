@@ -304,10 +304,10 @@ export function getOutsBinMakeRequest<T extends WasmProcessor>(
   }
   return getOutsArray as Uint8Array; // written in build_getblocksbin_request call to readFromWasmMemory
 }
-
+export type GetOutsResponseBuffer = Uint8Array<ArrayBufferLike>;
 export async function getOutsBinExecuteRequest<
   T extends WasmProcessor & HasNodeUrl
->(processor: T, params: GetOutsBinRequest) {
+>(processor: T, params: GetOutsBinRequest): Promise<GetOutsResponseBuffer> {
   const getOutsRequestArray = getOutsBinMakeRequest(processor, params);
   const getOutsBinResponseBuffer = await binaryFetchRequest(
     processor.node_url + "/get_outs.bin",
