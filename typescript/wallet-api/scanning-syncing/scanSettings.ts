@@ -18,6 +18,7 @@ export type WriteScanSettingParams = {
 export type ScanSettingOpened = {
   primary_address: string;
   start_height: number;
+  node_url: string;
   secret_view_key?: string;
   halted?: boolean;
   spend_private_key?: string;
@@ -100,9 +101,12 @@ export async function readWalletFromScanSettings(
 ) {
   const scanSettings = await openScanSettingsFile(scan_settings_path);
   if (!scanSettings) return undefined;
-  return scanSettings.wallets.find(
-    (wallet) => wallet?.primary_address === primary_address
-  );
+  return {
+    ...scanSettings.wallets.find(
+      (wallet) => wallet?.primary_address === primary_address
+    ),
+    node_url: scanSettings.node_urls[0],
+  };
 }
 
 export async function writeWalletToScanSettings(
