@@ -99,5 +99,8 @@ export function detectOwnspends(result: ScanResult, cache: ScanCache) {
 }
 
 export function spendable(output: Output) {
-  return !output.burned && !output.spent_relative_index;
+  return (
+    !(typeof output.burned === "number") &&
+    !(typeof output.spent_in_tx_hash === "string")
+  );
 }

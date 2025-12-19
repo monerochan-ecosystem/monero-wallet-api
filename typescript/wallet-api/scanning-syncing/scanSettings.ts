@@ -96,6 +96,12 @@ export async function readScanSettings(
   }
   return openScanSettings;
 }
+export function readPrivateSpendKeyFromEnv(primary_address: string) {
+  return Bun.env["sk" + primary_address];
+}
+export function readPrivateViewKeyFromEnv(primary_address: string) {
+  return Bun.env["vk" + primary_address];
+}
 export async function readWalletFromScanSettings(
   primary_address: string,
   scan_settings_path: string = SCAN_SETTINGS_STORE_NAME_DEFAULT

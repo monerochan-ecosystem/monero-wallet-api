@@ -1,5 +1,6 @@
 import {
   NodeUrl,
+  signTransaction,
   ViewPair,
   type GetOutsResponseBuffer,
   type Output,
@@ -14,6 +15,7 @@ import type { Input } from "../send-functionality/transactionBuilding";
 import { startWebworker } from "./backgroundWorker";
 import { spendable } from "./scanResult";
 import {
+  readPrivateSpendKeyFromEnv,
   readWalletFromScanSettings,
   walletSettingsPlusKeys,
   writeWalletToScanSettings,
@@ -147,6 +149,17 @@ export class ScanCacheOpened {
     // and do pause unpause
     this.view_pair.node_url = nu;
   }
+  public async sendTransaction(signedTx: string) {
+    const node = await NodeUrl.create(this.node_url);
+    return await node.sendRawTransaction(signedTx);
+  }
+  public async signTransaction(unsignedTx: string) {
+    const privateSpendKey = readPrivateSpendKeyFromEnv(
+      this._cache.primary_address
+    );
+    if (!privateSpendKey) throw new Error("privateSpendKey not found in env");
+    return await signTransaction(unsignedTx, privateSpendKey);
+  }
   /**
    * makeTransaction
    */
@@ -252,8 +265,8 @@ export class ScanCacheOpened {
    * selectOneInput larger than amount, (smallest one matching this amount)
    */
   public selectOneInput(amount: number): Output | undefined {
-    return Object.values(this._cache.outputs)
-      .filter((output) => spendable(output) && output.amount >= amount)
+    return this.spendableInputs()
+      .filter((output) => output.amount >= amount)
       .sort((a, b) => a.amount - b.amount)[0];
   }
   /**
