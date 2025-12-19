@@ -184,6 +184,7 @@ export class ScanCacheOpened {
     if (!this.worker || start_height || node_url) {
       this.worker?.terminate();
       this.worker = startWebworker(worker_script, (x) => {
+        this._cache = (x as CacheChangedCallbackParameters).newCache;
         this.feed(x as CacheChangedCallbackParameters);
       });
     }
