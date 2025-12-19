@@ -6,6 +6,7 @@ export type ScanSetting = {
   start_height: number;
   halted?: boolean;
   stop_height?: number | null;
+  node_url?: string;
 };
 export type WriteScanSettingParams = {
   primary_address: string;
@@ -98,14 +99,37 @@ export async function readScanSettings(
 export async function readWalletFromScanSettings(
   primary_address: string,
   scan_settings_path: string = SCAN_SETTINGS_STORE_NAME_DEFAULT
-) {
+): Promise<ScanSetting | undefined> {
   const scanSettings = await openScanSettingsFile(scan_settings_path);
   if (!scanSettings) return undefined;
+  const walletSettings = scanSettings.wallets.find(
+    (wallet) => wallet?.primary_address === primary_address
+  );
+  if (!walletSettings) return undefined;
   return {
-    ...scanSettings.wallets.find(
-      (wallet) => wallet?.primary_address === primary_address
-    ),
+    ...walletSettings,
     node_url: scanSettings.node_urls[0],
+  };
+}
+export function walletSettingsPlusKeys(
+  wallet_settings: ScanSetting,
+  secret_view_key?: string,
+  secret_spend_key?: string
+) {
+  // read secret_view_key and secret_spend_key from env
+  if (!secret_view_key)
+    secret_view_key = Bun.env[`vk${wallet_settings.primary_address}`];
+  if (!secret_view_key)
+    throw "no secret_view_key provided and not found in env";
+  if (!secret_spend_key)
+    secret_spend_key = Bun.env[`sk${wallet_settings.primary_address}`];
+  if (!secret_spend_key)
+    throw "no secret_spend_key provided and not found in env";
+
+  return {
+    ...wallet_settings,
+    secret_view_key,
+    secret_spend_key,
   };
 }
 
