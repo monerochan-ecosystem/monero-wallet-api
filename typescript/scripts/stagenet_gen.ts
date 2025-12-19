@@ -24,3 +24,8 @@ await writeWalletToScanSettings({
   start_height: height,
   scan_settings_path: Bun.argv[2],
 });
+
+console.log(
+  "mine on stagenet or request funds from stagenet faucet to:\n",
+  primary_address
+);
