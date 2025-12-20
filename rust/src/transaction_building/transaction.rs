@@ -6,6 +6,7 @@ use monero_wallet::{
   rpc::{FeePriority, FeeRate, RpcError},
   send::{Change, SignableTransaction},
 };
+use serde_json::json;
 use std::{io::Cursor};
 use hex::FromHex;
 use rand_core::{OsRng, RngCore};
@@ -80,7 +81,7 @@ pub fn make_transaction(
     data,
     fee_rate,
   )
-  .map_err(|e| format!("failed to create SignableTransaction {}", e))
+  .map_err(|e| json!({"message":"failed to create SignableTransaction","error":e}).to_string())
 }
 
 #[derive(Debug, Deserialize)]

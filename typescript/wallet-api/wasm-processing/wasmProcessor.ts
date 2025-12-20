@@ -24,6 +24,18 @@ export class WasmProcessor {
    */
   public readFromWasmMemory: MemoryCallback = (ptr: number, len: number) => {};
   /**
+   * This method is invoked whenever a Rust function wants to return an error json string.
+   * You should use `readString` within the function assigned to this callback
+   * to read the data from WebAssembly (Wasm) memory after the corresponding Wasm method has written it.
+   *
+   * @param ptr - The WebAssembly memory address from which the data should be read.
+   * @param len - The number of bytes to read starting from the specified `ptr`.
+   */
+  public readErrorFromWasmMemory: MemoryCallback = (
+    ptr: number,
+    len: number
+  ) => {};
+  /**
    * Writes an array of bytes to a specified offset in WebAssembly memory.
    *
    * This method is typically used within `writeToWasmMemory` to write data into Wasm memory.
@@ -109,6 +121,9 @@ export class WasmProcessor {
         },
         output: (ptr: number, len: number) => {
           this.readFromWasmMemory(ptr, len);
+        },
+        output_error: (ptr: number, len: number) => {
+          this.readErrorFromWasmMemory(ptr, len);
         },
       },
       ...tinywasi.imports,

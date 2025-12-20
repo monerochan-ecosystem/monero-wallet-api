@@ -75,23 +75,46 @@ export type MakeTransactionParams = {
   outgoing_view_key?: string;
   data?: number[][];
 };
+export type NotEnoughFundsError = {
+  inputs: number;
+  necessary_fee: number;
+  outputs: number;
+};
 
+export type ErrorDetail = {
+  NotEnoughFunds: NotEnoughFundsError;
+};
+
+export type SendError = {
+  error: ErrorDetail;
+  message: string;
+};
+/**
+ *  this function returns the unsigned transaction, throws {@link SendError}
+ * @param processor
+ * @param params
+ * @returns
+ */
 export function makeTransaction<T extends WasmProcessor>(
   processor: T,
   params: MakeTransactionParams
-) {
+): UnsignedTransaction {
   const jsonParams = JSON.stringify(params);
   processor.writeToWasmMemory = (ptr, len) => {
     processor.writeString(ptr, len, jsonParams);
   };
   let result: { transaction: number[] } | null = null;
+  let error: { error: string } | null = null;
   processor.readFromWasmMemory = (ptr, len) => {
     result = JSON.parse(processor.readString(ptr, len));
+  };
+  processor.readErrorFromWasmMemory = (ptr, len) => {
+    error = JSON.parse(processor.readString(ptr, len));
   };
   //@ts-ignore
   processor.tinywasi.instance.exports.make_transaction(jsonParams.length);
   if (!result) {
-    throw new Error("Failed to make transaction");
+    throw error;
   }
   return result["signable_transaction"] as UnsignedTransaction;
 }

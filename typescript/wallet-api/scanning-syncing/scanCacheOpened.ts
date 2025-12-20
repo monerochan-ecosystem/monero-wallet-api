@@ -11,7 +11,10 @@ import {
   type Payment,
   type PreparedInput,
 } from "../send-functionality/inputSelection";
-import type { Input } from "../send-functionality/transactionBuilding";
+import type {
+  Input,
+  SendError,
+} from "../send-functionality/transactionBuilding";
 import { startWebworker } from "./backgroundWorker";
 import { spendable } from "./scanResult";
 import {
@@ -103,6 +106,7 @@ export async function loadCacheAndScanSettings(
 }
 export type CreateTransactionParams = {
   payments: Payment[];
+  inputs?: Output[];
 };
 export class ScanCacheOpened {
   public static async create(params: ScanCacheOpenedCreateParams) {
@@ -122,7 +126,7 @@ export class ScanCacheOpened {
       await ViewPair.create(
         params.primary_address,
         walletSettingsWithKeys.secret_view_key,
-        params.node_url
+        walletSettings.node_url || params.node_url
       ),
       params.write_scan_settings
     );
@@ -161,13 +165,16 @@ export class ScanCacheOpened {
     return await signTransaction(unsignedTx, privateSpendKey);
   }
   /**
-   * makeTransaction
+   * this function returns the unsigned transaction, throws {@link SendError}
    */
   public async makeTransaction(params: CreateTransactionParams) {
     const sum = sumPayments(params.payments);
-    const selectedInputs = this.selectInputs(sum);
-    if (!selectedInputs.length) throw new Error("not enough funds");
     const node = await NodeUrl.create(this.node_url);
+
+    const feeEstimate = await node.getFeeEstimate();
+    const selectedInputs =
+      params.inputs || this.selectInputs(sum, feeEstimate.fees![0]);
+    if (!selectedInputs.length) throw new Error("not enough funds");
     const distibution = await node.getOutputDistribution();
     const preparedInputs: PreparedInput[] = [];
     for (const input of selectedInputs) {
@@ -183,12 +190,11 @@ export class ScanCacheOpened {
       inputs.push(input);
     }
 
-    const feeEstimate = await node.getFeeEstimate();
     const unsignedTx = this.view_pair.makeTransaction({
       inputs,
       payments: params.payments,
       fee_response: feeEstimate,
-      fee_priority: "normal",
+      fee_priority: "unimportant",
     });
     return unsignedTx;
   }
@@ -255,8 +261,10 @@ export class ScanCacheOpened {
   }
   /**
    * selectInputs returns array of inputs, whose sum is larger than amount
+   * adds approximate fee for 10kb transaction to amount if feePerByte is supplied
    */
-  public selectInputs(amount: number) {
+  public selectInputs(amount: number, feePerByte?: number) {
+    if (feePerByte) amount += feePerByte * 10000; // 10kb * feePerByte; for sweeping low amounts inputs[] supplied directly
     const oneInputIsEnough = this.selectOneInput(amount);
     if (oneInputIsEnough) return [oneInputIsEnough];
     return this.selectMultipleInputs(amount);

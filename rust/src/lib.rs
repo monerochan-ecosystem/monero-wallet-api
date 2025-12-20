@@ -14,7 +14,7 @@ use serde_json::json;
 
 use monero_wallet::{Scanner, ViewPair};
 use std::cell::RefCell;
-use your_program::{input, input_string, output, output_string};
+use your_program::{input, input_string, output, output_string, output_error_string};
 use zeroize::Zeroizing;
 
 thread_local! {
@@ -43,6 +43,9 @@ mod your_program {
     extern "C" {
       pub fn output(ptr: *const u8, length: usize);
     }
+    extern "C" {
+      pub fn output_error(ptr: *const u8, length: usize);
+    }
   }
   /// internal wrappers to handle input and output of strings
   pub fn input(length: usize) -> Vec<u8> {
@@ -69,6 +72,9 @@ mod your_program {
   }
   pub fn output_string(value: &str) {
     unsafe { yours::output(value.as_ptr(), value.len()) };
+  }
+  pub fn output_error_string(value: &str) {
+    unsafe { yours::output_error(value.as_ptr(), value.len()) };
   }
 }
 /// WASM / C ABI
@@ -191,7 +197,7 @@ pub extern "C" fn make_transaction(json_params_len: usize) {
             output_string(&tx_json.to_string());
           }
           Err(e) => {
-            println!("Error making transaction: {}", e);
+            output_error_string(&e);
             return;
           }
         }
