@@ -4,7 +4,7 @@ import {
   type KeyImage,
 } from "../scanning-syncing/computeKeyImage";
 import type { ScanCache, ChangedOutputs } from "./scanWithCache";
-
+import { type ErrorResponse } from "../node-interaction/binaryEndpoints";
 export type OnchainKeyImage = {
   key_image_hex: KeyImage;
   relative_index: number; // relative index of input in transaction
@@ -19,6 +19,18 @@ export type ScanResult = {
   new_height: number;
   primary_address: string;
 };
+export type EmptyScanResult = {}; // can happen when we abort a scan before any blocks are processed
+
+export type FastForward = number; // height to fast forward scan to
+export type ScanResultCallback =
+  | ((
+      result: ScanResult | ErrorResponse | EmptyScanResult
+    ) => FastForward | void)
+  | ((
+      result: ScanResult | ErrorResponse | EmptyScanResult
+    ) => Promise<FastForward | void>); // accept async callbacks
+// we will await async callbacks. convenient way to halt a sync + feed back the key image list,
+// to look out for our own spends before proceeding the scan. This happens in the scanWithCache function.
 
 export async function detectOutputs(
   result: ScanResult,
