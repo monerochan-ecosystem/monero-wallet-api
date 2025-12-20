@@ -28,9 +28,24 @@ export async function writeStagenetSpendViewKeysToDotEnv(spend_key?: string) {
 }
 
 // writes "vkPRIMARY_KEY=<view_key> \n skPRIMARY_KEY=<spend_key>" to .env.local for testnet
-export async function writeTestnetSpendViewKeysToDotEnvLocal() {
-  // TODO
-  //writeEnvLineToDotEnvRefresh();
+export async function writeTestnetSpendViewKeysToDotEnvLocal(
+  spend_key?: string
+) {
+  spend_key = spend_key || (await makeSpendKey());
+  let view_pair = await makeViewKey(spend_key);
+  let primary_address = view_pair.testnet_primary;
+  await writeEnvLineToDotEnvRefresh(
+    `vk${primary_address}`,
+    view_pair.view_key,
+    testnet_pk_path
+  );
+  await writeEnvLineToDotEnvRefresh(
+    `sk${primary_address}`,
+    spend_key,
+    testnet_pk_path
+  );
+
+  return primary_address;
 }
 // this should be used in a web backend that does (non custodial) scanning
 // to add new view / spend keys, received from the users without a restart.
@@ -69,7 +84,7 @@ export async function writeEnvLineToDotEnv(
       ? [...lines, `${key.trim()}=${value.trim()}`]
       : lines.with(idx, `${key.trim()}=${value.trim()}`);
 
-  await Bun.write(".env", updatedLines.join("\n"));
+  await Bun.write(path, updatedLines.join("\n"));
 }
 
 export const STAGENET_FRESH_WALLET_HEIGHT_DEFAULT = 2014841; // current height of stagenet dec 18 2025,
