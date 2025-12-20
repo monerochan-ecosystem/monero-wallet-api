@@ -145,6 +145,7 @@ export class ViewPair extends WasmProcessor {
       daemon_height: start_height + 1,
       status: "",
       primary_address: "",
+      block_infos: [],
     };
     let fastForward = 0;
     while (latest_meta.new_height < latest_meta.daemon_height) {

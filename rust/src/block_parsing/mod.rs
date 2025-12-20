@@ -27,11 +27,18 @@ where
   }
 }
 #[derive(serde::Serialize)]
+pub struct BlockInfo {
+  block_height: u64,
+  block_timestamp: u64,
+  block_hash: String,
+}
+#[derive(serde::Serialize)]
 pub struct GetBlocksResult {
   new_height: u64,
   daemon_height: u64,
   status: Status,
   primary_address: String,
+  block_infos: Vec<BlockInfo>,
 }
 pub fn get_blocks_bin_response_meta(
   get_blocks_bin: &GetBlocksResponse,
@@ -39,11 +46,27 @@ pub fn get_blocks_bin_response_meta(
 ) -> GetBlocksResult {
   let new_height = get_blocks_bin.start_height + (get_blocks_bin.blocks.len() as u64);
   let daemon_height = get_blocks_bin.current_height;
+  let mut block_infos: Vec<BlockInfo> = vec![];
+  for (index, block_entry) in get_blocks_bin.blocks.iter().enumerate() {
+    let block = match Block::read::<&[u8]>(&mut block_entry.block.as_ref()) {
+      Ok(block) => block,
+      Err(_) => {
+        println!("Error reading block");
+        continue;
+      }
+    };
+    block_infos.push(BlockInfo {
+      block_timestamp: block.header.timestamp,
+      block_height: get_blocks_bin.start_height + (index as u64),
+      block_hash: hex::encode(block.hash()),
+    });
+  }
   GetBlocksResult {
     new_height,
     daemon_height,
     status: get_blocks_bin.base.response_base.status.clone(),
     primary_address: primary_address.to_string(),
+    block_infos,
   }
 }
 #[derive(serde::Serialize, Debug)]
@@ -51,14 +74,15 @@ struct InputImage {
   key_image_hex: String,
   relative_index: usize,
   tx_hash: String, // Assuming tx has a method like tx.hash() returning [u8; 32]
-  block_timestamp: u64,
   block_height: u64,
+  block_timestamp: u64,
   block_hash: String,
 }
 pub fn scan_blocks(
   mut scanner: Scanner,
   primary_address: &str,
   get_blocks_bin: GetBlocksResponse,
+  //TODO offset to start scanning from
 ) -> String {
   let mut output_jsons = Vec::new();
   let mut input_images_jsons: Vec<InputImage> = Vec::new();

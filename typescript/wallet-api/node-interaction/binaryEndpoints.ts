@@ -72,7 +72,14 @@ export type GetBlocksResultMeta = {
     | "parsing-monerod-response-without-wallet"
     | "error-address-not-set"
     | string;
+  block_infos: BlockInfo[];
 };
+export type BlockInfo = {
+  block_timestamp: number;
+  block_height: number;
+  block_hash: string;
+};
+
 export type Output = {
   amount: number;
   block_height: number;
