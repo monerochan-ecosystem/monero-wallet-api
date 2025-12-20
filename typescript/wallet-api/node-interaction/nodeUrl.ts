@@ -129,4 +129,4 @@ export class NodeUrl extends WasmProcessor {
     return send_raw_transaction(this.node_url, tx_as_hex, do_not_relay);
   }
 }
-export const LOCAL_NODE_DEFAULT_URL = "http://localhost:38081";
+export const LOCAL_NODE_DEFAULT_URL = "http://localhost:18081";
