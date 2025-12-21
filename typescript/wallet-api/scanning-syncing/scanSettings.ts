@@ -111,7 +111,12 @@ export async function readWalletFromScanSettings(
   const walletSettings = scanSettings.wallets.find(
     (wallet) => wallet?.primary_address === primary_address
   );
-  if (!walletSettings) return undefined;
+  if (!walletSettings)
+    throw new Error(
+      `wallet not found in settings. did you call openwallet with the right params?
+      Either wrong file name supplied to params.scan_settings_path: ${scan_settings_path}
+      Or wrong primary_address supplied params.primary_address: ${primary_address}`
+    );
   return {
     ...walletSettings,
     node_url: scanSettings.node_urls[0],

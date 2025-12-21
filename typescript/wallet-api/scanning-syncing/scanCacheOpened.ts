@@ -63,7 +63,7 @@ export async function loadCacheAndScanSettings(
     );
     const start_height =
       params.start_height || loadedWalletSettings?.start_height;
-    if (!start_height)
+    if (!(typeof start_height === "number"))
       throw new Error("start_height not found in settings, or in params");
     const halted =
       typeof params.halted === "boolean"
@@ -94,7 +94,10 @@ export async function loadCacheAndScanSettings(
     theCatchToBeOpened = params.cache;
   }
 
-  if (!params.start_height) throw new Error("start_height not found in params");
+  if (!(typeof params.start_height === "number"))
+    throw new Error(`params.start_height not found. If you pass a cache directly, you also have to pass a height:
+   loading from ScanCache object or cache file directly, means we don't touch the scan settings json file.
+   You have to pass a height to scan from when you pass a cache or cache file path directly to openwallet.`);
   const walletSettings: ScanSetting = {
     primary_address: params.primary_address,
     start_height: params.start_height,
