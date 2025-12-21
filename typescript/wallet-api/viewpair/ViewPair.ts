@@ -25,6 +25,10 @@ import { WasmProcessor } from "../wasm-processing/wasmProcessor";
 import type { ConnectionStatus } from "../scanning-syncing/connectionStatus";
 import { LOCAL_NODE_DEFAULT_URL } from "../node-interaction/nodeUrl";
 import { type ScanResultCallback } from "../scanning-syncing/scanResult";
+import {
+  get_block_headers_range,
+  type GetBlockHeadersRangeParams,
+} from "../api";
 /**
  * This class is useful to interact with Moneros DaemonRpc binary requests in a convenient way.
  * (similar to how you would interact with a REST api that gives you json back.)
@@ -246,5 +250,14 @@ export class ViewPair extends WasmProcessor {
    */
   public makeTransaction(params: MakeTransactionParams): UnsignedTransaction {
     return makeTransaction(this, params);
+  }
+  /**
+   * Retrieve block headers for a specified range of heights.
+   * @link https://docs.getmonero.org/rpc-library/monerod-rpc/#get_block_headers_range
+   * @param params The parameters including start_height, end_height, and optional fill_pow_hash.
+   * @returns The result object with headers, status, etc. Throws if the range is invalid:(end_height > daemonheight)
+   */
+  public async getBlockHeadersRange(params: GetBlockHeadersRangeParams) {
+    return get_block_headers_range(this.node_url, params);
   }
 }

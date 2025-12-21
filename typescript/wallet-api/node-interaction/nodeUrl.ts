@@ -7,9 +7,11 @@ import {
   getOutsBinExecuteRequest,
 } from "./binaryEndpoints";
 import {
+  get_block_headers_range,
   get_fee_estimate,
   get_output_distribution,
   send_raw_transaction,
+  type GetBlockHeadersRangeParams,
   type GetOutputDistributionParams,
   type SendRawTransactionResponse,
 } from "./jsonEndpoints";
@@ -127,6 +129,15 @@ export class NodeUrl extends WasmProcessor {
     do_not_relay: boolean = false
   ): Promise<SendRawTransactionResponse> {
     return send_raw_transaction(this.node_url, tx_as_hex, do_not_relay);
+  }
+  /**
+   * Retrieve block headers for a specified range of heights.
+   * @link https://docs.getmonero.org/rpc-library/monerod-rpc/#get_block_headers_range
+   * @param params The parameters including start_height, end_height, and optional fill_pow_hash.
+   * @returns The result object with headers, status, etc. Throws if the range is invalid:(end_height > daemonheight)
+   */
+  public async getBlockHeadersRange(params: GetBlockHeadersRangeParams) {
+    return get_block_headers_range(this.node_url, params);
   }
 }
 export const LOCAL_NODE_DEFAULT_URL = "http://localhost:18081";

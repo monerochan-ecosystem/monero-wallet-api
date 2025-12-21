@@ -339,3 +339,154 @@ export async function send_raw_transaction(
   }
   return parsedResult;
 }
+/**
+ * Response schema for the get_block_headers_range method.
+ *
+ * @property id - The request ID.
+ * @property jsonrpc - The JSON-RPC version.
+ * @property result - The result object containing:
+ * - credits: unsigned int; If payment for RPC is enabled, the number of credits available to the requesting client. Otherwise, 0.
+ * - headers: array of block_header objects, each with:
+ *   - block_size: unsigned int
+ *   - block_weight: unsigned int
+ *   - cumulative_difficulty: unsigned int
+ *   - cumulative_difficulty_top64: unsigned int
+ *   - depth: unsigned int
+ *   - difficulty: unsigned int
+ *   - difficulty_top64: unsigned int
+ *   - hash: string
+ *   - height: unsigned int
+ *   - long_term_weight: unsigned int
+ *   - major_version: unsigned int
+ *   - miner_tx_hash: string
+ *   - minor_version: unsigned int
+ *   - nonce: unsigned int
+ *   - num_txes: unsigned int
+ *   - orphan_status: boolean
+ *   - pow_hash: string (if fill_pow_hash is true)
+ *   - prev_hash: string
+ *   - reward: unsigned int
+ *   - timestamp: unsigned int
+ *   - wide_cumulative_difficulty: string
+ *   - wide_difficulty: string
+ * - status: string; General RPC error code. "OK" means everything looks good.
+ * - top_hash: string; If payment for RPC is enabled, the hash of the highest block in the chain. Otherwise, empty.
+ * - untrusted: boolean; States if the result is obtained using the bootstrap mode (true) or not (false).
+ * @property error - Optional error object if the request failed:
+ * - code: int; Error code.
+ * - message: string; Error message.
+ */
+export const GetBlockHeadersRangeResponseSchema = z.object({
+  id: z.string(),
+  jsonrpc: z.literal("2.0"),
+  result: z
+    .object({
+      credits: z.number(),
+      headers: z.array(
+        z.object({
+          block_size: z.number(),
+          block_weight: z.number(),
+          cumulative_difficulty: z.number(),
+          cumulative_difficulty_top64: z.number(),
+          depth: z.number(),
+          difficulty: z.number(),
+          difficulty_top64: z.number(),
+          hash: z.string(),
+          height: z.number(),
+          long_term_weight: z.number(),
+          major_version: z.number(),
+          miner_tx_hash: z.string(),
+          minor_version: z.number(),
+          nonce: z.number(),
+          num_txes: z.number(),
+          orphan_status: z.boolean(),
+          pow_hash: z.string(),
+          prev_hash: z.string(),
+          reward: z.number(),
+          timestamp: z.number(),
+          wide_cumulative_difficulty: z.string(),
+          wide_difficulty: z.string(),
+        })
+      ),
+      status: z.string(),
+      top_hash: z.string(),
+      untrusted: z.boolean(),
+    })
+    .optional(),
+  error: z
+    .object({
+      code: z.number(),
+      message: z.string(),
+    })
+    .optional(),
+});
+
+export type GetBlockHeadersRangeResponse = z.infer<
+  typeof GetBlockHeadersRangeResponseSchema
+>;
+
+export function parseGetBlockHeadersRangeResponse(
+  data: unknown
+): GetBlockHeadersRangeResponse | null {
+  const result = GetBlockHeadersRangeResponseSchema.safeParse(data);
+  if (result.success) {
+    return result.data;
+  } else {
+    console.error("Validation failed:", result.error);
+    return null;
+  }
+}
+
+/**
+ * Parameters for retrieving block headers in a range.
+ *
+ * @property start_height - unsigned int; The starting block's height.
+ * @property end_height - unsigned int; The ending block's height.
+ * @property fill_pow_hash - (Optional) boolean; Add PoW hash to block_header response. Defaults to false.
+ */
+export type GetBlockHeadersRangeParams = {
+  start_height: number;
+  end_height: number;
+  fill_pow_hash?: boolean;
+};
+
+export async function get_block_headers_range(
+  NODE_URL: string,
+  params: GetBlockHeadersRangeParams
+) {
+  const getBlockHeadersRangeResponse = await fetch(NODE_URL + "/json_rpc", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: "0",
+      method: "get_block_headers_range",
+      params,
+    }),
+  });
+  if (!getBlockHeadersRangeResponse.ok) {
+    throw new Error(
+      `Failed to get block headers range: ${getBlockHeadersRangeResponse.statusText}`
+    );
+  }
+  const getBlockHeadersRangeResult = await getBlockHeadersRangeResponse.json();
+  const parsedResult = parseGetBlockHeadersRangeResponse(
+    getBlockHeadersRangeResult
+  );
+  if (parsedResult === null) {
+    throw new Error("Failed to parse block headers range response from node");
+  }
+  if (parsedResult.error) {
+    throw new Error(
+      `RPC error: ${parsedResult.error.message} (code: ${parsedResult.error.code})`
+    );
+  }
+  if (!parsedResult.result) {
+    throw new Error(
+      "Failed to receive block headers range from node (missing result)"
+    );
+  }
+  return parsedResult.result;
+}
