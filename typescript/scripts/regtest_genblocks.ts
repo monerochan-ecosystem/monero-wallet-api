@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 if (Bun.argv.length < 3) {
-  console.error("Usage: bun run script.ts <wallet_address>");
+  console.error("Usage: bun run script.ts <wallet_address> <number_of_blocks>");
   process.exit(1);
 }
 
@@ -11,7 +11,7 @@ const payload = {
   id: "0",
   method: "generateblocks",
   params: {
-    amount_of_blocks: 1,
+    amount_of_blocks: Bun.argv[3],
     wallet_address: walletAddress,
   },
 };

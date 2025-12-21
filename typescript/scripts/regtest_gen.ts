@@ -11,7 +11,7 @@ import { writeWalletToScanSettings } from "../wallet-api/scanning-syncing/scanSe
 // writes "vkPRIMARY_KEY=<view_key> \n skPRIMARY_KEY=<spend_key>" to .env.local for regtest
 
 // optional first arg is the path to custom location for settings file: scripts/regtest_gen.ts  mysettings.json
-const height = (await get_info(LOCAL_NODE_DEFAULT_URL)).height;
+const height = 0; //(await get_info(LOCAL_NODE_DEFAULT_URL)).height; // regtest starts at 0
 
 const primary_address = await writeRegtestSpendViewKeysToDotEnvTestLocal(
   Bun.env["sk"]
