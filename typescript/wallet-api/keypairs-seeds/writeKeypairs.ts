@@ -7,7 +7,7 @@ import { makeSpendKey, makeViewKey } from "./keypairs";
 
 export const stagenet_pk_path = ".env";
 export const testnet_pk_path = ".env.local";
-export const regtest_pk_path = ".env.test.local";
+export const regtest_pk_path = ".env.local";
 
 // writes "vkPRIMARY_KEY=<view_key> \n skPRIMARY_KEY=<spend_key>" to .env for stagenet
 export async function writeStagenetSpendViewKeysToDotEnv(spend_key?: string) {
@@ -27,7 +27,7 @@ export async function writeStagenetSpendViewKeysToDotEnv(spend_key?: string) {
 
   return primary_address;
 }
-// writes "vkPRIMARY_KEY=<view_key> \n skPRIMARY_KEY=<spend_key>" to .env.test.local for regtest
+// writes "vkPRIMARY_KEY=<view_key> \n skPRIMARY_KEY=<spend_key>" to .env.local for regtest
 export async function writeRegtestSpendViewKeysToDotEnvTestLocal(
   spend_key?: string
 ) {

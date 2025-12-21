@@ -8,7 +8,7 @@ import { writeWalletToScanSettings } from "../wallet-api/scanning-syncing/scanSe
 
 // will make new spend keys if no Bun.env["sk"] is present
 
-// writes "vkPRIMARY_KEY=<view_key> \n skPRIMARY_KEY=<spend_key>" to .env.test.local for regtest
+// writes "vkPRIMARY_KEY=<view_key> \n skPRIMARY_KEY=<spend_key>" to .env.local for regtest
 
 // optional first arg is the path to custom location for settings file: scripts/regtest_gen.ts  mysettings.json
 const height = (await get_info(LOCAL_NODE_DEFAULT_URL)).height;
