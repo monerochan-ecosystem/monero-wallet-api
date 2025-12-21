@@ -7,6 +7,7 @@ import { makeSpendKey, makeViewKey } from "./keypairs";
 
 export const stagenet_pk_path = ".env";
 export const testnet_pk_path = ".env.local";
+export const regtest_pk_path = ".env.test.local";
 
 // writes "vkPRIMARY_KEY=<view_key> \n skPRIMARY_KEY=<spend_key>" to .env for stagenet
 export async function writeStagenetSpendViewKeysToDotEnv(spend_key?: string) {
@@ -22,6 +23,26 @@ export async function writeStagenetSpendViewKeysToDotEnv(spend_key?: string) {
     `sk${primary_address}`,
     spend_key,
     stagenet_pk_path
+  );
+
+  return primary_address;
+}
+// writes "vkPRIMARY_KEY=<view_key> \n skPRIMARY_KEY=<spend_key>" to .env.test.local for regtest
+export async function writeRegtestSpendViewKeysToDotEnvTestLocal(
+  spend_key?: string
+) {
+  spend_key = spend_key || (await makeSpendKey());
+  let view_pair = await makeViewKey(spend_key);
+  let primary_address = view_pair.mainnet_primary; // regtest uses mainet style addresses
+  await writeEnvLineToDotEnvRefresh(
+    `vk${primary_address}`,
+    view_pair.view_key,
+    regtest_pk_path
+  );
+  await writeEnvLineToDotEnvRefresh(
+    `sk${primary_address}`,
+    spend_key,
+    regtest_pk_path
   );
 
   return primary_address;
@@ -88,3 +109,4 @@ export async function writeEnvLineToDotEnv(
 }
 
 export const STAGENET_FRESH_WALLET_HEIGHT_DEFAULT = 2014841; // current height of stagenet dec 18 2025,
+export const REGTEST_FRESH_WALLET_HEIGHT_DEFAULT = 1;
