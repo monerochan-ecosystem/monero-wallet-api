@@ -66,6 +66,7 @@ export class ViewPairs {
       daemon_height: start_height + 1,
       status: "",
       primary_address: "",
+      block_infos: [],
     };
     while (latest_meta.new_height < latest_meta.daemon_height) {
       let firstResponse: Uint8Array | undefined;

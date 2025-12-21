@@ -1,6 +1,8 @@
 import "./io/indexedDB";
-import { type ScanResult } from "./scanning-syncing/scanResult";
-export { type ScanResult };
+export type {
+  ScanResult,
+  ScanResultCallback,
+} from "./scanning-syncing/scanResult";
 export { NodeUrl } from "./node-interaction/nodeUrl";
 export { ViewPair } from "./viewpair/ViewPair";
 export { ViewPairs } from "./viewpair/ViewPairs";
