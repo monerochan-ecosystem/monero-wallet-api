@@ -27,6 +27,7 @@ import { LOCAL_NODE_DEFAULT_URL } from "../node-interaction/nodeUrl";
 import { type ScanResultCallback } from "../scanning-syncing/scanResult";
 import {
   get_block_headers_range,
+  get_info,
   type GetBlockHeadersRangeParams,
 } from "../api";
 /**
@@ -259,5 +260,13 @@ export class ViewPair extends WasmProcessor {
    */
   public async getBlockHeadersRange(params: GetBlockHeadersRangeParams) {
     return get_block_headers_range(this.node_url, params);
+  }
+  /**
+   * Fetch general information about the Monero daemon.
+   * @link https://docs.getmonero.org/rpc-library/monerod-rpc/#get_info
+   * @returns The result object with daemon info like height, status, etc.
+   */
+  public async getInfo() {
+    return get_info(this.node_url);
   }
 }
