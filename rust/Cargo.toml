@@ -9,6 +9,8 @@ cuprate-types = { path = "./cuprate/types", default-features = false, features =
 ] }
 cuprate-rpc-types = { path = "./cuprate/rpc/types" }
 cuprate-epee-encoding = { path = "./cuprate/net/epee-encoding" }
+cuprate-fixed-bytes = { path = "./cuprate/net/fixed-bytes" }
+
 curve25519-dalek = { version = "4", default-features = false, features = [
     "alloc",
     "zeroize",

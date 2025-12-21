@@ -1,8 +1,9 @@
 import type { ScanResult } from "../scanning-syncing/scanResult";
 import type { WasmProcessor } from "../wasm-processing/wasmProcessor";
 export type GetBlocksBinRequest = {
-  requested_info?: "BLOCKS_ONLY" | "BLOCKS_AND_POOL" | "POOL_ONLY"; // default: "BLOCKS_ONLY"
-  start_height: number;
+  requested_info?: "BLOCKS_ONLY" | "BLOCKS_AND_POOL" | "POOL_ONLY" | number; // default: "BLOCKS_ONLY"
+  block_ids?: string[];
+  start_height?: number;
   prune?: boolean; // default: true
   no_miner_tx?: boolean; // default: false
   pool_info_since?: number; // default: 0
@@ -123,35 +124,34 @@ export function getBlocksBinMakeRequest<T extends WasmProcessor>(
   //     BLOCKS_AND_POOL = 1,
   //     POOL_ONLY = 2
   //   };
-  let requested_info = 0;
   if (params.requested_info === "BLOCKS_AND_POOL") {
-    requested_info = 1;
+    params.requested_info = 1;
   } else if (params.requested_info === "POOL_ONLY") {
-    requested_info = 2;
-  }
-  let prune_num = 1;
-  if (params.prune === false) {
-    prune_num = 0;
+    params.requested_info = 2;
+  } else {
+    params.requested_info = 0;
   }
 
-  let no_miner_tx_num = 0;
-  if (params.no_miner_tx) {
-    no_miner_tx_num = 1;
-  }
-
+  const json_params = JSON.stringify(params);
   let getBlocksRequestArray: Uint8Array;
+  processor.writeToWasmMemory = (ptr, len) => {
+    processor.writeString(ptr, len, json_params);
+  };
   processor.readFromWasmMemory = (ptr, len) => {
     getBlocksRequestArray = processor.readArray(ptr, len);
   };
+  let error: { error: string } | null = null;
+  processor.readErrorFromWasmMemory = (ptr, len) => {
+    error = JSON.parse(processor.readString(ptr, len));
+  };
   //@ts-ignore
   processor.tinywasi.instance.exports.build_getblocksbin_request(
-    requested_info,
-    BigInt(params.start_height),
-    prune_num,
-    no_miner_tx_num,
-    BigInt(params.pool_info_since || 0)
+    json_params.length
   );
-  return getBlocksRequestArray!; // written in build_getblocksbin_request call to readFromWasmMemory
+  if (!getBlocksRequestArray!)
+    // written in build_getblocksbin_request call to readFromWasmMemory
+    throw error || new Error("failed to build get_blocks.bin request");
+  return getBlocksRequestArray;
 }
 
 export async function getBlocksBinExecuteRequest<
@@ -218,45 +218,10 @@ export async function getBlocksBinJson<T extends WasmProcessor & HasNodeUrl>(
   processor: T,
   params: GetBlocksBinRequest
 ) {
-  // https://github.com/monero-project/monero/blob/941ecefab21db382e88065c16659864cb8e763ae/src/rpc/core_rpc_server_commands_defs.h#L178
-  //    enum REQUESTED_INFO
-  //   {
-  //     BLOCKS_ONLY = 0,
-  //     BLOCKS_AND_POOL = 1,
-  //     POOL_ONLY = 2
-  //   };
-  let requested_info = 0;
-  if (params.requested_info === "BLOCKS_AND_POOL") {
-    requested_info = 1;
-  } else if (params.requested_info === "POOL_ONLY") {
-    requested_info = 2;
-  }
-  let prune_num = 1;
-  if (params.prune === false) {
-    prune_num = 0;
-  }
-
-  let no_miner_tx_num = 0;
-  if (params.no_miner_tx) {
-    no_miner_tx_num = 1;
-  }
-
-  let getBlocksArray: Uint8Array;
-  processor.readFromWasmMemory = (ptr, len) => {
-    getBlocksArray = processor.readArray(ptr, len);
-  };
-  //@ts-ignore
-  processor.tinywasi.instance.exports.build_getblocksbin_request(
-    requested_info,
-    BigInt(params.start_height),
-    prune_num,
-    no_miner_tx_num,
-    BigInt(params.pool_info_since || 0)
-  );
-
+  const getBlocksRequestArray = getBlocksBinMakeRequest(processor, params);
   const getBlocksBinResponseBuffer = await binaryFetchRequest(
     processor.node_url + "/getblocks.bin",
-    getBlocksArray! // written in build_getblocksbin_request call to readFromWasmMemory
+    getBlocksRequestArray // written in build_getblocksbin_request call to readFromWasmMemory
   );
   processor.writeToWasmMemory = (ptr, len) => {
     processor.writeArray(ptr, len, getBlocksBinResponseBuffer);

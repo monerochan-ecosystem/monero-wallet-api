@@ -7,9 +7,12 @@ use block_parsing::scan_blocks;
 use cuprate_epee_encoding::{from_bytes, to_bytes};
 use cuprate_rpc_types::bin::{GetBlocksRequest, GetOutsRequest, GetOutsResponse};
 use cuprate_rpc_types::misc::GetOutputsOut;
+use cuprate_fixed_bytes::ByteArrayVec;
+
 use curve25519_dalek::scalar::Scalar;
 use hex::FromHex;
 use monero_wallet::address::Network;
+use serde::Deserialize;
 use serde_json::json;
 
 use monero_wallet::{Scanner, ViewPair};
@@ -242,25 +245,54 @@ pub extern "C" fn compute_key_image(output_hex_string_len: usize, sender_spend_k
   }
 }
 
-#[no_mangle]
-pub extern "C" fn build_getblocksbin_request(
-  requested_info: u8,
-  start_height: u64,
-  prune_num: u8,
-  no_miner_tx_num: u8,
-  pool_info_since: u64,
-) {
-  let mut req_params: GetBlocksRequest = GetBlocksRequest::default();
-  req_params.requested_info = requested_info;
-  req_params.start_height = start_height;
-  if prune_num == 1 {
-    req_params.prune = true;
-  }
-  if no_miner_tx_num == 1 {
-    req_params.no_miner_tx = true;
-  }
-  req_params.pool_info_since = pool_info_since;
+#[derive(Deserialize)]
+struct GetBlocksBinParams {
+  requested_info: Option<u8>,
+  start_height: Option<u64>,
+  prune: Option<bool>,
+  no_miner_tx: Option<bool>,
+  pool_info_since: Option<u64>,
+  block_ids: Option<Vec<String>>,
+}
 
+#[no_mangle]
+pub extern "C" fn build_getblocksbin_request(json_params_len: usize) {
+  let json_params = input_string(json_params_len);
+  let params: GetBlocksBinParams = match serde_json::from_str(&json_params) {
+    Ok(p) => p,
+    Err(e) => {
+      output_error_string(
+        json!({"message":"failed to parse getblocksbinrequest params","error":e.to_string()})
+          .to_string()
+          .as_str(),
+      );
+      return;
+    }
+  };
+  let mut req_params: GetBlocksRequest = GetBlocksRequest::default();
+  if let Some(val) = params.requested_info {
+    req_params.requested_info = val;
+  }
+
+  if let Some(val) = params.start_height {
+    req_params.start_height = val;
+  }
+  if let Some(val) = params.prune {
+    req_params.prune = val;
+  }
+  if let Some(val) = params.no_miner_tx {
+    req_params.no_miner_tx = val;
+  }
+  if let Some(val) = params.pool_info_since {
+    req_params.pool_info_since = val;
+  }
+  if let Some(val) = params.block_ids {
+    let ids: Vec<[u8; 32]> = val
+      .iter()
+      .map(|hex| hex::decode(hex).ok().and_then(|bytes| bytes.try_into().ok()).unwrap())
+      .collect();
+    req_params.block_ids = ByteArrayVec::from(ids);
+  }
   output(to_bytes(req_params).unwrap().to_vec().as_ref());
 }
 
