@@ -119,6 +119,11 @@ pub extern "C" fn init_viewpair(
       .unwrap()
       .network(),
     );
+    match global_state.network {
+      Some(Network::Mainnet) => output_string(&json!({"network": "mainnet"}).to_string()),
+      Some(Network::Stagenet) => output_string(&json!({"network": "stagenet"}).to_string()),
+      _ => output_string(&json!({"network": "testnet"}).to_string()),
+    }
     global_state.primary_address = Some(primary_address.clone());
     global_state.scanner = Some(Scanner::new(viewpair));
   });

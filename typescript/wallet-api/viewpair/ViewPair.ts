@@ -30,6 +30,7 @@ import {
   get_info,
   type GetBlockHeadersRangeParams,
 } from "../api";
+export type NETWORKS = "mainnet" | "stagenet" | "testnet";
 /**
  * This class is useful to interact with Moneros DaemonRpc binary requests in a convenient way.
  * (similar to how you would interact with a REST api that gives you json back.)
@@ -38,6 +39,10 @@ import {
  * {@link https://docs.getmonero.org/rpc-library/monerod-rpc/#get_blocksbin}
  */
 export class ViewPair extends WasmProcessor {
+  private _network: NETWORKS | undefined;
+  get network(): NETWORKS {
+    return this._network as NETWORKS; // we set this in ViewPair.create()
+  }
   protected constructor(
     public node_url: string,
     public primary_address: string,
@@ -72,11 +77,21 @@ export class ViewPair extends WasmProcessor {
         viewPair.writeString(ptr, len, secret_view_key);
       };
     };
+    let init_viewpair_result: { network: NETWORKS } | undefined = undefined;
+    viewPair.readFromWasmMemory = (ptr, len) => {
+      init_viewpair_result = JSON.parse(viewPair.readString(ptr, len));
+    };
     //@ts-ignore
     tinywasi.instance.exports.init_viewpair(
       primary_address.length,
       secret_view_key.length
     );
+    if (!init_viewpair_result) {
+      throw new Error("Failed to init viewpair");
+    } else {
+      //@ts-ignore
+      viewPair._network = init_viewpair_result.network;
+    }
     return viewPair;
   }
   /**
