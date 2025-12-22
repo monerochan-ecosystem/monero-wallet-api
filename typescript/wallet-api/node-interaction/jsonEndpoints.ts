@@ -449,11 +449,19 @@ export type GetBlockHeadersRangeParams = {
   end_height: number;
   fill_pow_hash?: boolean;
 };
-
+export const RESTRICTED_BLOCK_HEADER_RANGE = 1000;
 export async function get_block_headers_range(
   NODE_URL: string,
   params: GetBlockHeadersRangeParams
 ) {
+  //https://github.com/monero-project/monero/blob/48ad374b0d6d6e045128729534dc2508e6999afe/src/rpc/core_rpc_server.cpp#L74
+  // #define RESTRICTED_BLOCK_HEADER_RANGE 1000
+  // https://github.com/monero-project/monero/blob/48ad374b0d6d6e045128729534dc2508e6999afe/src/rpc/core_rpc_server.cpp#L2612
+  if (params.end_height - params.start_height > RESTRICTED_BLOCK_HEADER_RANGE) {
+    throw new Error(
+      "Too many block headers requested. Max: " + RESTRICTED_BLOCK_HEADER_RANGE
+    );
+  }
   const getBlockHeadersRangeResponse = await fetch(NODE_URL + "/json_rpc", {
     method: "POST",
     headers: {
