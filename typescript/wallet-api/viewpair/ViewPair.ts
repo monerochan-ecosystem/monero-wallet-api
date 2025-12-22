@@ -120,6 +120,14 @@ export class ViewPair extends WasmProcessor {
     metaCallBack?: GetBlocksBinMetaCallback,
     stopSync?: AbortSignal
   ) {
+    return await getBlocksBinScan(
+      this,
+      await this.addGenesisHashToBlockIds(params),
+      metaCallBack,
+      stopSync
+    );
+  }
+  async addGenesisHashToBlockIds(params: GetBlocksBinRequest) {
     if (params.block_ids) {
       if (!this._genesis_hash && this.network === "mainnet") {
         this._genesis_hash = MAINNET_GENESIS_BLOCK_HASH;
@@ -138,10 +146,13 @@ export class ViewPair extends WasmProcessor {
       }
       params.block_ids.push(this.genesis_hash);
     }
-    return await getBlocksBinScan(this, params, metaCallBack, stopSync);
+    return params;
   }
   /**
    * This function helps with making requests to the get_blocks.bin endpoint of the Monerod nodes.
+   * if params.block_ids is supplied, it will add the genesis hash to the end of the block_ids array.
+   * (so you can just supply the block_id you want to start fetching from)
+   *
    * The difference compared to the getBlocksBin method is that it returns a Uint8Array that still has to be scanned for outputs.
    * This is useful if you want to scan multiple viewpairs at once. You can take the Uint8Array and pass it to another ViewPair to scan for outputs.
    * @param params params that will be turned into epee (monero lib that does binary serialization)
@@ -152,7 +163,11 @@ export class ViewPair extends WasmProcessor {
     params: GetBlocksBinRequest,
     stopSync?: AbortSignal
   ) {
-    return await getBlocksBinExecuteRequest(this, params, stopSync);
+    return await getBlocksBinExecuteRequest(
+      this,
+      await this.addGenesisHashToBlockIds(params),
+      stopSync
+    );
   }
   /**
    * This function helps with scanning the response of the getBlocksBinExecuteRequest method.
