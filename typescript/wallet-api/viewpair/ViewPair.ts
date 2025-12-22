@@ -9,6 +9,8 @@ import {
   type GetBlocksBinMetaCallback,
   type GetBlocksBinRequest,
   type GetBlocksResultMeta,
+  MAINNET_GENESIS_BLOCK_HASH,
+  STAGENET_GENESIS_BLOCK_HASH,
 } from "../node-interaction/binaryEndpoints";
 import {
   scanWithCache,
@@ -42,6 +44,13 @@ export class ViewPair extends WasmProcessor {
   private _network: NETWORKS | undefined;
   get network(): NETWORKS {
     return this._network as NETWORKS; // we set this in ViewPair.create()
+  }
+  private _genesis_hash: string | undefined;
+  get genesis_hash(): string {
+    if (!this._genesis_hash) {
+      throw new Error("Genesis hash not set. Node not connected?");
+    }
+    return this._genesis_hash; // set in first call to ViewPair.getBlocksBin, if params.block_ids is supplied
   }
   protected constructor(
     public node_url: string,
@@ -97,18 +106,39 @@ export class ViewPair extends WasmProcessor {
   /**
    * This function helps with making requests to the get_blocks.bin endpoint of the Monerod nodes. It does the Request and returns the outputs that belong to the ViewPair.
    * (if outputs are found in the blocks that are returned)
+   *
+   * if params.block_ids is supplied, it will add the genesis hash to the end of the block_ids array.
+   * (so you can just supply the block_id you want to start fetching from)
    * @link https://docs.getmonero.org/rpc-library/monerod-rpc/#get_blocksbin
    * @param params params that will be turned into epee (monero lib that does binary serialization)
    * @param metaCallBack contains meta information about the getBlocksbin call (new sync height = start_height param + number of blocks)
    * @param stopSync optional AbortSignal to stop the syncing process
    * @returns The difference to the same method on NodeUrl is: It returns {@link ScanResult} (outputs that belong to viewpair) and not just the blocks as json.
    */
-  public getBlocksBin(
+  public async getBlocksBin(
     params: GetBlocksBinRequest,
     metaCallBack?: GetBlocksBinMetaCallback,
     stopSync?: AbortSignal
   ) {
-    return getBlocksBinScan(this, params, metaCallBack, stopSync);
+    if (params.block_ids) {
+      if (!this._genesis_hash && this.network === "mainnet") {
+        this._genesis_hash = MAINNET_GENESIS_BLOCK_HASH;
+      }
+      if (!this._genesis_hash && this.network === "stagenet") {
+        this._genesis_hash = STAGENET_GENESIS_BLOCK_HASH;
+      }
+
+      if (!this._genesis_hash) {
+        // TESTNET
+        const range = await this.getBlockHeadersRange({
+          start_height: 0,
+          end_height: 0,
+        });
+        this._genesis_hash = range.headers[0].hash;
+      }
+      params.block_ids.push(this.genesis_hash);
+    }
+    return await getBlocksBinScan(this, params, metaCallBack, stopSync);
   }
   /**
    * This function helps with making requests to the get_blocks.bin endpoint of the Monerod nodes.

@@ -106,7 +106,10 @@ interface HasNodeUrl {
   node_url: string;
 }
 export type GetBlocksBinMetaCallback = (meta: GetBlocksResultMeta) => void;
-
+export const MAINNET_GENESIS_BLOCK_HASH =
+  "418015bb9ae982a1975da7d79277c2705727a56894ba0fb246adaabb1f4632e3";
+export const STAGENET_GENESIS_BLOCK_HASH =
+  "76ee3cc98646292206cd3e86f74d88b4dcc1d937088645e9b0cbca84b7ce74eb";
 /**
  *  This function creates a binary request to the get_blocks.bin endpoint of the Monerod node.
  * @param processor it uses the wasm module to build the request and parse the response.
@@ -187,6 +190,8 @@ export async function getBlocksBinScanResponse<T extends WasmProcessor>(
       if (!("error" in result)) {
         result.new_height = resultMeta.new_height;
         result.primary_address = resultMeta.primary_address;
+        result.block_infos = resultMeta.block_infos;
+        result.daemon_height = resultMeta.daemon_height;
       }
     };
   };

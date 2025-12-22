@@ -1,4 +1,4 @@
-import type { Output } from "../api";
+import type { BlockInfo, Output } from "../api";
 import {
   computeKeyImage,
   type KeyImage,
@@ -18,6 +18,8 @@ export type ScanResult = {
   all_key_images: OnchainKeyImage[];
   new_height: number;
   primary_address: string;
+  block_infos: BlockInfo[];
+  daemon_height: number;
 };
 export type EmptyScanResult = {}; // can happen when we abort a scan before any blocks are processed
 
