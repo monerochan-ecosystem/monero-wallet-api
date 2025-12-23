@@ -240,15 +240,13 @@ export class ViewPair extends WasmProcessor {
    * @param cacheChanged - params: newCache, added, ownspend, reorged {@link CacheChangedCallback} invoked when cache changes
    * @param stopSync - Optional abort signal to stop scanning
    * @param spend_private_key - Optional spend key (view-only if omitted = no ownspend will be found and supplied to cacheChanged())
-   * @param stop_height - Optional ending block height (null = keep scanning)
    */
   public scanWithCache(
     start_height: number,
     initialCache?: ScanCache,
-    cacheChanged: CacheChangedCallback = (...args) => console.log(args),
+    cacheChanged: CacheChangedCallback = (params) => console.log(params),
     stopSync?: AbortSignal,
-    spend_private_key?: string,
-    stop_height: number | null = null
+    spend_private_key?: string
   ) {
     return scanWithCache(
       this,
@@ -256,8 +254,7 @@ export class ViewPair extends WasmProcessor {
       initialCache,
       cacheChanged,
       stopSync,
-      spend_private_key,
-      stop_height
+      spend_private_key
     );
   }
   /**
@@ -319,7 +316,7 @@ export class ViewPair extends WasmProcessor {
    * @returns The result object with headers, status, etc. Throws if the range is invalid:(end_height > daemonheight)
    */
   public async getBlockHeadersRange(params: GetBlockHeadersRangeParams) {
-    return get_block_headers_range(this.node_url, params);
+    return await get_block_headers_range(this.node_url, params);
   }
   /**
    * Fetch general information about the Monero daemon.

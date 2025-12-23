@@ -134,6 +134,7 @@ export function getBlocksBinMakeRequest<T extends WasmProcessor>(
   } else {
     params.requested_info = 0;
   }
+  if (params.prune === undefined) params.prune = true; // prune default true, our scan function expects pruned transactions
 
   const json_params = JSON.stringify(params);
   let getBlocksRequestArray: Uint8Array;

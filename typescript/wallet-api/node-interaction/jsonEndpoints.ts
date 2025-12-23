@@ -424,6 +424,36 @@ export const GetBlockHeadersRangeResponseSchema = z.object({
 export type GetBlockHeadersRangeResponse = z.infer<
   typeof GetBlockHeadersRangeResponseSchema
 >;
+export type GetBlockHeadersRange = {
+  status: string;
+  credits: number;
+  headers: {
+    block_size: number;
+    block_weight: number;
+    cumulative_difficulty: number;
+    cumulative_difficulty_top64: number;
+    depth: number;
+    difficulty: number;
+    difficulty_top64: number;
+    hash: string;
+    height: number;
+    long_term_weight: number;
+    major_version: number;
+    miner_tx_hash: string;
+    minor_version: number;
+    nonce: number;
+    num_txes: number;
+    orphan_status: boolean;
+    pow_hash: string;
+    prev_hash: string;
+    reward: number;
+    timestamp: number;
+    wide_cumulative_difficulty: string;
+    wide_difficulty: string;
+  }[];
+  top_hash: string;
+  untrusted: boolean;
+};
 
 export function parseGetBlockHeadersRangeResponse(
   data: unknown
@@ -453,7 +483,7 @@ export const RESTRICTED_BLOCK_HEADER_RANGE = 1000;
 export async function get_block_headers_range(
   NODE_URL: string,
   params: GetBlockHeadersRangeParams
-) {
+): Promise<GetBlockHeadersRange> {
   //https://github.com/monero-project/monero/blob/48ad374b0d6d6e045128729534dc2508e6999afe/src/rpc/core_rpc_server.cpp#L74
   // #define RESTRICTED_BLOCK_HEADER_RANGE 1000
   // https://github.com/monero-project/monero/blob/48ad374b0d6d6e045128729534dc2508e6999afe/src/rpc/core_rpc_server.cpp#L2612
