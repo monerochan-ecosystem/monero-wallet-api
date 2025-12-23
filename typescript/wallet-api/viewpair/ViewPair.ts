@@ -188,49 +188,6 @@ export class ViewPair extends WasmProcessor {
       metaCallBack
     );
   }
-  /**
-   * This method will use getBlocks.bin from start height to daemon height.
-   * This is CPU bound work, so it should be executed in a seperate thread (worker).
-   * The scanner.ts worker in the standard-checkout dir shows how to keep scanning after the tip is reached.
-   * It also shows how the outputs are saved (note the unqiue requirement for the stealth_adress).
-   * @param start_height the height to start syncing from.
-   * @param callback this function will get the new outputs as they are found as a parameter,
-   *  if returned value fastForward is larger than latest new_height, we continue scanning from there
-   * @param stopSync optional AbortSignal to stop the syncing process
-   * @param stop_height optional height to stop scanning at. (final new_height will be >= stop_height)
-   */
-  public async scan(
-    start_height: number,
-    callback: ScanResultCallback,
-    stopSync?: AbortSignal,
-    stop_height: number | undefined | null = null
-  ) {
-    let latest_meta: GetBlocksResultMeta = {
-      new_height: start_height,
-      daemon_height: start_height + 1,
-      status: "",
-      primary_address: "",
-      block_infos: [],
-    };
-    let fastForward = 0;
-    while (latest_meta.new_height < latest_meta.daemon_height) {
-      const res = await this.getBlocksBin(
-        {
-          start_height: Math.max(latest_meta.new_height - 1, fastForward),
-        },
-        (meta) => {
-          latest_meta = meta;
-        },
-        stopSync
-      );
-      if (res === undefined) {
-        await callback({});
-      } else {
-        fastForward = (await callback(res)) || 0;
-      }
-      if (stop_height !== null && latest_meta.new_height >= stop_height) return;
-    }
-  }
 
   /**
    * Scans blockchain from `start_height` using the provided initialCache, invoking callback cacheChanged() for results and cache changes.

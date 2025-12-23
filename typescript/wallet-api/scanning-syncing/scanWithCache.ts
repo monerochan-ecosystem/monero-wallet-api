@@ -27,10 +27,7 @@ import { detectOutputs, detectOwnspends } from "./scanResult";
  * @param stop_height - Optional ending block height (null = keep scanning)
  */
 export async function scanWithCacheFile<
-  T extends WasmProcessor &
-    HasScanMethod &
-    HasScanWithCacheMethod &
-    HasPrimaryAddress
+  T extends WasmProcessor & HasScanWithCacheMethod & HasPrimaryAddress
 >(
   processor: T,
   start_height: number,
@@ -377,14 +374,6 @@ export interface HasScanWithCacheMethod {
     cacheChanged?: CacheChangedCallback,
     stopSync?: AbortSignal,
     spend_private_key?: string,
-    stop_height?: number | null
-  ) => Promise<void>;
-}
-export interface HasScanMethod {
-  scan: (
-    start_height: number,
-    callback: ScanResultCallback,
-    stopSync?: AbortSignal,
     stop_height?: number | null
   ) => Promise<void>;
 }
