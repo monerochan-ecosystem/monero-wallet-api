@@ -22,14 +22,14 @@ pub struct ViewPairJson {
 pub fn viewpair_from_spendkey(spend_key: [u8; 32]) -> Result<ViewPairJson, String> {
   let spend_scalar = Scalar::from_canonical_bytes(spend_key).unwrap(); // okay to panic if spend_key is invalid
   let view_scalar = Zeroizing::new(make_viewkey(spend_key));
-  let viewpair = ViewPair::new(EdwardsPoint::mul_base(&spend_scalar), view_scalar)
+  let viewpair = ViewPair::new(EdwardsPoint::mul_base(&spend_scalar), view_scalar.clone())
     .map_err(|e| format!("failed to parse new Viewpair {}", e))?;
 
   let mainnet_primary = viewpair.legacy_address(Network::Mainnet).to_string();
   let stagenet_primary = viewpair.legacy_address(Network::Stagenet).to_string();
   let testnet_primary = viewpair.legacy_address(Network::Testnet).to_string();
   Ok(ViewPairJson {
-    view_key: hex::encode(viewpair.view().compress().to_bytes()),
+    view_key: hex::encode(view_scalar.to_bytes()),
     mainnet_primary,
     stagenet_primary,
     testnet_primary,
