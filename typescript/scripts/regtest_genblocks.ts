@@ -16,6 +16,8 @@ const payload = {
   },
 };
 console.log("run this command to start regtest node:");
+console.log("./monerod --regtest --offline --fixed-difficulty 1");
+console.log("run this command to start regtest node with persisted fakechain:");
 console.log(
   "./monerod --regtest --offline --fixed-difficulty 1 --data-dir ./regtest-data --keep-fakechain --rpc-bind-port 18081 --confirm-external-bind --disable-rpc-ban"
 );
