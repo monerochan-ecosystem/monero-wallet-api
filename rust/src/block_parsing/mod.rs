@@ -1,14 +1,14 @@
 use cuprate_rpc_types::{bin::GetBlocksResponse, misc::Status};
 use cuprate_types::TransactionBlobs;
 use monero_wallet::{
+  NotTimelocked, Scanner, WalletOutput,
   block::Block,
   extra::PaymentId,
   rpc::ScannableBlock,
   transaction::{Pruned, Transaction},
-  Scanner,
 };
 use serde::Serialize;
-use serde_json::json;
+use serde_json::{Value, json};
 
 pub fn convert_to_json<T>(data: &T) -> String
 where
@@ -79,10 +79,9 @@ struct InputImage {
   block_hash: String,
 }
 pub fn scan_blocks(
-  mut scanner: Scanner,
+  scanner: Scanner,
   primary_address: &str,
   get_blocks_bin: GetBlocksResponse,
-  //TODO offset to start scanning from
 ) -> String {
   let mut output_jsons = Vec::new();
   let mut input_images_jsons: Vec<InputImage> = Vec::new();
@@ -107,7 +106,7 @@ pub fn scan_blocks(
 
     match &block_entry.txs {
       TransactionBlobs::Normal(_) => {
-        // we don't handle non pruned transactions for now
+        // we don't handle non pruned transactions
       }
       TransactionBlobs::Pruned(pruned_txs) => {
         for entry in pruned_txs {
@@ -122,7 +121,7 @@ pub fn scan_blocks(
         }
       }
       TransactionBlobs::None => {
-        // println!("No transactions in this block");
+        // No transactions in this block
       }
     }
 
@@ -153,31 +152,50 @@ pub fn scan_blocks(
     });
     input_images_jsons.extend(input_images);
 
+    // Scan the miner transaction
+    match scanner.scan_transaction(
+      output_index_for_first_ringct_output,
+      block.miner_transaction().hash(),
+      &Transaction::<Pruned>::from(block.miner_transaction().clone()),
+    ) {
+      Ok(res) => {
+        let block_height = get_blocks_bin.start_height + (index as u64);
+        if let NotTimelocked::OnChain(unlocked) =
+          &res.additional_timelock_satisfied_by((block_height + 60) as usize, u64::MAX)
+        {
+          for wallet_output in unlocked {
+            output_jsons.push(wallet_output_to_json(
+              wallet_output,
+              block_height,
+              primary_address,
+              true,
+            ));
+          }
+        }
+      }
+      Err(error) => {
+        let error_message = format!("Error scanning miner transaction: {}", error);
+        let error_json = json!({
+            "error": error_message
+        })
+        .to_string();
+        return error_json;
+      }
+    };
+
     let scan_block = ScannableBlock { block, transactions, output_index_for_first_ringct_output };
     match scanner.scan(scan_block) {
       Ok(res) => {
         let unlocked = res.not_additionally_locked();
-        for x in unlocked {
-          let id = x.key().compress().to_bytes();
-          let payment_id = match x.payment_id() {
-            Some(PaymentId::Encrypted(id)) => id,
-            Some(PaymentId::Unencrypted(_)) => [0, 0, 0, 0, 0, 0, 0, 0],
-            _ => [0, 0, 0, 0, 0, 0, 0, 0],
-          };
+        let block_height = get_blocks_bin.start_height + (index as u64);
 
-          let output_json = json!({
-              "amount": x.commitment().amount,
-              "stealth_address": hex::encode(id),
-              "tx_hash": hex::encode(x.transaction()),
-              "index_in_transaction":x.index_in_transaction(),
-              "index_on_blockchain": x.index_on_blockchain(),
-              "payment_id": u64::from_le_bytes(payment_id),
-              "block_height": get_blocks_bin.start_height + (index as u64),
-              "primary_address": primary_address,
-              "serialized": hex::encode(x.serialize()),
-          });
-
-          output_jsons.push(output_json);
+        for wallet_output in unlocked {
+          output_jsons.push(wallet_output_to_json(
+            &wallet_output,
+            block_height,
+            primary_address,
+            false,
+          ));
         }
       }
       Err(error) => {
@@ -193,4 +211,30 @@ pub fn scan_blocks(
   let final_output_json: serde_json::Value =
     json!({"outputs":output_jsons, "all_key_images": input_images_jsons});
   return final_output_json.to_string();
+}
+
+fn wallet_output_to_json(
+  wallet_output: &WalletOutput,
+  block_height: u64,
+  primary_address: &str,
+  is_miner_tx: bool,
+) -> Value {
+  let id = wallet_output.key().compress().to_bytes();
+  let payment_id = match wallet_output.payment_id() {
+    Some(PaymentId::Encrypted(id)) => id,
+    Some(PaymentId::Unencrypted(_)) => [0, 0, 0, 0, 0, 0, 0, 0],
+    _ => [0, 0, 0, 0, 0, 0, 0, 0],
+  };
+  json!({
+      "amount": wallet_output.commitment().amount,
+      "stealth_address": hex::encode(id),
+      "tx_hash": hex::encode(wallet_output.transaction()),
+      "index_in_transaction":wallet_output.index_in_transaction(),
+      "index_on_blockchain": wallet_output.index_on_blockchain(),
+      "payment_id": u64::from_le_bytes(payment_id),
+      "is_miner_tx": is_miner_tx,
+      "block_height": block_height,
+      "primary_address": primary_address,
+      "serialized": hex::encode(wallet_output.serialize()),
+  })
 }

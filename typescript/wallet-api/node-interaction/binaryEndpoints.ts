@@ -89,6 +89,7 @@ export type Output = {
   payment_id: number;
   stealth_address: string;
   tx_hash: string;
+  is_miner_tx: boolean;
   primary_address: string;
   serialized: string;
   spent_relative_index?: number; // scanWithCache sets this to relative index in the tx it was spent in
