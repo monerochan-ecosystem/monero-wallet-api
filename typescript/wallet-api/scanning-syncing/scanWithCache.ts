@@ -179,35 +179,14 @@ export async function scanWithCache<
           stopSync
         );
         const result = await processor.getBlocksBinScanResponse(firstResponse);
-        // res.block_infos
-        if (result && "new_height" in result) {
-          const changed_outputs = await detectOutputs(
-            result,
-            cache,
-            spend_private_key
-          );
-
-          if (spend_private_key)
-            changed_outputs.push(...detectOwnspends(result, cache));
-          current_blockhash = updateScanHeight(
-            current_blockhash,
-            result,
-            cache
-          );
-          await cacheChanged({
-            newCache: cache,
-            changed_outputs,
-            connection_status: processor.connection_status,
-          });
-
-          if (result.block_infos.length === 0) {
-            // we are at the tip, and there are no new blocks
-            // sleep for 1 second before sending another
-            // getBlocks.bin request
-            //
-            await sleep(1000);
-          }
-        }
+        current_blockhash = await processScanResult(
+          current_blockhash,
+          result,
+          cache,
+          cacheChanged,
+          processor.connection_status,
+          spend_private_key
+        );
       } catch (error) {
         await cacheChanged({
           newCache: cache,
@@ -218,6 +197,40 @@ export async function scanWithCache<
       }
     }
   }
+}
+export async function processScanResult(
+  current_blockhash: BlockInfo,
+  result: ScanResult | ErrorResponse | undefined,
+  cache: ScanCache,
+  cacheChanged: CacheChangedCallback,
+  connection_status: ConnectionStatus,
+  spend_private_key?: string
+) {
+  if (result && "new_height" in result) {
+    const changed_outputs = await detectOutputs(
+      result,
+      cache,
+      spend_private_key
+    );
+
+    if (spend_private_key)
+      changed_outputs.push(...detectOwnspends(result, cache));
+    current_blockhash = updateScanHeight(current_blockhash, result, cache);
+    await cacheChanged({
+      newCache: cache,
+      changed_outputs,
+      connection_status,
+    });
+
+    if (result.block_infos.length === 0) {
+      // we are at the tip, and there are no new blocks
+      // sleep for 1 second before sending another
+      // getBlocks.bin request
+      //
+      await sleep(1000);
+    }
+  }
+  return current_blockhash;
 }
 function initScanCache(
   primary_address: string,
