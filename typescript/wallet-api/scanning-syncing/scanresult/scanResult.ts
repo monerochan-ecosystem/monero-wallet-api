@@ -5,10 +5,10 @@ import {
   type ChangedOutput,
   mergeRanges,
   findRange,
-  type ReorgInfo,
   type CacheRange,
 } from "./scanWithCache";
 import { type ErrorResponse } from "../../node-interaction/binaryEndpoints";
+import { handleReorg } from "./reorg";
 export type OnchainKeyImage = {
   key_image_hex: KeyImage;
   relative_index: number; // relative index of input in transaction
@@ -44,15 +44,13 @@ export function updateScanHeight(
   result: ScanResult,
   cache: ScanCache
 ): [CacheRange, ChangedOutput[]] {
-  let changed_outputs: ChangedOutput[] = [];
-
   const last_block_hash = result.block_infos.at(-1);
   let current_blockhash = current_range?.block_hashes.at(0);
   if (!current_blockhash)
     throw new Error(
       "current_range passed to updateScanHeight was malformed. block_hashes is empty"
     );
-  if (!last_block_hash) return [current_range, changed_outputs]; // block_infos empty, no change (we are at tip and there was no new block)
+  if (!last_block_hash) return [current_range, []]; // block_infos empty, no change (we are at tip and there was no new block)
   // if last blockhash is undefined it means there was not reorg, we are at tip, block_infos is empty ( no new blocks )
 
   const oldRange = findRange(
@@ -81,80 +79,7 @@ export function updateScanHeight(
       first_block_hash.block_height === current_blockhash.block_height
     )
   ) {
-    // we need to check where anchor candidate is and if not found, try the same for anchor
-    // if else throw on catastrophic reorg
-    for (const [index, block_hash] of oldRange.block_hashes.entries()) {
-      const split_height_index = result.block_infos.findIndex(
-        (b) => b.block_hash === block_hash.block_hash
-      );
-      const split_height = result.block_infos[split_height_index];
-      // we tried all the block hashes and could not find the split height
-      if (!split_height && index === oldRange.block_hashes.length - 1)
-        throw new Error(
-          "Could not find reorg split height. Most likely connected to faulty node / catastrophic reorg."
-        );
-      // still a chance to find the split height, (could be candidate_anchor or anchor)
-      if (!split_height) continue;
-
-      // we found the split height & do the reorg
-      const reorg_info: ReorgInfo = {
-        split_height,
-        removed_outputs: [],
-        reverted_spends: [],
-      };
-      const removed_outputs = Object.entries(cache.outputs).filter(
-        ([id, output]) => output.block_height >= split_height.block_height
-      );
-      for (const [id, old_output_state] of removed_outputs) {
-        // 1. find key_image of output to be removed (as it was reorged)
-        const [key_image] = Object.entries(cache.own_key_images).find(
-          ([own_key_image, globalid]) => globalid === id
-        ) || [""]; // if this is viewonly the key_image will be empty
-        reorg_info.removed_outputs.push({ old_output_state, key_image });
-
-        // 2. remove from outputs and own_key_images
-        delete cache.outputs[id];
-        delete cache.own_key_images[key_image];
-        changed_outputs.push({
-          output: old_output_state,
-          change_reason: "reorged",
-        });
-      }
-
-      //for reverted spents, just do the same again with spent_height
-      const reverted_outputs = Object.entries(cache.outputs).filter(
-        ([id, output]) =>
-          output.spent_block_height !== undefined &&
-          output.spent_block_height >= split_height.block_height
-      );
-
-      for (const [id, old_output_state_pointer] of reverted_outputs) {
-        const [key_image] = Object.entries(cache.own_key_images).find(
-          ([own_key_image, globalid]) => globalid === id
-        ) || [""]; // if this is viewonly the key_image will be empty
-        const old_output_state = Object.assign({}, old_output_state_pointer);
-        reorg_info.reverted_spends.push({
-          old_output_state,
-          key_image, // in this case key_image only used here, does not get removed
-        });
-
-        // remove spend info from original cache
-        delete cache.outputs[id].spent_relative_index;
-        delete cache.outputs[id].spent_in_tx_hash;
-        delete cache.outputs[id].spent_block_height;
-        delete cache.outputs[id].spent_block_timestamp;
-        changed_outputs.push({
-          output: old_output_state,
-          change_reason: "reorged_spent",
-        });
-      }
-
-      // find current range in scanned ranges and change its end value + latest_block_hash
-      oldRange.end = split_height.block_height;
-      oldRange.block_hashes[0] = split_height;
-      cache.reorg_info = reorg_info;
-      return [current_range, changed_outputs];
-    }
+    return handleReorg(current_range, result, cache, oldRange);
   }
   // scan only happens in one direction,
   // to scan earlier ranges: abort and recall with smaller start_height
@@ -211,7 +136,7 @@ export function updateScanHeight(
   );
 
   if (fastForward) current_range = fastForward;
-  return [current_range, changed_outputs];
+  return [current_range, []];
 }
 // Assumption: result is new, cache is still old. (this + detectOwnspends() turns the catch new, based on the scan result)
 export async function detectOutputs(

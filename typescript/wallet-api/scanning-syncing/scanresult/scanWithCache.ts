@@ -12,6 +12,7 @@ import type { WasmProcessor } from "../../wasm-processing/wasmProcessor";
 import { type KeyImage } from "./computeKeyImage";
 import type { ConnectionStatus } from "../connectionStatus";
 import { detectOutputs, detectOwnspends, updateScanHeight } from "./scanResult";
+import type { ReorgInfo } from "./reorg";
 
 /**
  * Scans blockchain from `start_height` using the provided processor and using the provided initialCachePath file path,
@@ -75,15 +76,7 @@ export type ScanCache = {
   primary_address: string;
   reorg_info?: ReorgInfo;
 };
-export type ReorgInfo = {
-  split_height: BlockInfo;
-  removed_outputs: ReorgedOutput[]; // Copies of detached outputs for logging
-  reverted_spends: ReorgedOutput[]; // Outputs that became unspent again
-};
-export type ReorgedOutput = {
-  old_output_state: Output;
-  key_image: KeyImage;
-};
+
 export type ChangeReason =
   | "added"
   | "ownspend"
