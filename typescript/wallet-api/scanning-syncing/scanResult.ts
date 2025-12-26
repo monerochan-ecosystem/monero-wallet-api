@@ -3,7 +3,7 @@ import {
   computeKeyImage,
   type KeyImage,
 } from "../scanning-syncing/computeKeyImage";
-import type { ScanCache, ChangedOutputs } from "./scanWithCache";
+import type { ScanCache, ChangedOutput } from "./scanWithCache";
 import { type ErrorResponse } from "../node-interaction/binaryEndpoints";
 export type OnchainKeyImage = {
   key_image_hex: KeyImage;
@@ -34,12 +34,15 @@ export type ScanResultCallback =
 // we will await async callbacks. convenient way to halt a sync + feed back the key image list,
 // to look out for our own spends before proceeding the scan. This happens in the scanWithCache function.
 
+//TODO move processScanResult + updateScanHeight here, then move scanSacheOpened, scanWithCache, computeKeyImage and scanResult to its own folder
+
+// Assumption: result is new, cache is still old. (this + detectOwnspends() turns the catch new, based on the scan result)
 export async function detectOutputs(
   result: ScanResult,
   cache: ScanCache,
   spend_private_key?: string // if no spendkey is provided, this will be a view only sync. (no ownspend detected)
 ) {
-  let changed_outputs: ChangedOutputs[] = [];
+  let changed_outputs: ChangedOutput[] = [];
   for (const output of result.outputs) {
     // TODO: extract into own function detectOutput()
 
@@ -86,9 +89,9 @@ export async function detectOutputs(
   }
   return changed_outputs;
 }
-
+// Assumption: result is new, cache is still old. (this + detectOutputs() turns the catch new, based on the scan result)
 export function detectOwnspends(result: ScanResult, cache: ScanCache) {
-  let changed_outputs: ChangedOutputs[] = [];
+  let changed_outputs: ChangedOutput[] = [];
 
   for (const onchainKeyImage of result.all_key_images) {
     // TODO: extract into own function detectOwnSpend()
