@@ -1,5 +1,5 @@
 import { ViewPair } from "../api";
-import { type CacheChangedCallback } from "./scanWithCache";
+import { type CacheChangedCallback } from "./scanresult/scanWithCache";
 import {
   readWalletFromScanSettings,
   SCAN_SETTINGS_STORE_NAME_DEFAULT,

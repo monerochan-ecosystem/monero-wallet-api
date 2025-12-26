@@ -1,5 +1,5 @@
-import type { Output } from "../api";
-import { WasmProcessor } from "../wasm-processing/wasmProcessor";
+import type { Output } from "../../api";
+import { WasmProcessor } from "../../wasm-processing/wasmProcessor";
 export type KeyImage = string;
 export async function computeKeyImage(
   output: Output,

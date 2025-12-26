@@ -1,4 +1,4 @@
-import { type ScanResultCallback } from "../scanning-syncing/scanResult";
+import { type ScanResultCallback } from "../scanning-syncing/scanresult/scanResult";
 import { ViewPair } from "./ViewPair";
 import { type GetBlocksResultMeta } from "../node-interaction/binaryEndpoints";
 

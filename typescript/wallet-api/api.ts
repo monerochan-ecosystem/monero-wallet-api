@@ -2,7 +2,7 @@ import "./io/indexedDB";
 export type {
   ScanResult,
   ScanResultCallback,
-} from "./scanning-syncing/scanResult";
+} from "./scanning-syncing/scanresult/scanResult";
 export { NodeUrl } from "./node-interaction/nodeUrl";
 export { ViewPair } from "./viewpair/ViewPair";
 export { ViewPairs } from "./viewpair/ViewPairs";
@@ -15,4 +15,4 @@ export {
 } from "./scanning-syncing/scanSettings";
 
 export { signTransaction } from "./send-functionality/transactionBuilding";
-export { computeKeyImage } from "./scanning-syncing/computeKeyImage";
+export { computeKeyImage } from "./scanning-syncing/scanresult/computeKeyImage";

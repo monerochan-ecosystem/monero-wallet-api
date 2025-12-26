@@ -1,14 +1,12 @@
-import { type ScanResult } from "../scanning-syncing/scanResult";
+import { type ScanResult } from "../scanning-syncing/scanresult/scanResult";
 export { type ScanResult };
 export { NodeUrl } from "../node-interaction/nodeUrl";
 import {
   getBlocksBinScan,
   getBlocksBinExecuteRequest,
   getBlocksBinScanResponse,
-  type ErrorResponse,
   type GetBlocksBinMetaCallback,
   type GetBlocksBinRequest,
-  type GetBlocksResultMeta,
   MAINNET_GENESIS_BLOCK_HASH,
   STAGENET_GENESIS_BLOCK_HASH,
 } from "../node-interaction/binaryEndpoints";
@@ -17,7 +15,7 @@ import {
   scanWithCacheFile,
   type CacheChangedCallback,
   type ScanCache,
-} from "../scanning-syncing/scanWithCache";
+} from "../scanning-syncing/scanresult/scanWithCache";
 import {
   makeTransaction,
   type MakeTransactionParams,
@@ -26,7 +24,6 @@ import {
 import { WasmProcessor } from "../wasm-processing/wasmProcessor";
 import type { ConnectionStatus } from "../scanning-syncing/connectionStatus";
 import { LOCAL_NODE_DEFAULT_URL } from "../node-interaction/nodeUrl";
-import { type ScanResultCallback } from "../scanning-syncing/scanResult";
 import {
   get_block_headers_range,
   get_info,

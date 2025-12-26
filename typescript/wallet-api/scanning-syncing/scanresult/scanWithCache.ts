@@ -7,10 +7,10 @@ import type {
   GetBlocksBinRequest,
   Output,
   ScanResult,
-} from "../api";
-import type { WasmProcessor } from "../wasm-processing/wasmProcessor";
+} from "../../api";
+import type { WasmProcessor } from "../../wasm-processing/wasmProcessor";
 import { type KeyImage } from "./computeKeyImage";
-import type { ConnectionStatus } from "./connectionStatus";
+import type { ConnectionStatus } from "../connectionStatus";
 import { detectOutputs, detectOwnspends, updateScanHeight } from "./scanResult";
 
 /**

@@ -1,4 +1,4 @@
-import type { ScanResult } from "../scanning-syncing/scanResult";
+import type { ScanResult } from "../scanning-syncing/scanresult/scanResult";
 import type { WasmProcessor } from "../wasm-processing/wasmProcessor";
 export type GetBlocksBinRequest = {
   requested_info?: "BLOCKS_ONLY" | "BLOCKS_AND_POOL" | "POOL_ONLY" | number; // default: "BLOCKS_ONLY"

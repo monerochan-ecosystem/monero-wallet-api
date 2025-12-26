@@ -1,8 +1,5 @@
-import type { BlockInfo, Output } from "../api";
-import {
-  computeKeyImage,
-  type KeyImage,
-} from "../scanning-syncing/computeKeyImage";
+import type { BlockInfo, Output } from "../../api";
+import { computeKeyImage, type KeyImage } from "./computeKeyImage";
 import {
   type ScanCache,
   type ChangedOutput,
@@ -11,7 +8,7 @@ import {
   type ReorgInfo,
   type CacheRange,
 } from "./scanWithCache";
-import { type ErrorResponse } from "../node-interaction/binaryEndpoints";
+import { type ErrorResponse } from "../../node-interaction/binaryEndpoints";
 export type OnchainKeyImage = {
   key_image_hex: KeyImage;
   relative_index: number; // relative index of input in transaction

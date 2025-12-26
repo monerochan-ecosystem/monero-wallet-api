@@ -4,18 +4,18 @@ import {
   ViewPair,
   type GetOutsResponseBuffer,
   type Output,
-} from "../api";
+} from "../../api";
 import {
   prepareInput,
   sumPayments,
   type Payment,
   type PreparedInput,
-} from "../send-functionality/inputSelection";
+} from "../../send-functionality/inputSelection";
 import type {
   Input,
   SendError,
-} from "../send-functionality/transactionBuilding";
-import { startWebworker } from "./backgroundWorker";
+} from "../../send-functionality/transactionBuilding";
+import { startWebworker } from "../backgroundWorker";
 import { spendable } from "./scanResult";
 import {
   readPrivateSpendKeyFromEnv,
@@ -23,14 +23,14 @@ import {
   walletSettingsPlusKeys,
   writeWalletToScanSettings,
   type ScanSetting,
-} from "./scanSettings";
+} from "../scanSettings";
 import {
   readCacheFile,
   type CacheChangedCallback,
   type CacheChangedCallbackParameters,
   type ScanCache,
 } from "./scanWithCache";
-import { workerMainCode } from "./worker-entrypoints/worker";
+import { workerMainCode } from "../worker-entrypoints/worker";
 export type ScanCacheOpenedCreateParams = {
   primary_address: string;
   start_height?: number;

@@ -1,8 +1,8 @@
 import {
   ScanCacheOpened,
   type ScanCacheOpenedCreateParams,
-} from "./scanCacheOpened";
-import type { ScanCache } from "./scanWithCache";
+} from "./scanresult/scanCacheOpened";
+import type { ScanCache } from "./scanresult/scanWithCache";
 export async function openWallets() {}
 /**
  * Opens a **single wallet** for scanning.
