@@ -151,38 +151,11 @@ export async function scanWithCache<
   stopSync?: AbortSignal,
   spend_private_key?: string // if no spendkey is provided, this will be a view only sync. (no ownspend detected)
 ) {
-  let [cache, current_range] = initScanCache(
-    processor.primary_address,
+  let [cache, current_range] = await initScanCache(
+    processor,
     start_height,
     initialCache
   );
-  let start_block_hash = current_range?.block_hashes[0];
-
-  if (!start_block_hash) {
-    const blockHeaderResponse = (
-      await processor.getBlockHeadersRange({
-        start_height,
-        end_height: start_height,
-      })
-    ).headers[0];
-
-    start_block_hash = {
-      block_hash: blockHeaderResponse.hash,
-      block_height: blockHeaderResponse.height,
-      block_timestamp: blockHeaderResponse.timestamp,
-    };
-    const newRange = {
-      start: start_block_hash.block_height,
-      end: start_block_hash.block_height,
-      block_hashes: [start_block_hash, start_block_hash, start_block_hash],
-    };
-    current_range = newRange;
-    cache.scanned_ranges.push(newRange);
-  }
-  if (!start_block_hash) throw new Error("could not find start block hash");
-
-  if (current_range == null || !current_range?.block_hashes.length)
-    throw new Error("current_range was malformed. block_hashes is empty");
 
   while (true) {
     try {
@@ -249,23 +222,52 @@ export async function processScanResult(
   }
   return current_range;
 }
-function initScanCache(
-  primary_address: string,
+export async function initScanCache<
+  T extends WasmProcessor & HasGetBlockHeadersRangeMethod & HasPrimaryAddress
+>(
+  processor: T,
   start_height: number,
   initialCache?: ScanCache
-): [ScanCache, CacheRange | null] {
+): Promise<[ScanCache, CacheRange]> {
   let cache: ScanCache = {
     outputs: {},
     own_key_images: {},
     scanned_ranges: [],
-    primary_address,
+    primary_address: processor.primary_address,
   };
   if (initialCache) cache = initialCache;
   let current_height = start_height;
   // merge existing ranges & find end of current range
   cache.scanned_ranges = mergeRanges(cache.scanned_ranges);
-  const fastForward = findRange(cache.scanned_ranges, current_height);
-  return [cache, fastForward];
+  let current_range = findRange(cache.scanned_ranges, current_height);
+  let start_block_hash = current_range?.block_hashes[0];
+
+  if (!start_block_hash) {
+    const blockHeaderResponse = (
+      await processor.getBlockHeadersRange({
+        start_height,
+        end_height: start_height,
+      })
+    ).headers[0];
+
+    start_block_hash = {
+      block_hash: blockHeaderResponse.hash,
+      block_height: blockHeaderResponse.height,
+      block_timestamp: blockHeaderResponse.timestamp,
+    };
+    const newRange = {
+      start: start_block_hash.block_height,
+      end: start_block_hash.block_height,
+      block_hashes: [start_block_hash, start_block_hash, start_block_hash],
+    };
+    current_range = newRange;
+    cache.scanned_ranges.push(newRange);
+  }
+  if (!start_block_hash) throw new Error("could not find start block hash");
+
+  if (current_range == null || !current_range?.block_hashes.length)
+    throw new Error("current_range was malformed. block_hashes is empty");
+  return [cache, current_range];
 }
 
 function handleScanError(error: unknown) {
