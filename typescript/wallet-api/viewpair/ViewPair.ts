@@ -15,6 +15,7 @@ import {
   scanWithCacheFile,
   type CacheChangedCallback,
   type ScanCache,
+  type ScanParams,
 } from "../scanning-syncing/scanresult/scanWithCache";
 import {
   makeTransaction,
@@ -189,56 +190,28 @@ export class ViewPair extends WasmProcessor {
   /**
    * Scans blockchain from `start_height` using the provided initialCache, invoking callback cacheChanged() for results and cache changes.
    *
-   * @param start_height - Starting block height for the scan
-   * @param initialCache - Optional initial scan cache
-   * @param cacheChanged - params: newCache, added, ownspend, reorged {@link CacheChangedCallback} invoked when cache changes
-   * @param stopSync - Optional abort signal to stop scanning
-   * @param spend_private_key - Optional spend key (view-only if omitted = no ownspend will be found and supplied to cacheChanged())
+   * @param scan_params.start_height - Starting block height for the scan
+   * @param scan_params.cacheChanged - params: {newCache,changed_outputs,connection_status} {@link CacheChangedCallback} invoked when cache changes {@link CacheChangedCallbackParameters}
+   * @param scan_params.stopSync - Optional abort signal to stop scanning
+   * @param scan_params.spend_private_key - Optional spend key (view-only if omitted = no ownspend will be found and supplied to cacheChanged())
+   * @param initialCache - (optional) initial scan cache to start syncing from
    */
-  public scanWithCache(
-    start_height: number,
-    initialCache?: ScanCache,
-    cacheChanged: CacheChangedCallback = (params) => console.log(params),
-    stopSync?: AbortSignal,
-    spend_private_key?: string
-  ) {
-    return scanWithCache(
-      this,
-      start_height,
-      initialCache,
-      cacheChanged,
-      stopSync,
-      spend_private_key
-    );
+  public scanWithCache(scan_params: ScanParams, initialCache?: ScanCache) {
+    return scanWithCache(this, scan_params, initialCache);
   }
   /**
-   * Scans blockchain from `start_height` using the provided the provided initialCachePath file path,
+   * Scans blockchain from `start_height` using the provided processor and using the provided initialCachePath file path,
    *  invoking callback cacheChanged() for results and cache changes
    *
-   * @param start_height - Starting block height for the scan
+   * @param processor - Wasm processor with scan method and primary address (like ViewPair)
    * @param initialCachePath: string - Optional initial scan cache file path. (will get created if it does not exist)
-   * @param cacheChanged - params: newCache, added, ownspend, reorged {@link CacheChangedCallback} invoked when cache changes
-   * @param stopSync - Optional abort signal to stop scanning
-   * @param spend_private_key - Optional spend key (view-only if omitted = no ownspend will be found and supplied to cacheChanged())
-   * @param stop_height - Optional ending block height (null = keep scanning)
+   * @param scan_params.start_height - Starting block height for the scan
+   * @param scan_params.cacheChanged - params: {newCache,changed_outputs,connection_status} {@link CacheChangedCallback} invoked when cache changes {@link CacheChangedCallbackParameters}
+   * @param scan_params.stopSync - Optional abort signal to stop scanning
+   * @param scan_params.spend_private_key - Optional spend key (view-only if omitted = no ownspend will be found and supplied to cacheChanged())
    */
-  public scanWithCacheFile(
-    start_height: number,
-    initialCachePath: string,
-    cacheChanged: CacheChangedCallback = (...args) => console.log(args),
-    stopSync?: AbortSignal,
-    spend_private_key?: string, // if no spendkey is provided, this will be a view only sync. (no ownspend detected)
-    stop_height: number | null = null
-  ) {
-    return scanWithCacheFile(
-      this,
-      start_height,
-      initialCachePath,
-      cacheChanged,
-      stopSync,
-      spend_private_key,
-      stop_height
-    );
+  public scanWithCacheFile(initialCachePath: string, scan_params: ScanParams) {
+    return scanWithCacheFile(this, initialCachePath, scan_params);
   }
   /**
    * This method makes an integrated Address for the Address of the Viewpair it was opened with.

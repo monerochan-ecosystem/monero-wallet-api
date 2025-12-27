@@ -55,17 +55,18 @@ export async function scanWithCacheFromSettings(
       walletSettingsAndKeys.node_url // TODO: handle failed connections, try different nodeurls
     );
     await viewpair.scanWithCacheFile(
-      walletSettingsAndKeys.start_height,
       `${walletSettingsAndKeys.primary_address}_cache.json`,
-      cacheChanged, // this one should notify over sendMessage, so we need to have it as an argument
-      stopSync, // Relevant for MV3 extensions: do we ever need stopsync? no.
-      //  if we get the stop message from the sidebar/popup,
-      //  and scan settings have been put to halt,
-      //  we just dont run this code at all. As it resets our context.
-      //  When the service worker resets or terminates,
-      //  any ongoing fetch requests are automatically aborted.
-      walletSettingsAndKeys.secret_spend_key,
-      walletSettingsAndKeys.stop_height
+      {
+        start_height: walletSettingsAndKeys.start_height,
+        cacheChanged, // this one should notify over sendMessage, so we need to have it as an argument
+        stopSync, // Relevant for MV3 extensions: do we ever need stopsync? no.
+        //  if we get the stop message from the sidebar/popup,
+        //  and scan settings have been put to halt,
+        //  we just dont run this code at all. As it resets our context.
+        //  When the service worker resets or terminates,
+        //  any ongoing fetch requests are automatically aborted.
+        spend_private_key: walletSettingsAndKeys.secret_spend_key,
+      }
     );
   }
 }
