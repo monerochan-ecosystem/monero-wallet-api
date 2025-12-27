@@ -13,6 +13,7 @@ import { type KeyImage } from "./computeKeyImage";
 import type { ConnectionStatus } from "../connectionStatus";
 import { detectOutputs, detectOwnspends, updateScanHeight } from "./scanResult";
 import type { ReorgInfo } from "./reorg";
+import { atomicWrite } from "../../io/atomicWrite";
 
 /**
  * Scans blockchain from `start_height` using the provided processor and using the provided initialCachePath file path,
@@ -28,10 +29,14 @@ import type { ReorgInfo } from "./reorg";
 export async function scanWithCacheFile<
   T extends WasmProcessor & HasScanWithCacheMethod
 >(processor: T, initialCachePath: string, scan_params: ScanParams) {
+  const suppliedCallback = scan_params.cacheChanged;
   const initialScanCache = await readCacheFile(initialCachePath);
   const cacheCallback: CacheChangedCallback = async (params) => {
-    await Bun.write(initialCachePath, JSON.stringify(params.newCache, null, 2));
-    if (scan_params.cacheChanged) await scan_params.cacheChanged(params);
+    await atomicWrite(
+      initialCachePath,
+      JSON.stringify(params.newCache, null, 2)
+    );
+    if (suppliedCallback) await suppliedCallback(params);
   };
   scan_params.cacheChanged = cacheCallback;
   await processor.scanWithCache(scan_params, initialScanCache);
@@ -156,8 +161,8 @@ export async function scanWithCache<
     initialCache // TODO handle this extra in case of slaveFeeder CB passed
   );
 
-  while (true) {
-    try {
+  try {
+    while (true) {
       const firstResponse = await processor.getBlocksBinExecuteRequest(
         {
           block_ids: current_range.block_hashes.map((b) => b.block_hash),
@@ -173,14 +178,14 @@ export async function scanWithCache<
         processor.connection_status,
         spend_private_key
       );
-    } catch (error) {
-      await cacheChanged({
-        newCache: cache,
-        changed_outputs: [],
-        connection_status: processor.connection_status,
-      });
-      handleScanError(error);
     }
+  } catch (error) {
+    await cacheChanged({
+      newCache: cache,
+      changed_outputs: [],
+      connection_status: processor.connection_status,
+    });
+    handleScanError(error);
   }
 }
 export async function processScanResult(
@@ -270,6 +275,12 @@ export async function initScanCache<
 }
 
 function handleScanError(error: unknown) {
+  // treat errno 0 code "ConnectionRefused" as non fatal outcome, and rethrow,
+  // so that UI can be informed after catching it higher up
+  if (isConnectionError(error)) {
+    console.log("Scan stopped. node might be offline. Connection Refused");
+    throw error;
+  }
   // Treat AbortError as a normal, non-fatal outcome
   if (
     error &&
@@ -279,14 +290,13 @@ function handleScanError(error: unknown) {
   ) {
     console.log("Scan was aborted.");
     return;
-  }
-  // treat errno 0 code "ConnectionRefused" as non fatal outcome, and rethrow,
-  // so that UI can be informed after catching it higher up
-  if (isConnectionError(error)) {
-    console.log("Scan stopped. node might be offline. Connection Refused");
+  } else {
+    console.log(
+      error,
+      "\n, scanWithCache in scanning-syncing/scanWithCache.ts`"
+    );
     throw error;
   }
-  console.log(error, "\n, scanWithCache in scanning-syncing/scanWithCache.ts`");
 }
 export function mergeRanges(ranges: CacheRange[]): CacheRange[] {
   if (ranges.length <= 1) return ranges.map((r) => ({ ...r }));

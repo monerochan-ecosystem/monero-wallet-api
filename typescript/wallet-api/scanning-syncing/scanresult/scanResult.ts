@@ -44,13 +44,13 @@ export function updateScanHeight(
   result: ScanResult,
   cache: ScanCache
 ): [CacheRange, ChangedOutput[]] {
-  const last_block_hash = result.block_infos.at(-1);
+  let last_block_hash = result.block_infos.at(-1);
   let current_blockhash = current_range?.block_hashes.at(0);
   if (!current_blockhash)
     throw new Error(
       "current_range passed to updateScanHeight was malformed. block_hashes is empty"
     );
-  if (!last_block_hash) return [current_range, []]; // block_infos empty, no change (we are at tip and there was no new block)
+  if (!last_block_hash) last_block_hash = current_blockhash; // block_infos empty, no change (we are at tip and there was no new block)
   // if last blockhash is undefined it means there was not reorg, we are at tip, block_infos is empty ( no new blocks )
 
   const oldRange = findRange(
@@ -68,9 +68,8 @@ export function updateScanHeight(
     );
   // now we need to find the block_infos of old range in the new geblocksbin response result block_infos
   // if we cant find the new range, there was a reorg and we need to clean all outputs after that and log what happened
-  const first_block_hash = result.block_infos.at(0);
-  if (!first_block_hash)
-    throw new Error("no first block hash in getBlocks.bin response"); // should never happen, if there is last_block_hash there should be first_block_hash
+  let first_block_hash = result.block_infos.at(0);
+  if (!first_block_hash) first_block_hash = current_blockhash; // should never happen, if there is last_block_hash there should be first_block_hash
 
   // if the first block hash in the response is not the same as the last block hash in the old range, there was a reorg
   if (
@@ -86,26 +85,26 @@ export function updateScanHeight(
 
   // getblocksbin will return up to 1000 blocks at once
   // so this should never happen, except if we just popped a block (but that case is handled above in the reorg case)
-  if (current_blockhash.block_height > result.new_height)
+  if (current_blockhash.block_height > last_block_hash.block_height)
     throw new Error(
-      `current scan height was larger than new height from latest scan result. 
+      `current scan height was larger than block height of last block from latest scan result. 
        Most likely connected to faulty node / catastrophic reorg.
-       current_height: ${current_blockhash.block_height}, new_height: ${result.new_height}`
+       current height: ${current_blockhash.block_height}, new height: ${last_block_hash.block_height}`
     );
 
   // 1. add new scanned range
   let anchor: BlockInfo | undefined = undefined;
   let anchor_candidate: BlockInfo | undefined = undefined;
   if (oldRange.block_hashes.length >= 3) {
-    const old_anchor = oldRange?.block_hashes.at(-1);
-    const old_anchor_candidate = oldRange?.block_hashes.at(-2);
+    const old_anchor = oldRange.block_hashes.at(-1);
+    const old_anchor_candidate = oldRange.block_hashes.at(-2);
     anchor = old_anchor;
     anchor_candidate = old_anchor_candidate;
 
     if (
       // if the old range has an anchor, and the anchor is more than 200 blocks old
-      old_anchor?.block_height &&
-      current_blockhash.block_height - old_anchor?.block_height > 200
+      typeof old_anchor?.block_height === "number" &&
+      current_blockhash.block_height - old_anchor.block_height > 200
     ) {
       anchor = old_anchor_candidate; // use the anchor_candidate as anchor
       // new anchor_candidate: is the one 100 blocks in, or the old scan tip
