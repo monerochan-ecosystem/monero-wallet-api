@@ -11,7 +11,7 @@ const payload = {
   id: "0",
   method: "generateblocks",
   params: {
-    amount_of_blocks: Bun.argv[3],
+    amount_of_blocks: Bun.argv[3] || 1,
     wallet_address: walletAddress,
   },
 };
