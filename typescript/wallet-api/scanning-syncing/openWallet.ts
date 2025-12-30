@@ -1,9 +1,15 @@
 import {
+  ManyScanCachesOpened,
   ScanCacheOpened,
   type ScanCacheOpenedCreateParams,
 } from "./scanresult/scanCacheOpened";
 import type { ScanCache } from "./scanresult/scanWithCache";
-export async function openWallets() {}
+export async function openWallets(
+  scan_settings_path?: string,
+  pathPrefix?: string
+) {
+  return await ManyScanCachesOpened.create(scan_settings_path, pathPrefix);
+}
 /**
  * Opens a **single wallet** for scanning.
  * **Touches ScanSettings.json** (use `openWallets()` for multiple wallets).

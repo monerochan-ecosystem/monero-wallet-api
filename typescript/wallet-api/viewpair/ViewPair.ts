@@ -30,6 +30,7 @@ import {
   get_info,
   type GetBlockHeadersRangeParams,
 } from "../api";
+import type { MasterSlaveInit } from "../scanning-syncing/scanresult/getBlocksbinBuffer";
 export type NETWORKS = "mainnet" | "stagenet" | "testnet";
 /**
  * This class is useful to interact with Moneros DaemonRpc binary requests in a convenient way.
@@ -196,8 +197,19 @@ export class ViewPair extends WasmProcessor {
    * @param scan_params.spend_private_key - Optional spend key (view-only if omitted = no ownspend will be found and supplied to cacheChanged())
    * @param initialCache - (optional) initial scan cache to start syncing from
    */
-  public scanWithCache(scan_params: ScanParams, initialCache?: ScanCache) {
-    return scanWithCache(this, scan_params, initialCache);
+  public scanWithCache(
+    scan_params: ScanParams,
+    initialCache?: ScanCache,
+    masterSlaveInit?: MasterSlaveInit,
+    pathPrefix?: string
+  ) {
+    return scanWithCache(
+      this,
+      scan_params,
+      initialCache,
+      masterSlaveInit,
+      pathPrefix
+    );
   }
   /**
    * Scans blockchain from `start_height` using the provided processor and using the provided initialCachePath file path,
@@ -210,8 +222,19 @@ export class ViewPair extends WasmProcessor {
    * @param scan_params.stopSync - Optional abort signal to stop scanning
    * @param scan_params.spend_private_key - Optional spend key (view-only if omitted = no ownspend will be found and supplied to cacheChanged())
    */
-  public scanWithCacheFile(initialCachePath: string, scan_params: ScanParams) {
-    return scanWithCacheFile(this, initialCachePath, scan_params);
+  public scanWithCacheFile(
+    initialCachePath: string,
+    scan_params: ScanParams,
+    masterSlaveInit?: MasterSlaveInit,
+    pathPrefix?: string
+  ) {
+    return scanWithCacheFile(
+      this,
+      initialCachePath,
+      scan_params,
+      masterSlaveInit,
+      pathPrefix
+    );
   }
   /**
    * This method makes an integrated Address for the Address of the Viewpair it was opened with.

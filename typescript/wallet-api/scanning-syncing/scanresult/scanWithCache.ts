@@ -14,6 +14,12 @@ import type { ConnectionStatus } from "../connectionStatus";
 import { detectOutputs, detectOwnspends, updateScanHeight } from "./scanResult";
 import type { ReorgInfo } from "./reorg";
 import { atomicWrite } from "../../io/atomicWrite";
+import {
+  createSlaveFeeder,
+  updateGetBlocksBinBuffer,
+  type BlocksGenerator,
+  type MasterSlaveInit,
+} from "./getBlocksbinBuffer";
 
 /**
  * Scans blockchain from `start_height` using the provided processor and using the provided initialCachePath file path,
@@ -28,7 +34,14 @@ import { atomicWrite } from "../../io/atomicWrite";
  */
 export async function scanWithCacheFile<
   T extends WasmProcessor & HasScanWithCacheMethod
->(processor: T, initialCachePath: string, scan_params: ScanParams) {
+>(
+  processor: T,
+  initialCachePath: string,
+  scan_params: ScanParams,
+  masterSlaveInit?: MasterSlaveInit,
+  pathPrefix?: string
+) {
+  if (pathPrefix) initialCachePath = pathPrefix + initialCachePath;
   const suppliedCallback = scan_params.cacheChanged;
   const initialScanCache = await readCacheFile(initialCachePath);
   const cacheCallback: CacheChangedCallback = async (params) => {
@@ -39,7 +52,12 @@ export async function scanWithCacheFile<
     if (suppliedCallback) await suppliedCallback(params);
   };
   scan_params.cacheChanged = cacheCallback;
-  await processor.scanWithCache(scan_params, initialScanCache);
+  await processor.scanWithCache(
+    scan_params,
+    initialScanCache,
+    masterSlaveInit,
+    pathPrefix
+  );
 }
 export async function readCacheFile(
   cacheFilePath: string
@@ -49,7 +67,14 @@ export async function readCacheFile(
     .catch(() => undefined);
   return jsonString ? (JSON.parse(jsonString) as ScanCache) : undefined;
 }
-
+export async function readCacheFileDefaultLocation(
+  primary_address: string,
+  pathPrefix?: string
+): Promise<ScanCache | undefined> {
+  return await readCacheFile(
+    `${pathPrefix ?? ""}${primary_address}_cache.json`
+  );
+}
 export type CacheRange = {
   start: number;
   end: number;
@@ -148,7 +173,13 @@ export async function scanWithCache<
     HasGetBlockHeadersRangeMethod &
     HasPrimaryAddress &
     HasConnectionStatus
->(processor: T, params: ScanParams, initialCache?: ScanCache) {
+>(
+  processor: T,
+  params: ScanParams,
+  initialCache?: ScanCache,
+  masterSlaveInit?: MasterSlaveInit,
+  pathPrefix?: string
+) {
   const {
     start_height,
     cacheChanged = (params) => console.log(params),
@@ -158,17 +189,35 @@ export async function scanWithCache<
   let [cache, current_range] = await initScanCache(
     processor,
     start_height,
-    initialCache // TODO handle this extra in case of slaveFeeder CB passed
+    initialCache
   );
+  let blockGenerator: BlocksGenerator | undefined;
 
-  try {
+  if (masterSlaveInit && "foodFromMaster" in masterSlaveInit) {
+    blockGenerator = createSlaveFeeder(
+      current_range.end,
+      masterSlaveInit.foodFromMaster,
+      pathPrefix
+    );
+  }
+  const defaultBlockGenerator: BlocksGenerator = (async function* () {
+    const range = current_range;
     while (true) {
+      if (stopSync?.aborted) return;
       const firstResponse = await processor.getBlocksBinExecuteRequest(
-        {
-          block_ids: current_range.block_hashes.map((b) => b.block_hash),
-        },
+        { block_ids: range.block_hashes.map((b) => b.block_hash) },
         stopSync
       );
+
+      yield firstResponse;
+    }
+  })();
+
+  try {
+    for await (const firstResponse of blockGenerator ??
+      (defaultBlockGenerator as AsyncGenerator<Uint8Array>)) {
+      if (!firstResponse) continue;
+      console.log("primary address", processor.primary_address);
       const result = await processor.getBlocksBinScanResponse(firstResponse);
       current_range = await processScanResult(
         current_range,
@@ -177,6 +226,12 @@ export async function scanWithCache<
         cacheChanged,
         processor.connection_status,
         spend_private_key
+      );
+      await updateGetBlocksBinBuffer(
+        masterSlaveInit,
+        firstResponse,
+        result,
+        pathPrefix
       );
     }
   } catch (error) {
@@ -241,6 +296,7 @@ export async function initScanCache<
   };
   if (initialCache) cache = initialCache;
   let current_height = start_height;
+
   // merge existing ranges & find end of current range
   cache.scanned_ranges = mergeRanges(cache.scanned_ranges);
   let current_range = findRange(cache.scanned_ranges, current_height);
@@ -344,7 +400,9 @@ export function isConnectionError(error: unknown) {
 export interface HasScanWithCacheMethod {
   scanWithCache: (
     params: ScanParams,
-    initialCache?: ScanCache
+    initialCache?: ScanCache,
+    masterSlaveInit?: MasterSlaveInit,
+    pathPrefix?: string
   ) => Promise<void>;
 }
 export interface HasGetBlocksBinExecuteRequestMethod {

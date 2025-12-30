@@ -26,7 +26,7 @@ export type ScanSettingOpened = {
   stop_height?: number | null;
 };
 export type ScanSettings = {
-  wallets: (ScanSetting | undefined)[]; // ts should treat arrays like this by default. (value|undefined)[]
+  wallets: ScanSetting[];
   node_urls: string[];
 };
 export type ScanSettingsOpened = {
@@ -131,11 +131,17 @@ export function walletSettingsPlusKeys(
   if (!secret_view_key)
     secret_view_key = Bun.env[`vk${wallet_settings.primary_address}`];
   if (!secret_view_key)
-    throw "no secret_view_key provided and not found in env";
+    throw (
+      "no secret_view_key provided and not found in env for address: " +
+      wallet_settings.primary_address
+    );
   if (!secret_spend_key)
     secret_spend_key = Bun.env[`sk${wallet_settings.primary_address}`];
   if (!secret_spend_key)
-    throw "no secret_spend_key provided and not found in env";
+    throw (
+      "no secret_spend_key provided and not found in env for address: " +
+      wallet_settings.primary_address
+    );
 
   return {
     ...wallet_settings,

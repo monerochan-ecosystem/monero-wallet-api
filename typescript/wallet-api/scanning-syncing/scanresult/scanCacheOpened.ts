@@ -18,20 +18,32 @@ import type {
 import { startWebworker } from "../backgroundWorker";
 import { spendable } from "./scanResult";
 import {
+  openScanSettingsFile,
   readPrivateSpendKeyFromEnv,
   readWalletFromScanSettings,
+  SCAN_SETTINGS_STORE_NAME_DEFAULT,
   walletSettingsPlusKeys,
   writeWalletToScanSettings,
   type ScanSetting,
+  type ScanSettings,
 } from "../scanSettings";
 import {
   readCacheFile,
+  readCacheFileDefaultLocation,
   type CacheChangedCallback,
   type CacheChangedCallbackParameters,
   type ScanCache,
 } from "./scanWithCache";
 import { workerMainCode } from "../worker-entrypoints/worker";
+import { workerMultipleMainCode } from "../worker-entrypoints/workerMultiple";
+export type MasterScanCache = {
+  masterCacheChanged: CacheChangedCallback;
+  scan_settings: ScanSettings;
+};
+export type SlaveScanCache = boolean;
 export type ScanCacheOpenedCreateParams = {
+  isMaster?: MasterScanCache;
+  isSlave?: SlaveScanCache;
   primary_address: string;
   start_height?: number;
   node_url?: string;
@@ -43,6 +55,7 @@ export type ScanCacheOpenedCreateParams = {
   write_scan_settings?: boolean; // Default: true, except if cache path or object is passed (TODO: & not in an extension)
   secret_view_key?: string;
   secret_spend_key?: string;
+  pathPrefix?: string;
 };
 export async function loadCacheAndScanSettings(
   params: ScanCacheOpenedCreateParams
@@ -51,8 +64,9 @@ export async function loadCacheAndScanSettings(
   // default case:  only primary_address is passed
   if (params.cache === true) {
     // 1. load cache
-    const scanCache = await readCacheFile(
-      `${params.primary_address}_cache.json`
+    const scanCache = await readCacheFileDefaultLocation(
+      params.primary_address,
+      params.pathPrefix
     );
     theCatchToBeOpened = scanCache;
 
@@ -134,10 +148,14 @@ export class ScanCacheOpened {
       params.write_scan_settings
     );
     if (theCatchToBeOpened) scanCacheOpen._cache = theCatchToBeOpened;
+    if (params.isMaster && params.isSlave)
+      throw new Error("isMaster and isSlave cannot both be set");
+    if (params.isMaster) scanCacheOpen._isMaster = params.isMaster;
+    if (params.isSlave) scanCacheOpen._isSlave = params.isSlave;
 
     if (!walletSettings.halted) {
       // run webworker (respecting halted param + setting)
-      scanCacheOpen.wallet_scan_settings = walletSettings;
+      scanCacheOpen.wallet_scan_setting = walletSettings;
       // unpause will start scanning from this.wallet_scan_settings.start_height
       await scanCacheOpen.unpause();
     }
@@ -210,8 +228,9 @@ export class ScanCacheOpened {
     });
   }
   /**
-   * notify     //ChangeReason = "added" | "ownspend" | "reorged" | "burned";
-
+   * notify
+   *
+   * ChangeReason = "added" | "ownspend" | "reorged" | "burned";
    */
   //TODO PAUSE NOTIFY listner and node status / connection error
   public notify(callback: CacheChangedCallback) {
@@ -230,35 +249,52 @@ export class ScanCacheOpened {
       });
   }
   public async unpause(start_height?: number, node_url?: string) {
-    if (!this.wallet_scan_settings)
+    if (!this.wallet_scan_setting)
       throw new Error(
         "no wallet_scan_settings, should be set up in ScanCacheOpened.create()"
       );
-    if (start_height) this.wallet_scan_settings.start_height = start_height;
+    if (start_height) this.wallet_scan_setting.start_height = start_height;
     if (node_url) this.node_url = node_url;
-    const worker_script = `\n
-      const scan_settings = JSON.parse('${JSON.stringify(
-        this.wallet_scan_settings
-      )}')
-      ${workerMainCode}
-      `;
+
     // if startheight changed, restart worker,
     // if node_url changed, restart worker (if this was the same viewpair instance in the same thread, we wouldnt have to)
     // if worker does not exist yet, start it
     // TODO: except if we are in an extension, then wire up onmessage
 
-    if (!this.worker || start_height || node_url) {
-      this.worker?.terminate();
-      this.worker = startWebworker(worker_script, (x) => {
-        this._cache = (x as CacheChangedCallbackParameters).newCache;
-        this.feed(x as CacheChangedCallbackParameters);
-      });
+    if ((!this.worker || start_height || node_url) && !this._isSlave) {
+      this.worker?.terminate(); // TODO start multiple workers
+      if (this._isMaster) {
+        const multiple_worker_script = `\n
+      const scan_settings = JSON.parse('${JSON.stringify(
+        this._isMaster.scan_settings
+      )}')
+      ${workerMultipleMainCode}
+      `;
+        this.worker = startWebworker(multiple_worker_script, (x) => {
+          this._cache = (x as CacheChangedCallbackParameters).newCache;
+          this.feed(x as CacheChangedCallbackParameters);
+          this._isMaster!.masterCacheChanged(
+            x as CacheChangedCallbackParameters
+          );
+        });
+      } else {
+        const worker_script = `\n
+      const wallet_scan_setting = JSON.parse('${JSON.stringify(
+        this.wallet_scan_setting
+      )}')
+      ${workerMainCode}
+      `;
+        this.worker = startWebworker(worker_script, (x) => {
+          this._cache = (x as CacheChangedCallbackParameters).newCache;
+          this.feed(x as CacheChangedCallbackParameters);
+        });
+      }
     }
     if (this.write_scan_settings)
       return await writeWalletToScanSettings({
         primary_address: this._cache.primary_address,
         node_url: this.node_url,
-        start_height: this.wallet_scan_settings.start_height,
+        start_height: this.wallet_scan_setting.start_height,
         halted: false,
       });
   }
@@ -314,6 +350,8 @@ export class ScanCacheOpened {
       if (listener) listener(params);
     }
   }
+  private _isMaster: MasterScanCache | undefined = undefined;
+  private _isSlave: SlaveScanCache | undefined = undefined;
   private _cache: ScanCache = {
     outputs: {},
     own_key_images: {},
@@ -323,35 +361,69 @@ export class ScanCacheOpened {
   private constructor(
     public readonly view_pair: ViewPair,
     private write_scan_settings: boolean = true,
-    private wallet_scan_settings?: ScanSetting,
+    private wallet_scan_setting?: ScanSetting,
     private worker?: Worker
   ) {}
   private notifyListeners: (CacheChangedCallback | null)[] = [];
 }
 
 export class ManyScanCachesOpened {
-  /**
-   * makeTransaction
-   */
-  public makeTransaction() {
-    // TODO do this fourth
+  public static async create(scan_settings_path?: string, pathPrefix?: string) {
+    const scan_settings = await openScanSettingsFile(scan_settings_path);
+    if (!scan_settings?.wallets)
+      throw new Error(
+        `no wallets in settings file. Did you supply the right path?
+     are there wallets in the default '${SCAN_SETTINGS_STORE_NAME_DEFAULT}' file?`
+      );
+    const nonHaltedWallets = scan_settings.wallets.filter(
+      (wallet) => !wallet?.halted
+    );
+    if (!nonHaltedWallets.length) return undefined;
+    const openedWallets: ScanCacheOpened[] = [];
+
+    if (nonHaltedWallets.length > 1) {
+      const slaveWallets: ScanCacheOpened[] = [];
+      for (const wallet of nonHaltedWallets.slice(1)) {
+        if (!wallet || wallet.halted) continue;
+        const slaveWallet = await ScanCacheOpened.create({
+          ...wallet,
+          isSlave: true,
+          cache: true,
+          scan_settings_path,
+          pathPrefix,
+        });
+        slaveWallets.push(slaveWallet);
+      }
+      const masterWallet = await ScanCacheOpened.create({
+        ...nonHaltedWallets[0]!,
+        isMaster: {
+          masterCacheChanged: (params) => {
+            for (const slave of slaveWallets) {
+              if (
+                slave.view_pair.primary_address ===
+                params.newCache.primary_address
+              )
+                slave.feed(params);
+            }
+          },
+          scan_settings,
+        },
+        cache: true,
+        scan_settings_path,
+        pathPrefix,
+      });
+      openedWallets.push(masterWallet, ...slaveWallets);
+    } else {
+      const onlyWallet = await ScanCacheOpened.create({
+        ...nonHaltedWallets[0]!,
+        cache: true,
+        scan_settings_path,
+        pathPrefix,
+      });
+      openedWallets.push(onlyWallet);
+    }
+
+    return new ManyScanCachesOpened(openedWallets);
   }
-  /**
-   * makeStandardTransaction
-   */
-  public makeStandardTransaction() {
-    // TODO do this last
-  }
-  /**
-   * notify
-   */
-  public notify() {
-    // TODO do this second
-  }
-  /**
-   * feed
-   */
-  public feed() {
-    // TODO do this first
-  }
+  private constructor(public readonly wallets: ScanCacheOpened[]) {}
 }

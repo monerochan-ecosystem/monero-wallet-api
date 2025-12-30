@@ -1,10 +1,12 @@
 import { ViewPair } from "../api";
+import type { MasterSlaveInit } from "./scanresult/getBlocksbinBuffer";
 import { type CacheChangedCallback } from "./scanresult/scanWithCache";
 import {
   readWalletFromScanSettings,
   SCAN_SETTINGS_STORE_NAME_DEFAULT,
   walletSettingsPlusKeys,
   type ScanSetting,
+  type ScanSettings,
 } from "./scanSettings";
 /**
  * scans with cache from settings file (Bun.file uses indexedDB on web,
@@ -37,17 +39,18 @@ export async function scanWithCacheFromSettingsFile(
  */
 export async function scanWithCacheFromSettings(
   cacheChanged: CacheChangedCallback = (params) => console.log(params),
-  scan_settings?: ScanSetting,
-  stopSync?: AbortSignal // in MV3 extension Background Workers this is not needed (context nuke on every event)
+  wallet_scan_setting?: ScanSetting,
+  stopSync?: AbortSignal, // in MV3 extension Background Workers this is not needed (context nuke on every event)
+  masterSlaveInit?: MasterSlaveInit,
+  pathPrefix?: string
 ) {
   // polyfill Bun.file and Bun.write with indexedDB, Android local app file storage, what ever your platform is
-
-  if (!scan_settings) throw new Error("No wallet settings found");
-  const walletSettingsAndKeys = walletSettingsPlusKeys(scan_settings);
+  if (!wallet_scan_setting) throw new Error("No wallet settings found");
+  const walletSettingsAndKeys = walletSettingsPlusKeys(wallet_scan_setting);
   if (!walletSettingsAndKeys.halted) {
     if (!walletSettingsAndKeys.secret_view_key)
       throw new Error(
-        "No secret view key found for " + scan_settings.primary_address
+        "No secret view key found for " + wallet_scan_setting.primary_address
       );
     const viewpair = await ViewPair.create(
       walletSettingsAndKeys.primary_address,
@@ -66,7 +69,68 @@ export async function scanWithCacheFromSettings(
         //  When the service worker resets or terminates,
         //  any ongoing fetch requests are automatically aborted.
         spend_private_key: walletSettingsAndKeys.secret_spend_key,
+      },
+      masterSlaveInit,
+      pathPrefix
+    );
+  }
+}
+export async function scanMultipleWallets(
+  cacheChanged: CacheChangedCallback = (params) => console.log(params),
+  scan_settings: ScanSettings,
+  stopSync?: AbortSignal,
+  pathPrefix?: string // path prefix for cache + getblocksbin buffer
+) {
+  if (!scan_settings?.wallets) return undefined;
+  const nonHaltedWallets = scan_settings.wallets.filter(
+    (wallet) => !wallet?.halted
+  );
+  if (!nonHaltedWallets.length) return undefined;
+  if (nonHaltedWallets.length > 1) {
+    const masterWallet = nonHaltedWallets[0];
+    let slaveMangers: (() => void)[] = [];
+
+    function foodFromMaster(): Promise<void> {
+      return new Promise((resolve) => slaveMangers.push(resolve));
+    }
+
+    function masterGotFed(): void {
+      slaveMangers.forEach((resolve) => resolve());
+      slaveMangers = [];
+    }
+    const suppliedCallback = cacheChanged;
+    const masterCacheChanged: CacheChangedCallback = async (params) => {
+      masterGotFed(); // this feeds the slaves, they are waiting for it (will read getblocksbin response from disk / indexeddb)
+      if (suppliedCallback) await suppliedCallback(params);
+    };
+    for (const wallet of nonHaltedWallets.slice(1)) {
+      wallet.start_height = masterWallet.start_height;
+      scanWithCacheFromSettings(
+        cacheChanged,
+        wallet,
+        stopSync,
+        {
+          foodFromMaster,
+          nonHaltedWallets,
+        },
+        pathPrefix
+      );
+    }
+
+    return await scanWithCacheFromSettings(
+      masterCacheChanged,
+      masterWallet,
+      stopSync,
+      {
+        master: true,
+        nonHaltedWallets,
       }
+    );
+  } else {
+    return await scanWithCacheFromSettings(
+      cacheChanged,
+      nonHaltedWallets[0],
+      stopSync
     );
   }
 }
