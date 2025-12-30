@@ -1,7 +1,7 @@
 import type { BlockInfo, ErrorResponse, ScanResult } from "../../api";
 import { readDir } from "../../io/readDir";
 import type { ScanSetting } from "../scanSettings";
-import { readCacheFileDefaultLocation } from "./scanWithCache";
+import { readCacheFileDefaultLocation } from "./scanCache";
 
 export async function writeGetblocksBinBuffer(
   getBlocksBinResponseContent: Uint8Array,

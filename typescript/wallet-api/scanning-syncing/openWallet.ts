@@ -3,7 +3,7 @@ import {
   ScanCacheOpened,
   type ScanCacheOpenedCreateParams,
 } from "./scanresult/scanCacheOpened";
-import type { ScanCache } from "./scanresult/scanWithCache";
+import type { ScanCache } from "./scanresult/scanCache";
 export async function openWallets(
   scan_settings_path?: string,
   pathPrefix?: string

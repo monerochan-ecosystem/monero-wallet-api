@@ -1,7 +1,7 @@
 import type { BlockInfo, Output } from "../../api";
 import type { KeyImage } from "./computeKeyImage";
 import type { ScanResult } from "./scanResult";
-import type { CacheRange, ChangedOutput, ScanCache } from "./scanWithCache";
+import type { CacheRange, ChangedOutput, ScanCache } from "./scanCache";
 export type ReorgInfo = {
   split_height: BlockInfo;
   removed_outputs: ReorgedOutput[]; // Copies of detached outputs for logging

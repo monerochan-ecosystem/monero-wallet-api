@@ -1,6 +1,6 @@
 import { ViewPair } from "../api";
 import type { MasterSlaveInit } from "./scanresult/getBlocksbinBuffer";
-import { type CacheChangedCallback } from "./scanresult/scanWithCache";
+import { type CacheChangedCallback } from "./scanresult/scanCache";
 import {
   readWalletFromScanSettings,
   SCAN_SETTINGS_STORE_NAME_DEFAULT,

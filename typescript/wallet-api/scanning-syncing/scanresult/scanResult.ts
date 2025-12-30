@@ -1,14 +1,55 @@
 import type { BlockInfo, Output } from "../../api";
 import { computeKeyImage, type KeyImage } from "./computeKeyImage";
-import {
-  type ScanCache,
-  type ChangedOutput,
-  mergeRanges,
-  findRange,
-  type CacheRange,
-} from "./scanWithCache";
+import { mergeRanges, findRange } from "./scanCache";
 import { type ErrorResponse } from "../../node-interaction/binaryEndpoints";
 import { handleReorg } from "./reorg";
+import type { ConnectionStatus } from "../connectionStatus";
+import type {
+  CacheChangedCallback,
+  CacheRange,
+  ChangedOutput,
+  ScanCache,
+} from "./scanCache";
+import { sleep } from "../../io/sleep";
+
+export async function processScanResult(
+  current_range: CacheRange,
+  result: ScanResult | ErrorResponse | undefined,
+  cache: ScanCache,
+  cacheChanged: CacheChangedCallback,
+  connection_status: ConnectionStatus,
+  spend_private_key?: string
+) {
+  if (result && "new_height" in result) {
+    const [new_range, changed_outputs] = updateScanHeight(
+      current_range,
+      result,
+      cache
+    );
+    current_range = new_range;
+
+    changed_outputs.push(
+      ...(await detectOutputs(result, cache, spend_private_key))
+    );
+
+    if (spend_private_key)
+      changed_outputs.push(...detectOwnspends(result, cache));
+    await cacheChanged({
+      newCache: cache,
+      changed_outputs,
+      connection_status,
+    });
+
+    if (result.block_infos.length === 0) {
+      // we are at the tip, and there are no new blocks
+      // sleep for 1 second before sending another
+      // getBlocks.bin request
+      //
+      await sleep(1000);
+    }
+  }
+  return current_range;
+}
 export type OnchainKeyImage = {
   key_image_hex: KeyImage;
   relative_index: number; // relative index of input in transaction

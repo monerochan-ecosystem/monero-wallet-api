@@ -13,8 +13,6 @@ import {
 import {
   scanWithCache,
   scanWithCacheFile,
-  type CacheChangedCallback,
-  type ScanCache,
   type ScanParams,
 } from "../scanning-syncing/scanresult/scanWithCache";
 import {
@@ -31,6 +29,7 @@ import {
   type GetBlockHeadersRangeParams,
 } from "../api";
 import type { MasterSlaveInit } from "../scanning-syncing/scanresult/getBlocksbinBuffer";
+import type { ScanCache } from "../scanning-syncing/scanresult/scanCache";
 export type NETWORKS = "mainnet" | "stagenet" | "testnet";
 /**
  * This class is useful to interact with Moneros DaemonRpc binary requests in a convenient way.

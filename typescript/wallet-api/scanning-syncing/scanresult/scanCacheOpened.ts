@@ -33,7 +33,7 @@ import {
   type CacheChangedCallback,
   type CacheChangedCallbackParameters,
   type ScanCache,
-} from "./scanWithCache";
+} from "./scanCache";
 import { workerMainCode } from "../worker-entrypoints/worker";
 import { workerMultipleMainCode } from "../worker-entrypoints/workerMultiple";
 export type MasterScanCache = {

@@ -1,18 +1,12 @@
 import type {
-  BlockInfo,
   ErrorResponse,
-  GetBlockHeadersRange,
-  GetBlockHeadersRangeParams,
   GetBlocksBinMetaCallback,
   GetBlocksBinRequest,
-  Output,
   ScanResult,
 } from "../../api";
 import type { WasmProcessor } from "../../wasm-processing/wasmProcessor";
-import { type KeyImage } from "./computeKeyImage";
 import type { ConnectionStatus } from "../connectionStatus";
-import { detectOutputs, detectOwnspends, updateScanHeight } from "./scanResult";
-import type { ReorgInfo } from "./reorg";
+
 import { atomicWrite } from "../../io/atomicWrite";
 import {
   createSlaveFeeder,
@@ -20,6 +14,15 @@ import {
   type BlocksGenerator,
   type MasterSlaveInit,
 } from "./getBlocksbinBuffer";
+import {
+  initScanCache,
+  readCacheFile,
+  type CacheChangedCallback,
+  type HasGetBlockHeadersRangeMethod,
+  type HasPrimaryAddress,
+  type ScanCache,
+} from "./scanCache";
+import { processScanResult } from "./scanResult";
 
 /**
  * Scans blockchain from `start_height` using the provided processor and using the provided initialCachePath file path,
@@ -59,85 +62,7 @@ export async function scanWithCacheFile<
     pathPrefix
   );
 }
-export async function readCacheFile(
-  cacheFilePath: string
-): Promise<ScanCache | undefined> {
-  const jsonString = await Bun.file(cacheFilePath)
-    .text()
-    .catch(() => undefined);
-  return jsonString ? (JSON.parse(jsonString) as ScanCache) : undefined;
-}
-export async function readCacheFileDefaultLocation(
-  primary_address: string,
-  pathPrefix?: string
-): Promise<ScanCache | undefined> {
-  return await readCacheFile(
-    `${pathPrefix ?? ""}${primary_address}_cache.json`
-  );
-}
-export type CacheRange = {
-  start: number;
-  end: number;
-  block_hashes: BlockInfo[];
-};
 
-export type GlobalOutputId = string; // output.index_on_blockchain.toString()
-export type OutputsCache = Record<GlobalOutputId, Output>; // { "123": Output, "456": Output } keyed by index_on_blockchain.toString()
-export type OwnKeyImages = Record<KeyImage, GlobalOutputId>;
-export type ScanCache = {
-  outputs: OutputsCache;
-  own_key_images: OwnKeyImages;
-  scanned_ranges: CacheRange[]; // list of block height ranges that have been scanned [0].start, [length-1].end <-- last scanned height
-  primary_address: string;
-  reorg_info?: ReorgInfo;
-};
-
-export type ChangeReason =
-  | "added"
-  | "ownspend"
-  | "reorged"
-  | "reorged_spent"
-  | "burned";
-export type ChangedOutput = {
-  output: Output;
-  change_reason: ChangeReason;
-};
-
-export type CacheChangedCallbackParameters = {
-  newCache: ScanCache;
-  changed_outputs: ChangedOutput[];
-  connection_status: ConnectionStatus;
-};
-export type CacheChangedCallbackSync<R = void> = (
-  params: CacheChangedCallbackParameters
-) => R;
-
-export type CacheChangedCallbackAsync = CacheChangedCallbackSync<Promise<void>>;
-/**
- * Callback invoked when the scan cache changes.
- *
- * @param params - The callback parameters.
- * @param params.newCache - The updated scan cache.
- * @param params.changed_outputs - Contains output and change_reason. {@link ChangedOutput}
- *
- * @param params.connection_status - Connection status information.
- * @param params.connection_status.status_updates - Array of connection status messages:
- * - { message: "node_url_changed"; old_node_url: string; new_node_url: string }
- * - { message: "connection_error"; error: {} }
- * - { message: "connection_ok" }
- * - undefined
- *
- * @param params.connection_status.last_packet - Information about the last packet:
- * `{ connection_status: "OK" | "partial read" | "connection failed"; bytes_read: number; node_url: string; timestamp: string }`.
- *
- * @remarks
- * - `scanned_ranges` is expected to change on every invocation,
- *   except when there was a connection error, then only `connection_status` changes.
- */
-
-export type CacheChangedCallback =
-  | CacheChangedCallbackSync
-  | CacheChangedCallbackAsync; // accept async callbacks
 /**
  * Scan parameters for blockchain scanning with caching.
  *
@@ -243,92 +168,6 @@ export async function scanWithCache<
     handleScanError(error);
   }
 }
-export async function processScanResult(
-  current_range: CacheRange,
-  result: ScanResult | ErrorResponse | undefined,
-  cache: ScanCache,
-  cacheChanged: CacheChangedCallback,
-  connection_status: ConnectionStatus,
-  spend_private_key?: string
-) {
-  if (result && "new_height" in result) {
-    const [new_range, changed_outputs] = updateScanHeight(
-      current_range,
-      result,
-      cache
-    );
-    current_range = new_range;
-
-    changed_outputs.push(
-      ...(await detectOutputs(result, cache, spend_private_key))
-    );
-
-    if (spend_private_key)
-      changed_outputs.push(...detectOwnspends(result, cache));
-    await cacheChanged({
-      newCache: cache,
-      changed_outputs,
-      connection_status,
-    });
-
-    if (result.block_infos.length === 0) {
-      // we are at the tip, and there are no new blocks
-      // sleep for 1 second before sending another
-      // getBlocks.bin request
-      //
-      await sleep(1000);
-    }
-  }
-  return current_range;
-}
-export async function initScanCache<
-  T extends WasmProcessor & HasGetBlockHeadersRangeMethod & HasPrimaryAddress
->(
-  processor: T,
-  start_height: number,
-  initialCache?: ScanCache
-): Promise<[ScanCache, CacheRange]> {
-  let cache: ScanCache = {
-    outputs: {},
-    own_key_images: {},
-    scanned_ranges: [],
-    primary_address: processor.primary_address,
-  };
-  if (initialCache) cache = initialCache;
-  let current_height = start_height;
-
-  // merge existing ranges & find end of current range
-  cache.scanned_ranges = mergeRanges(cache.scanned_ranges);
-  let current_range = findRange(cache.scanned_ranges, current_height);
-  let start_block_hash = current_range?.block_hashes[0];
-
-  if (!start_block_hash) {
-    const blockHeaderResponse = (
-      await processor.getBlockHeadersRange({
-        start_height,
-        end_height: start_height,
-      })
-    ).headers[0];
-
-    start_block_hash = {
-      block_hash: blockHeaderResponse.hash,
-      block_height: blockHeaderResponse.height,
-      block_timestamp: blockHeaderResponse.timestamp,
-    };
-    const newRange = {
-      start: start_block_hash.block_height,
-      end: start_block_hash.block_height,
-      block_hashes: [start_block_hash, start_block_hash, start_block_hash],
-    };
-    current_range = newRange;
-    cache.scanned_ranges.push(newRange);
-  }
-  if (!start_block_hash) throw new Error("could not find start block hash");
-
-  if (current_range == null || !current_range?.block_hashes.length)
-    throw new Error("current_range was malformed. block_hashes is empty");
-  return [cache, current_range];
-}
 
 function handleScanError(error: unknown) {
   // treat errno 0 code "ConnectionRefused" as non fatal outcome, and rethrow,
@@ -354,35 +193,6 @@ function handleScanError(error: unknown) {
     throw error;
   }
 }
-export function mergeRanges(ranges: CacheRange[]): CacheRange[] {
-  if (ranges.length <= 1) return ranges.map((r) => ({ ...r }));
-  const sorted = [...ranges].sort((a, b) => a.start - b.start);
-  const merged: typeof sorted = [sorted[0]];
-
-  for (let i = 1; i < sorted.length; i++) {
-    const curr = sorted[i];
-    const last = merged[merged.length - 1];
-    // If last range overlaps or touches current range
-    if (curr.start <= last.end) {
-      // Extend last range to cover both (take max end value)
-      last.end = Math.max(last.end, curr.end);
-      last.block_hashes = curr.block_hashes;
-    } else {
-      // No overlap: add current range as new merged interval
-      merged.push(curr);
-    }
-  }
-  return merged;
-}
-// find the cache range that contains the given height, if not found return null
-export const findRange = (
-  ranges: CacheRange[],
-  value: number
-): CacheRange | null =>
-  ranges.find((r) => value >= r.start && value <= r.end) ?? null;
-
-export const sleep = (ms: number) =>
-  new Promise((resolve) => setTimeout(resolve, ms));
 
 export function isConnectionError(error: unknown) {
   if (
@@ -418,15 +228,7 @@ export interface HasGetBlocksBinScanResponseMethod {
     metaCallBack?: GetBlocksBinMetaCallback
   ) => Promise<ScanResult | ErrorResponse | undefined>;
 }
-export interface HasGetBlockHeadersRangeMethod {
-  getBlockHeadersRange: (
-    params: GetBlockHeadersRangeParams
-  ) => Promise<GetBlockHeadersRange>;
-}
 
-export interface HasPrimaryAddress {
-  primary_address: string;
-}
 export interface HasConnectionStatus {
   connection_status: ConnectionStatus;
 }
