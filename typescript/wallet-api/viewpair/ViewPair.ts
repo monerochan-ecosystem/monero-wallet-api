@@ -1,4 +1,7 @@
-import { type ScanResult } from "../scanning-syncing/scanresult/scanResult";
+import {
+  processScanResult,
+  type ScanResult,
+} from "../scanning-syncing/scanresult/scanResult";
 export { type ScanResult };
 export { NodeUrl } from "../node-interaction/nodeUrl";
 import {
@@ -10,11 +13,7 @@ import {
   MAINNET_GENESIS_BLOCK_HASH,
   STAGENET_GENESIS_BLOCK_HASH,
 } from "../node-interaction/binaryEndpoints";
-import {
-  scanWithCache,
-  scanWithCacheFile,
-  type ScanParams,
-} from "../scanning-syncing/scanresult/scanWithCache";
+import { handleScanError } from "../scanning-syncing/scanresult/scanWithCache";
 import {
   makeTransaction,
   type MakeTransactionParams,
@@ -28,8 +27,22 @@ import {
   get_info,
   type GetBlockHeadersRangeParams,
 } from "../api";
-import type { MasterSlaveInit } from "../scanning-syncing/scanresult/getBlocksbinBuffer";
-import type { ScanCache } from "../scanning-syncing/scanresult/scanCache";
+import {
+  readGetblocksBinBuffer,
+  trimGetBlocksBinBuffer,
+  writeGetblocksBinBuffer,
+  type SlaveViewPair,
+} from "../scanning-syncing/scanresult/getBlocksbinBuffer";
+import {
+  initScanCache,
+  readCacheFileDefaultLocation,
+  type CacheChangedCallback,
+} from "../scanning-syncing/scanresult/scanCache";
+import {
+  openNonHaltedWallets,
+  walletSettingsPlusKeys,
+} from "../scanning-syncing/scanSettings";
+import { sleep } from "../io/sleep";
 export type NETWORKS = "mainnet" | "stagenet" | "testnet";
 /**
  * This class is useful to interact with Moneros DaemonRpc binary requests in a convenient way.
@@ -186,54 +199,147 @@ export class ViewPair extends WasmProcessor {
       metaCallBack
     );
   }
+  /**
+   * scan
+   */
+  public async scan(
+    cacheChanged: CacheChangedCallback = (params) => console.log(params),
+    stopSync?: AbortSignal,
+    scan_settings_path?: string,
+    pathPrefix?: string
+  ) {
+    const processor = this;
+    const nonHaltedWallets = await openNonHaltedWallets(scan_settings_path);
+    const masterWalletSettings = nonHaltedWallets[0];
+    if (masterWalletSettings.primary_address !== this.primary_address)
+      throw new Error(
+        "master wallet should be the first of the non halted wallets"
+      );
+    let current_range = await initScanCache(
+      processor,
+      masterWalletSettings.start_height,
+      pathPrefix
+    );
+    const blockGenerator = (async function* () {
+      while (true) {
+        if (stopSync?.aborted) return;
+        const firstResponse = await processor.getBlocksBinExecuteRequest(
+          { block_ids: current_range.block_hashes.map((b) => b.block_hash) },
+          stopSync
+        );
 
-  /**
-   * Scans blockchain from `start_height` using the provided initialCache, invoking callback cacheChanged() for results and cache changes.
-   *
-   * @param scan_params.start_height - Starting block height for the scan
-   * @param scan_params.cacheChanged - params: {newCache,changed_outputs,connection_status} {@link CacheChangedCallback} invoked when cache changes {@link CacheChangedCallbackParameters}
-   * @param scan_params.stopSync - Optional abort signal to stop scanning
-   * @param scan_params.spend_private_key - Optional spend key (view-only if omitted = no ownspend will be found and supplied to cacheChanged())
-   * @param initialCache - (optional) initial scan cache to start syncing from
-   */
-  public scanWithCache(
-    scan_params: ScanParams,
-    initialCache?: ScanCache,
-    masterSlaveInit?: MasterSlaveInit,
-    pathPrefix?: string
-  ) {
-    return scanWithCache(
-      this,
-      scan_params,
-      initialCache,
-      masterSlaveInit,
-      pathPrefix
-    );
-  }
-  /**
-   * Scans blockchain from `start_height` using the provided processor and using the provided initialCachePath file path,
-   *  invoking callback cacheChanged() for results and cache changes
-   *
-   * @param processor - Wasm processor with scan method and primary address (like ViewPair)
-   * @param initialCachePath: string - Optional initial scan cache file path. (will get created if it does not exist)
-   * @param scan_params.start_height - Starting block height for the scan
-   * @param scan_params.cacheChanged - params: {newCache,changed_outputs,connection_status} {@link CacheChangedCallback} invoked when cache changes {@link CacheChangedCallbackParameters}
-   * @param scan_params.stopSync - Optional abort signal to stop scanning
-   * @param scan_params.spend_private_key - Optional spend key (view-only if omitted = no ownspend will be found and supplied to cacheChanged())
-   */
-  public scanWithCacheFile(
-    initialCachePath: string,
-    scan_params: ScanParams,
-    masterSlaveInit?: MasterSlaveInit,
-    pathPrefix?: string
-  ) {
-    return scanWithCacheFile(
-      this,
-      initialCachePath,
-      scan_params,
-      masterSlaveInit,
-      pathPrefix
-    );
+        yield firstResponse;
+      }
+    })();
+
+    const masterWithKeys = walletSettingsPlusKeys(masterWalletSettings);
+    const slaveViewPairs: SlaveViewPair[] = [];
+    if (nonHaltedWallets.length > 1) {
+      for (const slaveWallet of nonHaltedWallets.slice(1)) {
+        const slaveWithKeys = walletSettingsPlusKeys(slaveWallet);
+        const viewpair = await ViewPair.create(
+          slaveWallet.primary_address,
+          slaveWithKeys.secret_view_key,
+          masterWalletSettings.node_url
+        );
+        slaveViewPairs.push({
+          viewpair,
+          current_range: await initScanCache(
+            viewpair,
+            masterWalletSettings.start_height,
+            pathPrefix
+          ),
+          secret_spend_key: slaveWithKeys.secret_spend_key,
+        });
+      }
+    }
+
+    try {
+      for await (const firstResponse of blockGenerator) {
+        if (!firstResponse) continue;
+
+        const result = await processor.getBlocksBinScanResponse(firstResponse);
+        current_range = await processScanResult({
+          current_range,
+          result,
+          cacheChanged,
+          connection_status: processor.connection_status,
+          secret_spend_key: masterWithKeys.secret_spend_key,
+          pathPrefix,
+        });
+        if (slaveViewPairs.length > 0) {
+          if (result && "block_infos" in result)
+            await writeGetblocksBinBuffer(
+              firstResponse,
+              result.block_infos,
+              pathPrefix
+            ); // feed the slaves
+          for (const slave of slaveViewPairs) {
+            let blocksBinItems = await readGetblocksBinBuffer(
+              slave.current_range.end,
+              pathPrefix
+            );
+            let use_master_current_range = false;
+            if (!blocksBinItems.length) {
+              blocksBinItems = await readGetblocksBinBuffer(
+                current_range.end,
+                pathPrefix
+              );
+              slave.current_range = current_range;
+              use_master_current_range = true;
+            }
+            for (const blocksBinItem of blocksBinItems) {
+              const blocksbin = new Uint8Array(
+                await Bun.file(
+                  `${pathPrefix ?? ""}getblocksbinbuffer/${
+                    blocksBinItem.filename
+                  }`
+                ).arrayBuffer()
+              );
+              const slaveResult = await slave.viewpair.getBlocksBinScanResponse(
+                blocksbin
+              );
+              slave.current_range = await processScanResult({
+                current_range: slave.current_range,
+                result: slaveResult,
+                cacheChanged,
+                connection_status: processor.connection_status,
+                secret_spend_key: slave.secret_spend_key,
+                pathPrefix,
+                use_master_current_range,
+              });
+            }
+          } // scan the slaves
+          await trimGetBlocksBinBuffer(nonHaltedWallets, pathPrefix);
+        }
+        if (
+          !result ||
+          (result && "block_infos" in result && result.block_infos.length === 0)
+        ) {
+          // we are at the tip, and there are no new blocks
+          // sleep for 1 second before sending another
+          // getBlocks.bin request
+          //
+          await sleep(1000);
+        }
+      }
+    } catch (error) {
+      handleScanError(error);
+
+      const cache = await readCacheFileDefaultLocation(
+        processor.primary_address,
+        pathPrefix
+      );
+      if (!cache)
+        throw new Error(
+          `${error} in scan() + cache not found for primary address: ${processor.primary_address} and path prefix: ${pathPrefix}`
+        );
+      await cacheChanged({
+        newCache: cache,
+        changed_outputs: [],
+        connection_status: processor.connection_status,
+      });
+    }
   }
   /**
    * This method makes an integrated Address for the Address of the Viewpair it was opened with.

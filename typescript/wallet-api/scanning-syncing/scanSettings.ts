@@ -209,3 +209,20 @@ export async function openScanSettingsFile(
 
   return jsonString ? (JSON.parse(jsonString) as ScanSettings) : undefined;
 }
+
+export async function openNonHaltedWallets(
+  scan_settings_path: string = SCAN_SETTINGS_STORE_NAME_DEFAULT
+): Promise<ScanSetting[]> {
+  const scan_settings = await openScanSettingsFile(scan_settings_path);
+  if (!scan_settings)
+    throw new Error(
+      "no scan settings file found at path: " + scan_settings_path
+    );
+  if (!scan_settings?.wallets) throw new Error("no wallets in scan settings");
+  const nonHaltedWallets = scan_settings.wallets.filter(
+    (wallet) => !wallet?.halted
+  );
+  if (!nonHaltedWallets.length)
+    throw new Error("no non halted wallets in scan settings");
+  return nonHaltedWallets;
+}

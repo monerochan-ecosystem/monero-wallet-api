@@ -1,8 +1,10 @@
-import { scanWithCacheFromSettings } from "../backgroundWorker";
-import type { ScanSetting } from "../scanSettings";
-declare const wallet_scan_setting: ScanSetting;
+import { scanWallets } from "../backgroundWorker";
+declare const scan_settings_path: string;
+declare const pathPrefix: string;
 
-await scanWithCacheFromSettings(
+await scanWallets(
   (x) => self.postMessage({ type: "RESULT", payload: x }),
-  wallet_scan_setting
+  undefined,
+  scan_settings_path,
+  pathPrefix
 );

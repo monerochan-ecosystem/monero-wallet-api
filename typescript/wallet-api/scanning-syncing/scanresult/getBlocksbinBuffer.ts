@@ -1,7 +1,7 @@
-import type { BlockInfo, ErrorResponse, ScanResult } from "../../api";
+import type { BlockInfo, GetBlocksBinRequest, ViewPair } from "../../api";
 import { readDir } from "../../io/readDir";
 import type { ScanSetting } from "../scanSettings";
-import { readCacheFileDefaultLocation } from "./scanCache";
+import { readCacheFileDefaultLocation, type CacheRange } from "./scanCache";
 
 export async function writeGetblocksBinBuffer(
   getBlocksBinResponseContent: Uint8Array,
@@ -9,11 +9,16 @@ export async function writeGetblocksBinBuffer(
   pathPrefix?: string
 ) {
   if (!block_infos.length) return;
-
+  const start = block_infos[0].block_height;
+  const end = block_infos.at(-1)?.block_height;
+  const block_hash = block_infos.at(-1)?.block_hash;
+  const bufferItems = await readGetblocksBinBufferItems(pathPrefix);
+  if (bufferItems.find((bi) => bi.last_block_hash === block_hash)) return;
+  // if we have the same end blockhash already, dont write
   return await Bun.write(
-    `${pathPrefix ?? ""}getblocksbinbuffer/${Date.now()}-${
-      block_infos[0].block_height
-    }-${block_infos[block_infos.length - 1].block_height}-getblocks.bin`,
+    `${
+      pathPrefix ?? ""
+    }getblocksbinbuffer/${Date.now()}-${start}-${end}-${block_hash}-getblocks.bin`,
     getBlocksBinResponseContent
   );
 }
@@ -22,6 +27,7 @@ export type GetBlocksBinBufferItem = {
   end: number;
   filename: string;
   date: string;
+  last_block_hash: string;
 };
 export async function readGetblocksBinBuffer(
   current_height: number,
@@ -40,39 +46,14 @@ export async function readGetblocksBinBuffer(
     ];
   return [];
 }
-// Factory to create a slave generator, fed through next(blocksBin)
-export function createSlaveFeeder(
-  current_height: number,
-  foodFromMaster: FoodFromMaster,
-  pathPrefix?: string
-): BlocksGenerator {
-  const getBlocksbinBuffer: GetBlocksBinBufferItem[] = [];
-
-  return (async function* () {
-    while (true) {
-      while (getBlocksbinBuffer.length > 0) {
-        const blocksBinItem = getBlocksbinBuffer.shift()!;
-        current_height = blocksBinItem.end;
-        yield new Uint8Array(
-          await Bun.file(blocksBinItem.filename).arrayBuffer()
-        );
-      } // the buffer is persisted to disk / indexeddb so that a multiwalletscan can be interrupted without the slaves getting holes
-      await foodFromMaster();
-      getBlocksbinBuffer.push(
-        ...(await readGetblocksBinBuffer(current_height, pathPrefix))
-      );
-    }
-  })();
-}
 
 export type BlocksGenerator = AsyncGenerator<Uint8Array<ArrayBufferLike>>;
-export type FoodFromMaster = () => Promise<void>;
-export type SlaveInit = {
-  nonHaltedWallets: ScanSetting[];
-  foodFromMaster: FoodFromMaster;
+export type SlaveViewPair = {
+  viewpair: ViewPair;
+  current_range: CacheRange;
+  secret_spend_key?: string;
 };
-export type MasterInit = { master: true; nonHaltedWallets: ScanSetting[] };
-export type MasterSlaveInit = MasterInit | SlaveInit;
+
 declare module "bun" {
   interface BunFile {
     delete(): Promise<void>;
@@ -85,15 +66,17 @@ export async function trimGetBlocksBinBuffer(
   const snail = Math.min(
     ...(
       await Promise.all(
-        nonHaltedWallets.map(
-          async (wallet) =>
-            (
-              await readCacheFileDefaultLocation(
-                wallet.primary_address,
-                pathPrefix
-              )
-            )?.scanned_ranges[0]?.end
-        )
+        nonHaltedWallets
+          .slice(1)
+          .map(
+            async (wallet) =>
+              (
+                await readCacheFileDefaultLocation(
+                  wallet.primary_address,
+                  pathPrefix
+                )
+              )?.scanned_ranges[0]?.end
+          )
       )
     ).filter((x) => x !== undefined)
   );
@@ -101,7 +84,7 @@ export async function trimGetBlocksBinBuffer(
   const bufferItems = await readGetblocksBinBufferItems(pathPrefix);
 
   for (const bufferItem of bufferItems) {
-    if (bufferItem.end < snail) {
+    if (bufferItem.end <= snail) {
       await Bun.file(
         `${pathPrefix ?? ""}getblocksbinbuffer/${bufferItem.filename}`
       ).delete();
@@ -116,33 +99,20 @@ export async function readGetblocksBinBufferItems(
   ).catch(() => []);
   const ranges = [];
   for (const filename of bufferItems) {
-    const [date, start, end] = filename.split("-");
+    const [date, start, end, last_block_hash] = filename.split("-");
     ranges.push({
       start: parseInt(start),
       end: parseInt(end),
       filename,
       date,
+      last_block_hash,
     });
   }
   return ranges;
 }
-export async function updateGetBlocksBinBuffer(
-  masterSlaveInit: MasterSlaveInit | undefined,
-  firstResponse: Uint8Array,
-  result: ScanResult | ErrorResponse | undefined,
-  pathPrefix?: string
-) {
-  if (masterSlaveInit && "master" in masterSlaveInit) {
-    if (result && "block_infos" in result)
-      await writeGetblocksBinBuffer(
-        firstResponse,
-        result.block_infos,
-        pathPrefix
-      ); // feed the slaves
-
-    return await trimGetBlocksBinBuffer(
-      masterSlaveInit.nonHaltedWallets,
-      pathPrefix
-    );
-  }
+export interface HasGetBlocksBinExecuteRequestMethod {
+  getBlocksBinExecuteRequest: (
+    params: GetBlocksBinRequest,
+    stopSync?: AbortSignal
+  ) => Promise<Uint8Array<ArrayBufferLike>>;
 }

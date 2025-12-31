@@ -145,7 +145,9 @@ export class ScanCacheOpened {
         walletSettingsWithKeys.secret_view_key,
         walletSettings.node_url || params.node_url
       ),
-      params.write_scan_settings
+      params.write_scan_settings,
+      params.scan_settings_path,
+      params.pathPrefix
     );
     if (theCatchToBeOpened) scanCacheOpen._cache = theCatchToBeOpened;
     if (params.isMaster && params.isSlave)
@@ -255,6 +257,17 @@ export class ScanCacheOpened {
       );
     if (start_height) this.wallet_scan_setting.start_height = start_height;
     if (node_url) this.node_url = node_url;
+    const settingsPathLine = this.scan_settings_path
+      ? `const scan_settings_path = '${this.scan_settings_path}';`
+      : "const scan_settings_path = undefined;";
+    const pathPrefixLine = this.pathPrefix
+      ? `const pathPrefix = '${this.pathPrefix}';`
+      : "const pathPrefix = undefined;";
+    const worker_script = `\n
+      ${settingsPathLine}
+      ${pathPrefixLine}
+      ${workerMainCode}
+      `;
 
     // if startheight changed, restart worker,
     // if node_url changed, restart worker (if this was the same viewpair instance in the same thread, we wouldnt have to)
@@ -264,13 +277,7 @@ export class ScanCacheOpened {
     if ((!this.worker || start_height || node_url) && !this._isSlave) {
       this.worker?.terminate(); // TODO start multiple workers
       if (this._isMaster) {
-        const multiple_worker_script = `\n
-      const scan_settings = JSON.parse('${JSON.stringify(
-        this._isMaster.scan_settings
-      )}')
-      ${workerMultipleMainCode}
-      `;
-        this.worker = startWebworker(multiple_worker_script, (x) => {
+        this.worker = startWebworker(worker_script, (x) => {
           this._cache = (x as CacheChangedCallbackParameters).newCache;
           this.feed(x as CacheChangedCallbackParameters);
           this._isMaster!.masterCacheChanged(
@@ -278,12 +285,6 @@ export class ScanCacheOpened {
           );
         });
       } else {
-        const worker_script = `\n
-      const wallet_scan_setting = JSON.parse('${JSON.stringify(
-        this.wallet_scan_setting
-      )}')
-      ${workerMainCode}
-      `;
         this.worker = startWebworker(worker_script, (x) => {
           this._cache = (x as CacheChangedCallbackParameters).newCache;
           this.feed(x as CacheChangedCallbackParameters);
@@ -361,6 +362,8 @@ export class ScanCacheOpened {
   private constructor(
     public readonly view_pair: ViewPair,
     private write_scan_settings: boolean = true,
+    private scan_settings_path?: string,
+    private pathPrefix?: string,
     private wallet_scan_setting?: ScanSetting,
     private worker?: Worker
   ) {}

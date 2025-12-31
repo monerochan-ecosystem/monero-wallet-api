@@ -1,6 +1,11 @@
 import type { BlockInfo, Output } from "../../api";
 import { computeKeyImage, type KeyImage } from "./computeKeyImage";
-import { mergeRanges, findRange } from "./scanCache";
+import {
+  mergeRanges,
+  findRange,
+  cacheFileDefaultLocation,
+  readCacheFileDefaultLocation,
+} from "./scanCache";
 import { type ErrorResponse } from "../../node-interaction/binaryEndpoints";
 import { handleReorg } from "./reorg";
 import type { ConnectionStatus } from "../connectionStatus";
@@ -10,16 +15,40 @@ import type {
   ChangedOutput,
   ScanCache,
 } from "./scanCache";
-import { sleep } from "../../io/sleep";
+import { atomicWrite } from "../../io/atomicWrite";
 
-export async function processScanResult(
-  current_range: CacheRange,
-  result: ScanResult | ErrorResponse | undefined,
-  cache: ScanCache,
-  cacheChanged: CacheChangedCallback,
-  connection_status: ConnectionStatus,
-  spend_private_key?: string
-) {
+export type ProcessScanResultParams = {
+  current_range: CacheRange;
+  result: ScanResult | ErrorResponse | undefined;
+  cacheChanged: CacheChangedCallback;
+  connection_status: ConnectionStatus;
+  secret_spend_key?: string;
+  pathPrefix?: string;
+  use_master_current_range?: boolean;
+};
+export async function processScanResult(params: ProcessScanResultParams) {
+  let current_range = params.current_range;
+  const {
+    result,
+    cacheChanged,
+    connection_status,
+    secret_spend_key,
+    pathPrefix,
+    use_master_current_range,
+  } = params;
+  if (!(result && "primary_address" in result)) return current_range;
+  const cache = await readCacheFileDefaultLocation(
+    result.primary_address,
+    pathPrefix
+  );
+  if (!cache)
+    throw new Error(
+      `cache not found for primary address: ${result.primary_address} and path prefix: ${pathPrefix}`
+    );
+
+  if (use_master_current_range) {
+    cache.scanned_ranges.unshift(current_range);
+  }
   if (result && "new_height" in result) {
     const [new_range, changed_outputs] = updateScanHeight(
       current_range,
@@ -29,24 +58,23 @@ export async function processScanResult(
     current_range = new_range;
 
     changed_outputs.push(
-      ...(await detectOutputs(result, cache, spend_private_key))
+      ...(await detectOutputs(result, cache, secret_spend_key))
     );
 
-    if (spend_private_key)
+    if (secret_spend_key)
       changed_outputs.push(...detectOwnspends(result, cache));
+
+    // write to cache
+    await atomicWrite(
+      cacheFileDefaultLocation(cache.primary_address, pathPrefix),
+      JSON.stringify(cache, null, 2)
+    );
+
     await cacheChanged({
       newCache: cache,
       changed_outputs,
       connection_status,
     });
-
-    if (result.block_infos.length === 0) {
-      // we are at the tip, and there are no new blocks
-      // sleep for 1 second before sending another
-      // getBlocks.bin request
-      //
-      await sleep(1000);
-    }
   }
   return current_range;
 }

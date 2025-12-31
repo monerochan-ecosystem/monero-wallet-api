@@ -8,14 +8,19 @@ import type {
   Output,
 } from "../../api";
 import type { WasmProcessor } from "../../wasm-processing/wasmProcessor";
+import { atomicWrite } from "../../io/atomicWrite";
 
 export async function initScanCache<
   T extends WasmProcessor & HasGetBlockHeadersRangeMethod & HasPrimaryAddress
 >(
   processor: T,
   start_height: number,
-  initialCache?: ScanCache
-): Promise<[ScanCache, CacheRange]> {
+  pathPrefix?: string
+): Promise<CacheRange> {
+  const initialCache = await readCacheFileDefaultLocation(
+    processor.primary_address,
+    pathPrefix
+  );
   let cache: ScanCache = {
     outputs: {},
     own_key_images: {},
@@ -55,7 +60,12 @@ export async function initScanCache<
 
   if (current_range == null || !current_range?.block_hashes.length)
     throw new Error("current_range was malformed. block_hashes is empty");
-  return [cache, current_range];
+  // write to cache
+  await atomicWrite(
+    cacheFileDefaultLocation(cache.primary_address, pathPrefix),
+    JSON.stringify(cache, null, 2)
+  );
+  return current_range;
 }
 export async function readCacheFile(
   cacheFilePath: string
@@ -65,12 +75,18 @@ export async function readCacheFile(
     .catch(() => undefined);
   return jsonString ? (JSON.parse(jsonString) as ScanCache) : undefined;
 }
+export function cacheFileDefaultLocation(
+  primary_address: string,
+  pathPrefix?: string
+) {
+  return `${pathPrefix ?? ""}${primary_address}_cache.json`;
+}
 export async function readCacheFileDefaultLocation(
   primary_address: string,
   pathPrefix?: string
 ): Promise<ScanCache | undefined> {
   return await readCacheFile(
-    `${pathPrefix ?? ""}${primary_address}_cache.json`
+    cacheFileDefaultLocation(primary_address, pathPrefix)
   );
 }
 export function mergeRanges(ranges: CacheRange[]): CacheRange[] {
