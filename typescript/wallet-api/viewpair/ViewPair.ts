@@ -13,7 +13,7 @@ import {
   MAINNET_GENESIS_BLOCK_HASH,
   STAGENET_GENESIS_BLOCK_HASH,
 } from "../node-interaction/binaryEndpoints";
-import { handleScanError } from "../scanning-syncing/scanresult/scanWithCache";
+import { handleScanError } from "../scanning-syncing/scanresult/scanCache";
 import {
   makeTransaction,
   type MakeTransactionParams,

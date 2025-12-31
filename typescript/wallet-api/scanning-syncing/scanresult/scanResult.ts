@@ -99,7 +99,7 @@ export type EmptyScanResult = {}; // can happen when we abort a scan before any 
 export type FastForward = number; // height to fast forward scan to
 /**
  * we will await async callbacks. convenient way to halt a sync + feed back the key image list,
- * to look out for our own spends before proceeding the scan. This happens in the scanWithCache function.
+ * to look out for our own spends before proceeding the scan. This happens in the processScanResult function.
  */
 export type ScanResultCallback =
   | ((

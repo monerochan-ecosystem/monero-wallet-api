@@ -187,3 +187,40 @@ export interface HasGetBlockHeadersRangeMethod {
 export interface HasPrimaryAddress {
   primary_address: string;
 }
+export function handleScanError(error: unknown) {
+  // treat errno 0 code "ConnectionRefused" as non fatal outcome, and rethrow,
+  // so that UI can be informed after catching it higher up
+  if (isConnectionError(error)) {
+    console.log("Scan stopped. node might be offline. Connection Refused");
+    throw error;
+  }
+  // Treat AbortError as a normal, non-fatal outcome
+  if (
+    error &&
+    typeof error === "object" &&
+    (("name" in error && error.name === "AbortError") ||
+      ("code" in error && error.code === 20))
+  ) {
+    console.log("Scan was aborted.");
+    return;
+  } else {
+    console.log(
+      error,
+      "\n, scanWithCache in scanning-syncing/scanWithCache.ts`"
+    );
+    throw error;
+  }
+}
+
+export function isConnectionError(error: unknown) {
+  if (
+    error &&
+    typeof error === "object" &&
+    (("code" in error && error.code === "ConnectionRefused") ||
+      ("errno" in error && error.errno === 0))
+  ) {
+    return true;
+  } else {
+    false;
+  }
+}

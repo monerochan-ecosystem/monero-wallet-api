@@ -33,7 +33,6 @@ export type ScanSettingsOpened = {
   wallets: (ScanSettingOpened | undefined)[]; // ts should treat arrays like this by default. (value|undefined)[]
   node_urls: string[];
 };
-// to be used by scanWithCacheFromSettings() function on ViewPairs instance
 /**
  * Writes scan settings to the default or specified storage file in json.
  *

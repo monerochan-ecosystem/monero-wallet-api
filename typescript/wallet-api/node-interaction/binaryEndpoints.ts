@@ -92,10 +92,10 @@ export type Output = {
   is_miner_tx: boolean;
   primary_address: string;
   serialized: string;
-  spent_relative_index?: number; // scanWithCache sets this to relative index in the tx it was spent in
-  spent_in_tx_hash?: string; // scanWithCache will set this, if detected as ownspend (transaction)
-  spent_block_height?: number; // scanWithCache sets this to height, where it was detected as ownspend
-  spent_block_timestamp?: number; // scanWithCache sets this to timestamp, where it was detected as ownspend
+  spent_relative_index?: number; // processScanResult sets this to relative index in the tx it was spent in
+  spent_in_tx_hash?: string; // processScanResult will set this, if detected as ownspend (transaction)
+  spent_block_height?: number; // processScanResult sets this to height, where it was detected as ownspend
+  spent_block_timestamp?: number; // processScanResult sets this to timestamp, where it was detected as ownspend
   burned?: number; // index of the earlier output, that lives, while this one got burned. https://monerochan.news/article/8
 };
 
