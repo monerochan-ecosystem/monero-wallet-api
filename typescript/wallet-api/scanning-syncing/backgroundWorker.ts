@@ -29,7 +29,7 @@ export function startWebworker(
   handle_result?: (result: unknown) => void
 ) {
   const blob = new Blob([WW_ERROR_FORWARDING_SNIPPET + worker_script], {
-    type: "application/typescript",
+    type: "text/javascript",
   });
   const url = URL.createObjectURL(blob);
   const worker = new Worker(url);

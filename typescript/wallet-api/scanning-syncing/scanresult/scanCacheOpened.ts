@@ -74,7 +74,8 @@ export class ScanCacheOpened {
     const scanCacheOpen = new ScanCacheOpened(
       await ViewPair.create(
         params.primary_address,
-        walletSettingsWithKeys.secret_view_key
+        walletSettingsWithKeys.secret_view_key,
+        walletSettings.node_url
       ),
       params.scan_settings_path,
       params.pathPrefix
