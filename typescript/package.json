@@ -17,6 +17,9 @@
     "sumworker": "cat dist/scanning-syncing/worker-entrypoints/worker.js | sha256sum > worker_checksum.txt",
     "inlinesumworker": "bun run inlineworker && bun run sumworker",
     "inlinesum": "bun run inlinesumwasm && bun run inlinesumworker",
+    "copydevworker":"cp dist/scanning-syncing/worker-entrypoints/worker.js wallet-api/scanning-syncing/worker-entrypoints/worker.ts",
+    "copydevwasm":"cp dist/wasm-processing/wasmFile.js wallet-api/wasm-processing/wasmFile.ts",
+    "copydev":"bun run build && bun run inlinesum && bun run copydevworker && bun run copydevwasm",
     "build": "tsc",
     "clean": "rm -rf ./dist"
   },

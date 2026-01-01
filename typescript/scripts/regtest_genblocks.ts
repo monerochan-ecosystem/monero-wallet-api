@@ -21,6 +21,10 @@ console.log("run this command to start regtest node with persisted fakechain:");
 console.log(
   "./monerod --regtest --offline --fixed-difficulty 1 --data-dir ./regtest-data --keep-fakechain --rpc-bind-port 18081 --confirm-external-bind --disable-rpc-ban"
 );
+console.log("run this command if you need cors headers for local testing:");
+console.log(
+  './monerod --regtest --offline --fixed-difficulty 1 --log-level=2 --rpc-bind-ip=127.0.0.1 --rpc-bind-port=18081 --rpc-access-control-origins="*"'
+);
 console.log("");
 console.log("regest generateblocks command response:");
 (async () => {
