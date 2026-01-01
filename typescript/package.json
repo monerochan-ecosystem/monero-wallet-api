@@ -11,8 +11,12 @@
   "scripts": {
     "publish": "bun run build && bun run inlinesum && npm publish",
     "inlinewasm": "bun build templates/wasm/wasmFile.ts --target=browser --outdir dist/wasm-processing",
-    "sumwasm": "cat dist/wasm-processing/wasmFile.js | sha256sum > checksum.txt",
+    "sumwasm": "cat dist/wasm-processing/wasmFile.js | sha256sum > wasm_checksum.txt",
     "inlinesumwasm": "bun run inlinewasm && bun run sumwasm",
+    "inlineworker": "bun build templates/workers/worker.ts --target=browser --outdir dist/scanning-syncing/worker-entrypoints",
+    "sumworker": "cat dist/scanning-syncing/worker-entrypoints/worker.js | sha256sum > worker_checksum.txt",
+    "inlinesumworker": "bun run inlineworker && bun run sumworker",
+    "inlinesum": "bun run inlinesumwasm && bun run inlinesumworker",
     "build": "tsc",
     "clean": "rm -rf ./dist"
   },
