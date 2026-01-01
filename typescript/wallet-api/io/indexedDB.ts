@@ -26,8 +26,13 @@ class IndexedDBBun implements Bun {
   ): Promise<number> {
     return await putFileIntoIndexedDB(destination.toString(), input);
   }
+  env: BunEnv = {};
 }
-
+export type BunEnv = {
+  [key: string]: string | undefined;
+  TZ?: string | undefined;
+  NODE_ENV?: string | undefined;
+};
 class IndexedDBFile implements BunFile {
   readonly size: number = 0;
   readonly type: string = "";
@@ -128,12 +133,12 @@ export async function putFileIntoIndexedDB(
   path: string,
   content: PossibleBunFileContent
 ): Promise<number> {
-  if (!window.filesDb) {
+  if (!browserGlobal.filesDb) {
     throw new Error("IndexedDB not initialized");
   }
   const [dbContent, byteLength] = await getItemLength(content);
 
-  const tx = window.filesDb.transaction(fileStoreName, "readwrite");
+  const tx = browserGlobal.filesDb.transaction(fileStoreName, "readwrite");
   const store = tx.objectStore(fileStoreName);
   const request = store.put(dbContent, path);
 
@@ -144,10 +149,10 @@ export async function putFileIntoIndexedDB(
 }
 
 export function getFileFromIndexedDB(path: string) {
-  if (!window.filesDb) {
+  if (!browserGlobal.filesDb) {
     throw new Error("IndexedDB not initialized");
   } else {
-    const tx = window.filesDb.transaction(fileStoreName, "readonly");
+    const tx = browserGlobal.filesDb.transaction(fileStoreName, "readonly");
     const store = tx.objectStore(fileStoreName);
     const request = store.get(path);
     return new Promise((resolve, reject) => {
@@ -168,21 +173,23 @@ async function initFilesDB(): Promise<IDBDatabase> {
   });
 }
 
-if (typeof globalThis.Bun === "undefined" && typeof window !== "undefined") {
-  window.filesDb = await initFilesDB();
-  window.Bun = new IndexedDBBun() as typeof import("bun");
-  //@ts-ignore
-  window.Bun.env = await readEnvIndexedDB();
-}
-declare global {
-  interface Window {
-    filesDb?: IDBDatabase;
-  }
+export type BrowserGlobal = {
+  filesDb?: IDBDatabase;
+  Bun: IndexedDBBun;
+};
+// In browsers: window in main thread, self in workers
+const hasWindow = typeof window !== "undefined";
+const hasSelf = typeof self !== "undefined";
+//@ts-ignore
+const browserGlobal: BrowserGlobal = hasWindow ? window : hasSelf ? self : {}; // non-browser -> no shimming
+if (typeof globalThis.Bun === "undefined") {
+  browserGlobal.filesDb = await initFilesDB();
+  browserGlobal.Bun = new IndexedDBBun() as typeof import("bun");
+  browserGlobal.Bun.env = await readEnvIndexedDB();
 }
 
 export async function refreshEnvIndexedDB() {
-  //@ts-ignore
-  window.Bun.env = await readEnvIndexedDB();
+  browserGlobal.Bun.env = await readEnvIndexedDB();
 }
 
 // we need this to change the env at runtime from inside the Browser extension,
