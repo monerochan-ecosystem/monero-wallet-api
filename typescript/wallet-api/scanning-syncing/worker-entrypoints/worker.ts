@@ -1,7 +1,7 @@
 async function makeWorkerSource() {
   const workerMainCode = await Bun.build({
     entrypoints: ["./wallet-api/scanning-syncing/worker-mains/worker.ts"],
-    target: "bun",
+    target: "browser",
   });
 
   if (workerMainCode.success) {
