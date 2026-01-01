@@ -283,7 +283,7 @@ export function getOutsBinMakeRequest<T extends WasmProcessor>(
   }
   return getOutsArray as Uint8Array; // written in build_getblocksbin_request call to readFromWasmMemory
 }
-export type GetOutsResponseBuffer = Uint8Array<ArrayBufferLike>;
+export type GetOutsResponseBuffer = Uint8Array;
 export async function getOutsBinExecuteRequest<
   T extends WasmProcessor & HasNodeUrl
 >(processor: T, params: GetOutsBinRequest): Promise<GetOutsResponseBuffer> {

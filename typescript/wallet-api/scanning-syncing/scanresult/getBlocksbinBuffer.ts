@@ -47,7 +47,7 @@ export async function readGetblocksBinBuffer(
   return [];
 }
 
-export type BlocksGenerator = AsyncGenerator<Uint8Array<ArrayBufferLike>>;
+export type BlocksGenerator = AsyncGenerator<Uint8Array>;
 export type SlaveViewPair = {
   viewpair: ViewPair;
   current_range: CacheRange;
@@ -114,5 +114,5 @@ export interface HasGetBlocksBinExecuteRequestMethod {
   getBlocksBinExecuteRequest: (
     params: GetBlocksBinRequest,
     stopSync?: AbortSignal
-  ) => Promise<Uint8Array<ArrayBufferLike>>;
+  ) => Promise<Uint8Array>;
 }
