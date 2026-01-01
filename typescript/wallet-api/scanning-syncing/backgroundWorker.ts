@@ -32,7 +32,7 @@ export function startWebworker(
     type: "text/javascript",
   });
   const url = URL.createObjectURL(blob);
-  const worker = new Worker(url);
+  const worker = new Worker(url, { type: "module" });
   worker.onmessage = (event) => {
     switch (event.data.type) {
       case "RESULT": // Handle normal messages
