@@ -10,9 +10,9 @@
   },
   "scripts": {
     "publish": "bun run build && bun run inlinesum && npm publish",
-    "inline": "bun build scripts/wasmFile.ts --target=browser --outdir dist/wasm-processing",
-    "sum": "cat dist/wasm-processing/wasmFile.js | sha256sum > checksum.txt",
-    "inlinesum": "bun run inline && bun run sum",
+    "inlinewasm": "bun build templates/wasm/wasmFile.ts --target=browser --outdir dist/wasm-processing",
+    "sumwasm": "cat dist/wasm-processing/wasmFile.js | sha256sum > checksum.txt",
+    "inlinesumwasm": "bun run inlinewasm && bun run sumwasm",
     "build": "tsc",
     "clean": "rm -rf ./dist"
   },
