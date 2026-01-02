@@ -50,9 +50,11 @@ class IndexedDBFile implements BunFile {
     return new ReadableStream();
   }
 
-  arrayBuffer(): Promise<ArrayBuffer> {
-    throw new Error("not implemented");
-    return Promise.resolve(new ArrayBuffer(0));
+  async arrayBuffer(): Promise<ArrayBuffer> {
+    const result = (await this.content) as Promise<ArrayBuffer | undefined>;
+    if (!result)
+      throw new Error(`no such file or directory, open '${this.path}'`);
+    return result as Promise<ArrayBuffer>;
   }
 
   json(): Promise<any> {
@@ -68,6 +70,10 @@ class IndexedDBFile implements BunFile {
   exists(): Promise<boolean> {
     throw new Error("not implemented");
     return Promise.resolve(false);
+  }
+  delete(): Promise<void> {
+    throw new Error("not implemented");
+    return Promise.resolve();
   }
 }
 
