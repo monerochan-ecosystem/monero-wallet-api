@@ -72,8 +72,7 @@ class IndexedDBFile implements BunFile {
     return Promise.resolve(false);
   }
   delete(): Promise<void> {
-    throw new Error("not implemented");
-    return Promise.resolve();
+    return deleteFileFromIndexedDB(this.path!);
   }
 }
 
@@ -166,6 +165,20 @@ export function getFileFromIndexedDB(path: string) {
       request.onerror = () => reject(request.error);
     });
   }
+}
+export async function deleteFileFromIndexedDB(path: string): Promise<void> {
+  if (!browserGlobal.filesDb) {
+    throw new Error("IndexedDB not initialized");
+  }
+
+  const tx = browserGlobal.filesDb.transaction(fileStoreName, "readwrite");
+  const store = tx.objectStore(fileStoreName);
+  const request = store.delete(path.trim());
+
+  return new Promise<void>((resolve, reject) => {
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
 }
 export const fileStoreName = "files";
 
