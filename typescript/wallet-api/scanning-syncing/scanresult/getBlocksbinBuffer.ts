@@ -1,4 +1,5 @@
 import type { BlockInfo, GetBlocksBinRequest, ViewPair } from "../../api";
+import { atomicWrite } from "../../io/atomicWrite";
 import { readDir } from "../../io/readDir";
 import type { ScanSetting } from "../scanSettings";
 import { readCacheFileDefaultLocation, type CacheRange } from "./scanCache";
@@ -15,7 +16,7 @@ export async function writeGetblocksBinBuffer(
   const bufferItems = await readGetblocksBinBufferItems(pathPrefix);
   if (bufferItems.find((bi) => bi.last_block_hash === block_hash)) return;
   // if we have the same end blockhash already, dont write
-  return await Bun.write(
+  return await atomicWrite(
     `${
       pathPrefix ?? ""
     }getblocksbinbuffer/${Date.now()}-${start}-${end}-${block_hash}-getblocks.bin`,

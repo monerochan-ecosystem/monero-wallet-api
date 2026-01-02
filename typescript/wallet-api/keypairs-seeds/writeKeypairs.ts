@@ -3,6 +3,7 @@
 // write mainnet keys to stdout can > redirect to the place of your desires
 // (but you really shouldnt, use a seedphrase instead)
 
+import { atomicWrite } from "../io/atomicWrite";
 import { makeSpendKey, makeViewKey } from "./keypairs";
 
 export const stagenet_pk_path = ".env";
@@ -105,7 +106,7 @@ export async function writeEnvLineToDotEnv(
       ? [...lines, `${key.trim()}=${value.trim()}`]
       : lines.with(idx, `${key.trim()}=${value.trim()}`);
 
-  await Bun.write(path, updatedLines.join("\n"));
+  await atomicWrite(path, updatedLines.join("\n"));
 }
 
 export const STAGENET_FRESH_WALLET_HEIGHT_DEFAULT = 2014841; // current height of stagenet dec 18 2025,

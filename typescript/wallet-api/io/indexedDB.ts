@@ -195,6 +195,7 @@ async function initFilesDB(): Promise<IDBDatabase> {
 export type BrowserGlobal = {
   filesDb?: IDBDatabase;
   Bun: IndexedDBBun;
+  areWeInTheBrowser: boolean;
 };
 // In browsers: window in main thread, self in workers
 const hasWindow = typeof window !== "undefined";
@@ -205,6 +206,9 @@ if (typeof globalThis.Bun === "undefined") {
   browserGlobal.filesDb = await initFilesDB();
   browserGlobal.Bun = new IndexedDBBun() as typeof import("bun");
   browserGlobal.Bun.env = await readEnvIndexedDB();
+  browserGlobal.areWeInTheBrowser = true;
+} else {
+  browserGlobal.areWeInTheBrowser = false;
 }
 
 export async function refreshEnvIndexedDB() {

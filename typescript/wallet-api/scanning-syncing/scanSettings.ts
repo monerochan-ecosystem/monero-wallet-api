@@ -1,3 +1,4 @@
+import { atomicWrite } from "../io/atomicWrite";
 import { LOCAL_NODE_DEFAULT_URL } from "../node-interaction/nodeUrl";
 
 export const SCAN_SETTINGS_STORE_NAME_DEFAULT = "ScanSettings.json";
@@ -57,7 +58,7 @@ export async function writeScanSettings(
   scan_settings: ScanSettings,
   settingsStorePath: string = SCAN_SETTINGS_STORE_NAME_DEFAULT
 ) {
-  return await Bun.write(
+  return await atomicWrite(
     settingsStorePath,
     JSON.stringify(scan_settings, null, 2)
   );
@@ -194,7 +195,7 @@ export async function writeWalletToScanSettings(
     }
   }
 
-  return await Bun.write(
+  return await atomicWrite(
     params.scan_settings_path,
     JSON.stringify(scanSettings, null, 2)
   );
