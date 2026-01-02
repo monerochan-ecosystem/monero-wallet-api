@@ -54,5 +54,3 @@ self.onerror = (e) => self.postMessage({ type: 'ERROR', payload: e.message });
 self.addEventListener('unhandledrejection', (e) => 
   self.postMessage({ type: 'ERROR', payload: e.reason })
 ); \n`;
-
-// TODO: do one for ViewPairs / ManyScanCachesOpened

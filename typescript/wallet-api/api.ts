@@ -5,7 +5,6 @@ export type {
 } from "./scanning-syncing/scanresult/scanResult";
 export { NodeUrl } from "./node-interaction/nodeUrl";
 export { ViewPair } from "./viewpair/ViewPair";
-export { ViewPairs } from "./viewpair/ViewPairs";
 
 export * from "./node-interaction/binaryEndpoints";
 export * from "./node-interaction/jsonEndpoints";
