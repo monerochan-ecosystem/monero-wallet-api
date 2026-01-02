@@ -25,6 +25,7 @@
     "copydevwasm":"cp dist/wasm-processing/wasmFile.js wallet-api/wasm-processing/wasmFile.ts",
     "copydev":"bun run safewasm && bun run safeworker && bun run copydevworker && bun run copydevwasm",
     "restoredev":"bun run restorewasm && bun run restoreworker",
+    "refreshdev":"bun run restoredev && bun run inlinesum && bun run copydev",
     "build": "tsc",
     "clean": "rm -rf ./dist"
   },
