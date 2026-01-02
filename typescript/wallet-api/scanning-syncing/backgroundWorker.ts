@@ -10,6 +10,7 @@ export async function scanWallets(
 ) {
   const nonHaltedWallets = await openNonHaltedWallets(scan_settings_path);
   const masterWalletSettings = nonHaltedWallets[0];
+  if (!masterWalletSettings) return;
   const masterWithKeys = walletSettingsPlusKeys(masterWalletSettings);
   const masterViewPair = await ViewPair.create(
     masterWalletSettings.primary_address,
