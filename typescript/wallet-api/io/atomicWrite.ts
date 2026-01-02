@@ -1,8 +1,6 @@
 import type { BunFile } from "bun";
 import type { TypedArray } from "./BunFileInterface";
-declare global {
-  var areWeInTheBrowser: boolean;
-}
+
 export async function atomicWrite(
   targetPath: string,
   data: string | Blob | ArrayBuffer | SharedArrayBuffer | TypedArray | Response

@@ -197,6 +197,9 @@ export type BrowserGlobal = {
   Bun: IndexedDBBun;
   areWeInTheBrowser: boolean;
 };
+declare global {
+  var areWeInTheBrowser: boolean;
+}
 // In browsers: window in main thread, self in workers
 const hasWindow = typeof window !== "undefined";
 const hasSelf = typeof self !== "undefined";
