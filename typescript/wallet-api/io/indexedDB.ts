@@ -235,3 +235,22 @@ export async function readEnvIndexedDBLine(key: string): Promise<string> {
   const idx = lines.findIndex((line) => line.startsWith(key.trim()));
   return lines[idx].split("=")[1].trim();
 }
+
+export async function readdir(dirpath: string): Promise<string[]> {
+  if (!browserGlobal.filesDb) {
+    throw new Error("IndexedDB not initialized");
+  }
+  let prefix = dirpath.trim();
+  if (prefix && !prefix.endsWith("/")) {
+    prefix += "/";
+  }
+  const tx = browserGlobal.filesDb.transaction(fileStoreName, "readonly");
+  const store = tx.objectStore(fileStoreName);
+  const range = IDBKeyRange.bound(prefix, prefix + "\uffff", false, true);
+  const keys = await new Promise<IDBValidKey[]>((resolve, reject) => {
+    const request = store.getAllKeys(range);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+  return keys.map((key) => (key as string).slice(prefix.length));
+}
