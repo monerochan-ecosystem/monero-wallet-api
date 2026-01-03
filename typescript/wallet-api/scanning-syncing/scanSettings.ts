@@ -6,14 +6,12 @@ export type ScanSetting = {
   primary_address: string;
   start_height: number;
   halted?: boolean;
-  stop_height?: number | null;
   node_url?: string;
 };
 export type WriteScanSettingParams = {
   primary_address: string;
   start_height?: number;
   halted?: boolean;
-  stop_height?: number | null;
   scan_settings_path?: string; // write your settings to a different path
   node_url?: string;
 };
@@ -23,8 +21,7 @@ export type ScanSettingOpened = {
   node_url: string;
   secret_view_key?: string;
   halted?: boolean;
-  spend_private_key?: string;
-  stop_height?: number | null;
+  secret_spend_key?: string;
 };
 export type ScanSettings = {
   wallets: ScanSetting[];
@@ -88,11 +85,15 @@ export async function readScanSettings(
   ) as ScanSettingsOpened;
   if (!scanSettings) return undefined;
   for (const [i, wallet] of scanSettings.wallets.entries()) {
-    const primary_address = wallet!.primary_address;
-    const secret_view_key = Bun.env["vk" + primary_address];
-    const spend_private_key = Bun.env["sk" + primary_address];
-    openScanSettings.wallets[i]!.secret_view_key = secret_view_key;
-    openScanSettings.wallets[i]!.spend_private_key = spend_private_key;
+    if (!wallet.primary_address)
+      throw new Error(
+        "The entry ${i} in the wallet settings list in ${scan_settings_path} has no primary address"
+      );
+    const walletWithKeys = walletSettingsPlusKeys(wallet);
+    openScanSettings.wallets[i]!.secret_view_key =
+      walletWithKeys.secret_view_key;
+    openScanSettings.wallets[i]!.secret_spend_key =
+      walletWithKeys.secret_spend_key;
   }
   return openScanSettings;
 }
@@ -156,8 +157,11 @@ export async function writeWalletToScanSettings(
   if (!params.node_url) params.node_url = LOCAL_NODE_DEFAULT_URL;
   if (!params.scan_settings_path)
     params.scan_settings_path = SCAN_SETTINGS_STORE_NAME_DEFAULT;
+  if (!params.primary_address)
+    throw new Error(
+      "no primary address provided to writeWalletToScanSettings()"
+    );
   const scanSettings = await openScanSettingsFile(params.scan_settings_path);
-
   if (!scanSettings) {
     // case: no scan settings exist yet
     return await writeScanSettings(
@@ -167,7 +171,6 @@ export async function writeWalletToScanSettings(
             primary_address: params.primary_address,
             start_height: params.start_height || 0,
             halted: params.halted,
-            stop_height: params.stop_height,
           },
         ],
         node_urls: [params.node_url],
@@ -184,6 +187,7 @@ export async function writeWalletToScanSettings(
     scanSettings.wallets.push({
       primary_address: params.primary_address,
       start_height: params.start_height || 0,
+      halted: params.halted,
     });
   } else {
     // wallet already exists
@@ -191,7 +195,6 @@ export async function writeWalletToScanSettings(
     if (wallet) {
       wallet.start_height = params.start_height || wallet.start_height;
       wallet.halted = params.halted;
-      wallet.stop_height = params.stop_height;
     }
   }
 

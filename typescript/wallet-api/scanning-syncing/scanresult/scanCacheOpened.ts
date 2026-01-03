@@ -175,7 +175,7 @@ export class ScanCacheOpened {
   public async pause() {
     if (this.worker) this.worker.terminate();
     return await writeWalletToScanSettings({
-      primary_address: this._cache.primary_address,
+      primary_address: this.view_pair.primary_address,
       halted: true,
       scan_settings_path: this.scan_settings_path,
     });
@@ -213,7 +213,7 @@ export class ScanCacheOpened {
       }
     }
     return await writeWalletToScanSettings({
-      primary_address: this._cache.primary_address,
+      primary_address: this.view_pair.primary_address,
       halted: false,
       scan_settings_path: this.scan_settings_path,
     });
