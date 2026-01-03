@@ -15,3 +15,4 @@ export {
 
 export { signTransaction } from "./send-functionality/transactionBuilding";
 export { computeKeyImage } from "./scanning-syncing/scanresult/computeKeyImage";
+export { scanWallets } from "./scanning-syncing/backgroundWorker";
