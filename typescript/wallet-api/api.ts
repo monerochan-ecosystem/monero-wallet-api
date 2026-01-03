@@ -8,6 +8,10 @@ export { ViewPair } from "./viewpair/ViewPair";
 
 export * from "./node-interaction/binaryEndpoints";
 export * from "./node-interaction/jsonEndpoints";
+export * from "./io/readDir";
+export * from "./io/atomicWrite";
+export * from "./io/sleep";
+
 export {
   writeScanSettings,
   readScanSettings,
