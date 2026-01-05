@@ -1,6 +1,10 @@
 import { ViewPair } from "../api";
-import { type CacheChangedCallback } from "./scanresult/scanCache";
+import {
+  type CacheChangedCallback,
+  type CacheChangedCallbackParameters,
+} from "./scanresult/scanCache";
 import { openNonHaltedWallets, walletSettingsPlusKeys } from "./scanSettings";
+import { workerMainCode } from "./worker-entrypoints/worker";
 
 export async function scanWallets(
   cacheChanged: CacheChangedCallback = (params) => console.log(params),
@@ -23,6 +27,33 @@ export async function scanWallets(
     scan_settings_path,
     pathPrefix
   );
+}
+export function createWebworker(
+  handle_result?: (result: CacheChangedCallbackParameters) => void,
+  scan_settings_path?: string,
+  pathPrefix?: string
+) {
+  const worker_script = makeWebworkerScript(scan_settings_path, pathPrefix);
+  return startWebworker(
+    worker_script,
+    handle_result as (result: unknown) => void
+  );
+}
+export function makeWebworkerScript(
+  scan_settings_path?: string,
+  pathPrefix?: string
+) {
+  const settingsPathLine = scan_settings_path
+    ? `const scan_settings_path = '${scan_settings_path}';`
+    : "const scan_settings_path = undefined;";
+  const pathPrefixLine = pathPrefix
+    ? `const pathPrefix = '${pathPrefix}';`
+    : "const pathPrefix = undefined;";
+  return `\n
+      ${settingsPathLine}
+      ${pathPrefixLine}
+      ${workerMainCode}
+      `;
 }
 
 export function startWebworker(

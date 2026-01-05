@@ -9,7 +9,7 @@ import type {
   Input,
   SendError,
 } from "../../send-functionality/transactionBuilding";
-import { startWebworker } from "../backgroundWorker";
+import { createWebworker } from "../backgroundWorker";
 import { spendable } from "./scanResult";
 import {
   openScanSettingsFile,
@@ -181,35 +181,29 @@ export class ScanCacheOpened {
     });
   }
   public async unpause() {
-    const settingsPathLine = this.scan_settings_path
-      ? `const scan_settings_path = '${this.scan_settings_path}';`
-      : "const scan_settings_path = undefined;";
-    const pathPrefixLine = this.pathPrefix
-      ? `const pathPrefix = '${this.pathPrefix}';`
-      : "const pathPrefix = undefined;";
-    const worker_script = `\n
-      ${settingsPathLine}
-      ${pathPrefixLine}
-      ${workerMainCode}
-      `;
-
     // if worker does not exist yet, start it (if we are not slave)
     // TODO: except if we are in an extension, then wire up onmessage
 
     if (!this.worker && !this._isSlave) {
       if (this._isMaster) {
-        this.worker = startWebworker(worker_script, (x) => {
-          this._cache = (x as CacheChangedCallbackParameters).newCache;
-          this.feed(x as CacheChangedCallbackParameters);
-          this._isMaster!.masterCacheChanged(
-            x as CacheChangedCallbackParameters
-          );
-        });
+        this.worker = createWebworker(
+          (result) => {
+            this._cache = result.newCache;
+            this.feed(result);
+            this._isMaster!.masterCacheChanged(result);
+          },
+          this.scan_settings_path,
+          this.pathPrefix
+        );
       } else {
-        this.worker = startWebworker(worker_script, (x) => {
-          this._cache = (x as CacheChangedCallbackParameters).newCache;
-          this.feed(x as CacheChangedCallbackParameters);
-        });
+        this.worker = createWebworker(
+          (result) => {
+            this._cache = result.newCache;
+            this.feed(result);
+          },
+          this.scan_settings_path,
+          this.pathPrefix
+        );
       }
     }
     return await writeWalletToScanSettings({
