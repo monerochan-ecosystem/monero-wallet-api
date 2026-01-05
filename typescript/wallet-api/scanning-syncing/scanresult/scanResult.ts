@@ -5,6 +5,7 @@ import {
   findRange,
   cacheFileDefaultLocation,
   readCacheFileDefaultLocation,
+  lastRange,
 } from "./scanCache";
 import { type ErrorResponse } from "../../node-interaction/binaryEndpoints";
 import { handleReorg } from "./reorg";
@@ -47,7 +48,13 @@ export async function processScanResult(params: ProcessScanResultParams) {
     );
 
   if (use_master_current_range) {
-    cache.scanned_ranges.unshift(current_range);
+    const last = lastRange(cache.scanned_ranges);
+    if (last) {
+      last.block_hashes = current_range.block_hashes;
+      last.end = current_range.end;
+    } else {
+      cache.scanned_ranges.push(current_range);
+    }
   }
   if (result && "new_height" in result) {
     const [new_range, changed_outputs] = updateScanHeight(
@@ -113,13 +120,13 @@ export function updateScanHeight(
   result: ScanResult,
   cache: ScanCache
 ): [CacheRange, ChangedOutput[]] {
-  let last_block_hash = result.block_infos.at(-1);
+  let last_block_hash_of_result = result.block_infos.at(-1);
   let current_blockhash = current_range?.block_hashes.at(0);
   if (!current_blockhash)
     throw new Error(
       "current_range passed to updateScanHeight was malformed. block_hashes is empty"
     );
-  if (!last_block_hash) last_block_hash = current_blockhash; // block_infos empty, no change (we are at tip and there was no new block)
+  if (!last_block_hash_of_result) return [current_range, []]; // block_infos empty, no change (we are at tip and there was no new block)
   // if last blockhash is undefined it means there was not reorg, we are at tip, block_infos is empty ( no new blocks )
 
   const oldRange = findRange(
@@ -138,15 +145,10 @@ export function updateScanHeight(
   // now we need to find the block_infos of old range in the new geblocksbin response result block_infos
   // if we cant find the new range, there was a reorg and we need to clean all outputs after that and log what happened
   let first_block_hash = result.block_infos.at(0);
-  if (!first_block_hash) first_block_hash = current_blockhash; // should never happen, if there is last_block_hash there should be first_block_hash
+  if (!first_block_hash) return [current_range, []]; // should never happen, if there is last_block_hash there should be first_block_hash
 
   // if the first block hash in the response is not the same as the last block hash in the old range, there was a reorg
-  if (
-    !(
-      first_block_hash.block_hash === current_blockhash.block_hash &&
-      first_block_hash.block_height === current_blockhash.block_height
-    )
-  ) {
+  if (!(first_block_hash.block_hash === current_blockhash.block_hash)) {
     return handleReorg(current_range, result, cache, oldRange);
   }
   // scan only happens in one direction,
@@ -154,11 +156,11 @@ export function updateScanHeight(
 
   // getblocksbin will return up to 1000 blocks at once
   // so this should never happen, except if we just popped a block (but that case is handled above in the reorg case)
-  if (current_blockhash.block_height > last_block_hash.block_height)
+  if (current_blockhash.block_height > last_block_hash_of_result.block_height)
     throw new Error(
       `current scan height was larger than block height of last block from latest scan result. 
        Most likely connected to faulty node / catastrophic reorg.
-       current height: ${current_blockhash.block_height}, new height: ${last_block_hash.block_height}`
+       current height: ${current_blockhash.block_height}, new height: ${last_block_hash_of_result.block_height}`
     );
 
   // 1. add new scanned range
@@ -182,29 +184,28 @@ export function updateScanHeight(
     }
   }
   // if there is no old anchor, use the one 100 blocks in, or the last block hash
-  anchor = anchor || result.block_infos.slice(-100)[0] || last_block_hash;
+  anchor =
+    anchor || result.block_infos.slice(-100)[0] || last_block_hash_of_result;
   // carry over the old anchor candidate or use the last block
-  anchor_candidate = anchor_candidate || last_block_hash;
+  anchor_candidate = anchor_candidate || last_block_hash_of_result;
   const newRange = {
     start: current_blockhash.block_height,
-    end: last_block_hash.block_height,
-    block_hashes: [last_block_hash, anchor_candidate, anchor],
+    end: last_block_hash_of_result.block_height,
+    block_hashes: [last_block_hash_of_result, anchor_candidate, anchor],
   };
+
+  return [makeNewRange(newRange, cache), []];
+}
+export function makeNewRange(newRange: CacheRange, cache: ScanCache) {
   cache.scanned_ranges.push(newRange);
 
-  // 2. set new current_height value
-  current_range = newRange;
-
-  // 3. merge existing ranges & find end of current range
+  // merge existing ranges & find end of current range
   cache.scanned_ranges = mergeRanges(cache.scanned_ranges);
   // if we hit the end of a range we already scanned, move scan tip to the end
-  const fastForward = findRange(
-    cache.scanned_ranges,
-    last_block_hash.block_height
-  );
+  const fastForward = findRange(cache.scanned_ranges, newRange.end);
 
-  if (fastForward) current_range = fastForward;
-  return [current_range, []];
+  if (fastForward) return fastForward;
+  return newRange;
 }
 // Assumption: result is new, cache is still old. (this + detectOwnspends() turns the catch new, based on the scan result)
 export async function detectOutputs(
@@ -284,7 +285,7 @@ export function detectOwnspends(result: ScanResult, cache: ScanCache) {
   }
   return changed_outputs;
 }
-
+//TODO respect 10 blocks lock and 60 blocks for minertx
 export function spendable(output: Output) {
   return (
     !(typeof output.burned === "number") &&

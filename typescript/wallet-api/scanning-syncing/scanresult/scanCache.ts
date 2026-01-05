@@ -89,6 +89,14 @@ export async function readCacheFileDefaultLocation(
     cacheFileDefaultLocation(primary_address, pathPrefix)
   );
 }
+export function lastRange(ranges: CacheRange[]): CacheRange | undefined {
+  if (!ranges.length) return undefined;
+  return ranges.reduce(
+    (maxRange, current) => (current.end > maxRange.end ? current : maxRange),
+    ranges[0]
+  );
+}
+
 export function mergeRanges(ranges: CacheRange[]): CacheRange[] {
   if (ranges.length <= 1) return ranges.map((r) => ({ ...r }));
   const sorted = [...ranges].sort((a, b) => a.start - b.start);

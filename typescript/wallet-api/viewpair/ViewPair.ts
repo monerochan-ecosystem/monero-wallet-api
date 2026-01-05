@@ -259,6 +259,8 @@ export class ViewPair extends WasmProcessor {
         if (!firstResponse) continue;
 
         const result = await processor.getBlocksBinScanResponse(firstResponse);
+        const oldMasterCurrentRange = structuredClone(current_range);
+
         current_range = await processScanResult({
           current_range,
           result,
@@ -282,10 +284,10 @@ export class ViewPair extends WasmProcessor {
             let use_master_current_range = false;
             if (!blocksBinItems.length) {
               blocksBinItems = await readGetblocksBinBuffer(
-                current_range.end,
+                current_range.end, // we use the new current range end to find the blocks
                 pathPrefix
               );
-              slave.current_range = current_range;
+              slave.current_range = structuredClone(oldMasterCurrentRange); // but we use the old master current range to scan with slaves
               use_master_current_range = true;
             }
             for (const blocksBinItem of blocksBinItems) {

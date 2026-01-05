@@ -1,6 +1,6 @@
 import type { BlockInfo, Output } from "../../api";
 import type { KeyImage } from "./computeKeyImage";
-import type { ScanResult } from "./scanResult";
+import { makeNewRange, type ScanResult } from "./scanResult";
 import type { CacheRange, ChangedOutput, ScanCache } from "./scanCache";
 export type ReorgInfo = {
   split_height: BlockInfo;
@@ -87,7 +87,28 @@ export function handleReorg(
     oldRange.end = split_height.block_height;
     oldRange.block_hashes[0] = split_height;
     cache.reorg_info = reorg_info;
-    return [current_range, changed_outputs];
+    // fix current_range
+    let anchor: BlockInfo | undefined = result.block_infos.slice(-100)[0]; // if we got lots of new blocks
+    const old_anchor = oldRange.block_hashes.at(-1);
+    if (
+      !anchor &&
+      old_anchor &&
+      split_height.block_height > old_anchor.block_height //if we did not get many new blocks + split height was candidate anchor
+    ) {
+      anchor = old_anchor; // we keep the anchor the same
+    }
+    if (!anchor) anchor = split_height;
+    let last_block_hash_of_result = result.block_infos.at(-1)!;
+
+    const end = last_block_hash_of_result.block_height;
+
+    const start = current_range.start > end ? end : current_range.start;
+    const newRange = {
+      start,
+      end,
+      block_hashes: [last_block_hash_of_result, anchor, anchor],
+    };
+    return [makeNewRange(newRange, cache), changed_outputs];
   }
   // we tried all the block hashes and could not find the split height
 
