@@ -9,4 +9,4 @@ async function makeWorkerSource() {
   }
 }
 
-export const workerMainCode = async () => await makeWorkerSource();
+export const workerMainCode = await makeWorkerSource();

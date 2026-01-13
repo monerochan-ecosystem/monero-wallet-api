@@ -1,5 +1,5 @@
 import * as fs from "fs";
-import { workerMainCode } from "../wallet-api/scanning-syncing/worker-entrypoints/worker";
+import { workerMainCode } from "./workers/buildworker";
 export function fileToBase64(filepath: string): string {
   const source = fs.readFileSync(filepath);
   return source.toString("base64");
