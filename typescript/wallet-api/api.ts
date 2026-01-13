@@ -5,6 +5,10 @@ export type {
 } from "./scanning-syncing/scanresult/scanResult";
 export { NodeUrl } from "./node-interaction/nodeUrl";
 export { ViewPair } from "./viewpair/ViewPair";
+export {
+  ScanCacheOpened,
+  ManyScanCachesOpened,
+} from "./scanning-syncing/scanresult/scanCacheOpened";
 
 export * from "./node-interaction/binaryEndpoints";
 export * from "./node-interaction/jsonEndpoints";
@@ -25,3 +29,7 @@ export {
   createWebworker,
   makeWebworkerScript,
 } from "./scanning-syncing/backgroundWorker";
+
+export { spendable } from "./scanning-syncing/scanresult/scanResult";
+
+export { openWallets, openWallet } from "./scanning-syncing/openWallet";

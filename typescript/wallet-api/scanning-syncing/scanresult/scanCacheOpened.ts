@@ -26,7 +26,6 @@ import {
   type CacheChangedCallbackParameters,
   type ScanCache,
 } from "./scanCache";
-import { workerMainCode } from "../worker-entrypoints/worker";
 export type MasterScanCache = {
   masterCacheChanged: CacheChangedCallback;
   scan_settings: ScanSettings;
@@ -182,7 +181,7 @@ export class ScanCacheOpened {
   }
   public async unpause() {
     // if worker does not exist yet, start it (if we are not slave)
-    // TODO: except if we are in an extension, then wire up onmessage
+    //TODO add option to feed ScanCacheOpened from background script (= do not start worker)
 
     if (!this.worker && !this._isSlave) {
       if (this._isMaster) {
