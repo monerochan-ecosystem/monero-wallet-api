@@ -149,4 +149,4 @@ export class NodeUrl extends WasmProcessor {
     return get_info(this.node_url);
   }
 }
-export const LOCAL_NODE_DEFAULT_URL = "http://localhost:18081";
+export const LOCAL_NODE_DEFAULT_URL = "http://127.0.0.1:18081";
