@@ -1,12 +1,2 @@
-async function makeWorkerSource() {
-  const workerMainCode = await Bun.build({
-    entrypoints: ["./wallet-api/scanning-syncing/worker-mains/worker.ts"],
-    target: "browser",
-  });
-
-  if (workerMainCode.success) {
-    return await workerMainCode.outputs[0].text();
-  }
-}
-
-export const workerMainCode = async () => await makeWorkerSource();
+// will be filled in by bun macro with the built output of the worker main
+export const workerMainCode = "";
