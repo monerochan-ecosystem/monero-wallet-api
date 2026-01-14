@@ -1,6 +1,7 @@
 import {
   ManyScanCachesOpened,
   ScanCacheOpened,
+  type ManyScanCachesOpenedCreateOptions,
 } from "./scanresult/scanCacheOpened";
 import {
   openScanSettingsFile,
@@ -9,21 +10,14 @@ import {
 /**
  * Opens all **non halted wallets listed in ScanSettings.json** for scanning.
  *
- * @param scan_settings_path if you want to use a different settings file other than the default "ScanSettings.json"
- * @param pathPrefix if you want to keep wallet scan caches, getblocksbinbuffer in a different directory
- * @param no_worker to feed the ManyScanCachesOpened manually with .feed(params) from CacheChangedCallbackParams
+ * @param options.scan_settings_path if you want to use a different settings file other than the default "ScanSettings.json"
+ * @param options.pathPrefix if you want to keep wallet scan caches, getblocksbinbuffer in a different directory
+ * @param options.no_worker to feed the ManyScanCachesOpened manually with .feed(params) from CacheChangedCallbackParams
+ * @param options.notifyMasterChanged pass the output of this to another (no_worker) instance to feed
  * @returns Promise<ManyScanCachesOpened>
  */
-export async function openWallets(
-  scan_settings_path?: string,
-  pathPrefix?: string,
-  no_worker?: boolean
-) {
-  return await ManyScanCachesOpened.create(
-    scan_settings_path,
-    pathPrefix,
-    no_worker
-  );
+export async function openWallets(options?: ManyScanCachesOpenedCreateOptions) {
+  return await ManyScanCachesOpened.create(options ?? {});
 }
 /**
  * Opens a **single wallet** for scanning.

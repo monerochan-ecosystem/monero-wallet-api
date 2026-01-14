@@ -265,13 +265,19 @@ export class ScanCacheOpened {
   ) {}
   private notifyListeners: (CacheChangedCallback | null)[] = [];
 }
-
+export type ManyScanCachesOpenedCreateOptions = {
+  scan_settings_path?: string;
+  pathPrefix?: string;
+  no_worker?: boolean;
+  notifyMasterChanged?: CacheChangedCallback;
+};
 export class ManyScanCachesOpened {
-  public static async create(
-    scan_settings_path?: string,
-    pathPrefix?: string,
-    no_worker?: boolean
-  ) {
+  public static async create({
+    scan_settings_path,
+    pathPrefix,
+    no_worker,
+    notifyMasterChanged,
+  }: ManyScanCachesOpenedCreateOptions) {
     const scan_settings = await openScanSettingsFile(scan_settings_path);
     if (!scan_settings?.wallets)
       throw new Error(
@@ -300,6 +306,7 @@ export class ManyScanCachesOpened {
       const masterWallet = await ScanCacheOpened.create({
         ...firstNonHaltedWallet,
         masterCacheChanged: (params) => {
+          notifyMasterChanged?.(params);
           for (const slave of slaveWallets) {
             slave.feed(params);
           }
