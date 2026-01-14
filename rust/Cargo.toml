@@ -4,12 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-cuprate-types = { path = "./cuprate/types", default-features = false, features = [
+cuprate-types = { git = "https://github.com/monerochan-ecosystem/cuprate", default-features = false, features = [
     "epee",
 ] }
-cuprate-rpc-types = { path = "./cuprate/rpc/types" }
-cuprate-epee-encoding = { path = "./cuprate/net/epee-encoding" }
-cuprate-fixed-bytes = { path = "./cuprate/net/fixed-bytes" }
+cuprate-rpc-types = { git = "https://github.com/monerochan-ecosystem/cuprate" }
+cuprate-epee-encoding = { git = "https://github.com/monerochan-ecosystem/cuprate" }
+cuprate-fixed-bytes = { git = "https://github.com/monerochan-ecosystem/cuprate" }
 
 curve25519-dalek = { version = "4", default-features = false, features = [
     "alloc",
