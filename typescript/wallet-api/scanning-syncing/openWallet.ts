@@ -11,13 +11,19 @@ import {
  *
  * @param scan_settings_path if you want to use a different settings file other than the default "ScanSettings.json"
  * @param pathPrefix if you want to keep wallet scan caches, getblocksbinbuffer in a different directory
+ * @param no_worker to feed the ManyScanCachesOpened manually with .feed(params) from CacheChangedCallbackParams
  * @returns Promise<ManyScanCachesOpened>
  */
 export async function openWallets(
   scan_settings_path?: string,
-  pathPrefix?: string
+  pathPrefix?: string,
+  no_worker?: boolean
 ) {
-  return await ManyScanCachesOpened.create(scan_settings_path, pathPrefix);
+  return await ManyScanCachesOpened.create(
+    scan_settings_path,
+    pathPrefix,
+    no_worker
+  );
 }
 /**
  * Opens a **single wallet** for scanning.
@@ -29,18 +35,21 @@ export async function openWallets(
  * @param primary_address Wallet address
  * @param scan_settings_path if you want to use a different settings file other than the default "ScanSettings.json"
  * @param pathPrefix if you want to keep wallet scan caches, getblocksbinbuffer in a different directory
+ * @param no_worker to feed the ManyScanCachesOpened manually with .feed(params) from CacheChangedCallbackParams
  * @returns Promise<ScanCacheOpened>
  */
 export async function openWallet(
   primary_address: string,
   scan_settings_path?: string,
-  pathPrefix?: string
+  pathPrefix?: string,
+  no_worker?: boolean
 ): Promise<ScanCacheOpened> {
   await haltAllWalletsExcept(primary_address, scan_settings_path);
   return await ScanCacheOpened.create({
     primary_address,
     scan_settings_path,
     pathPrefix,
+    no_worker,
   });
 }
 

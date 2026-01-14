@@ -26,17 +26,14 @@ import {
   type CacheChangedCallbackParameters,
   type ScanCache,
 } from "./scanCache";
-export type MasterScanCache = {
-  masterCacheChanged: CacheChangedCallback;
-  scan_settings: ScanSettings;
-};
+
 export type SlaveScanCache = boolean;
 export type ScanCacheOpenedCreateParams = {
-  isMaster?: MasterScanCache;
-  isSlave?: SlaveScanCache;
   primary_address: string;
   scan_settings_path?: string; // Default: SCAN_SETTINGS_STORE_NAME_DEFAULT = "ScanSettings.json"
   pathPrefix?: string;
+  no_worker?: boolean;
+  masterCacheChanged?: CacheChangedCallback;
 };
 
 export type CreateTransactionParams = {
@@ -76,14 +73,12 @@ export class ScanCacheOpened {
         walletSettingsWithKeys.secret_view_key,
         walletSettings.node_url
       ),
+      params.no_worker || false,
+      params.masterCacheChanged || null,
       params.scan_settings_path,
       params.pathPrefix
     );
     if (theCatchToBeOpened) scanCacheOpen._cache = theCatchToBeOpened;
-    if (params.isMaster && params.isSlave)
-      throw new Error("isMaster and isSlave cannot both be set");
-    if (params.isMaster) scanCacheOpen._isMaster = params.isMaster;
-    if (params.isSlave) scanCacheOpen._isSlave = params.isSlave;
 
     if (!walletSettings.halted) {
       // run webworker (respecting halted param + setting)
@@ -180,30 +175,14 @@ export class ScanCacheOpened {
     });
   }
   public async unpause() {
-    // if worker does not exist yet, start it (if we are not slave)
-    //TODO add option to feed ScanCacheOpened from background script (= do not start worker)
+    // if worker does not exist yet, start it (if we are not slave / no_worker)
 
-    if (!this.worker && !this._isSlave) {
-      if (this._isMaster) {
-        this.worker = createWebworker(
-          (result) => {
-            this._cache = result.newCache;
-            this.feed(result);
-            this._isMaster!.masterCacheChanged(result);
-          },
-          this.scan_settings_path,
-          this.pathPrefix
-        );
-      } else {
-        this.worker = createWebworker(
-          (result) => {
-            this._cache = result.newCache;
-            this.feed(result);
-          },
-          this.scan_settings_path,
-          this.pathPrefix
-        );
-      }
+    if (!this.worker && !this.no_worker) {
+      this.worker = createWebworker(
+        (params) => this.feed(params),
+        this.scan_settings_path,
+        this.pathPrefix
+      );
     }
     return await writeWalletToScanSettings({
       primary_address: this.view_pair.primary_address,
@@ -254,17 +233,22 @@ export class ScanCacheOpened {
       .sort((a, b) => b.amount - a.amount);
   }
   /**
-   * feed
+   * feed the ScanCacheOpened with new ScanCache as syncing happens
+   * if primary_address does not match, do not feed
+   * if masterCacheChanged is set, it will be called here
+   * for all primary addresses
    */
   public feed(params: CacheChangedCallbackParameters) {
+    if (this.masterCacheChanged) this.masterCacheChanged(params);
+    if (this.view_pair.primary_address !== params.newCache.primary_address)
+      return;
     this._cache = params.newCache;
     this.notifyListeners;
     for (const listener of this.notifyListeners) {
       if (listener) listener(params);
     }
   }
-  private _isMaster: MasterScanCache | undefined = undefined;
-  private _isSlave: SlaveScanCache | undefined = undefined;
+
   private _cache: ScanCache = {
     outputs: {},
     own_key_images: {},
@@ -273,6 +257,8 @@ export class ScanCacheOpened {
   };
   private constructor(
     public readonly view_pair: ViewPair,
+    public readonly no_worker: boolean,
+    public readonly masterCacheChanged: CacheChangedCallback | null,
     private scan_settings_path?: string,
     private pathPrefix?: string,
     private worker?: Worker
@@ -281,7 +267,11 @@ export class ScanCacheOpened {
 }
 
 export class ManyScanCachesOpened {
-  public static async create(scan_settings_path?: string, pathPrefix?: string) {
+  public static async create(
+    scan_settings_path?: string,
+    pathPrefix?: string,
+    no_worker?: boolean
+  ) {
     const scan_settings = await openScanSettingsFile(scan_settings_path);
     if (!scan_settings?.wallets)
       throw new Error(
@@ -301,7 +291,7 @@ export class ManyScanCachesOpened {
         if (!wallet || wallet.halted) continue;
         const slaveWallet = await ScanCacheOpened.create({
           ...wallet,
-          isSlave: true,
+          no_worker: true, // slaves depend on master worker
           scan_settings_path,
           pathPrefix,
         });
@@ -309,20 +299,14 @@ export class ManyScanCachesOpened {
       }
       const masterWallet = await ScanCacheOpened.create({
         ...firstNonHaltedWallet,
-        isMaster: {
-          masterCacheChanged: (params) => {
-            for (const slave of slaveWallets) {
-              if (
-                slave.view_pair.primary_address ===
-                params.newCache.primary_address
-              )
-                slave.feed(params);
-            }
-          },
-          scan_settings,
+        masterCacheChanged: (params) => {
+          for (const slave of slaveWallets) {
+            slave.feed(params);
+          }
         },
         scan_settings_path,
         pathPrefix,
+        no_worker, // pass no_worker, if you want to manually feed()
       });
       openedWallets.push(masterWallet, ...slaveWallets);
     } else {
@@ -335,6 +319,12 @@ export class ManyScanCachesOpened {
     }
 
     return new ManyScanCachesOpened(openedWallets);
+  }
+  /**
+   * feed the master wallet and therefore all wallets
+   */
+  public feed(params: CacheChangedCallbackParameters) {
+    this.wallets[0].feed(params);
   }
   private constructor(public readonly wallets: ScanCacheOpened[]) {}
 }
