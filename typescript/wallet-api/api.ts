@@ -3,6 +3,10 @@ export type {
   ScanResult,
   ScanResultCallback,
 } from "./scanning-syncing/scanresult/scanResult";
+export type {
+  CacheChangedCallback,
+  CacheChangedCallbackParameters,
+} from "./scanning-syncing/scanresult/scanCache";
 export { NodeUrl } from "./node-interaction/nodeUrl";
 export { ViewPair } from "./viewpair/ViewPair";
 export {
