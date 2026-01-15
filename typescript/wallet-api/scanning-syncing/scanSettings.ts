@@ -2,14 +2,10 @@ import { atomicWrite } from "../io/atomicWrite";
 import { LOCAL_NODE_DEFAULT_URL } from "../node-interaction/nodeUrl";
 
 export const SCAN_SETTINGS_STORE_NAME_DEFAULT = "ScanSettings.json";
-export type SubAddressIndex = {
-  major: number;
-  minor: number;
-};
 export type ScanSetting = {
   primary_address: string;
   start_height: number;
-  subaddresses?: SubAddressIndex[];
+  subaddress_index?: number;
   halted?: boolean;
   node_url?: string;
 };
