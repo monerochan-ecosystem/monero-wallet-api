@@ -13,7 +13,11 @@ import {
   MAINNET_GENESIS_BLOCK_HASH,
   STAGENET_GENESIS_BLOCK_HASH,
 } from "../node-interaction/binaryEndpoints";
-import { handleScanError } from "../scanning-syncing/scanresult/scanCache";
+import {
+  handleScanError,
+  lastRange,
+  writeCacheFileDefaultLocation,
+} from "../scanning-syncing/scanresult/scanCache";
 import {
   makeTransaction,
   type MakeTransactionParams,
@@ -40,6 +44,7 @@ import {
 } from "../scanning-syncing/scanresult/scanCache";
 import {
   openNonHaltedWallets,
+  readWalletFromScanSettings,
   walletSettingsPlusKeys,
 } from "../scanning-syncing/scanSettings";
 import { sleep } from "../io/sleep";
@@ -257,7 +262,7 @@ export class ViewPair extends WasmProcessor {
     try {
       for await (const firstResponse of blockGenerator) {
         if (!firstResponse) continue;
-
+        await this.writeSubaddressesToScanCache(scan_settings_path, pathPrefix);
         const result = await processor.getBlocksBinScanResponse(firstResponse);
         const oldMasterCurrentRange = structuredClone(current_range);
 
@@ -298,6 +303,11 @@ export class ViewPair extends WasmProcessor {
                   }`
                 ).arrayBuffer()
               );
+              await slave.viewpair.writeSubaddressesToScanCache(
+                scan_settings_path,
+                pathPrefix
+              );
+
               const slaveResult = await slave.viewpair.getBlocksBinScanResponse(
                 blocksbin
               );
@@ -368,6 +378,43 @@ export class ViewPair extends WasmProcessor {
    */
   public makeSubaddress(minor: number) {
     return this.makeSubaddressRaw(0, minor);
+  }
+  private async writeSubaddressesToScanCache(
+    scan_settings_path?: string,
+    pathPrefix?: string
+  ) {
+    await writeCacheFileDefaultLocation({
+      primary_address: this.primary_address,
+      pathPrefix: pathPrefix,
+      writeCallback: async (cache) => {
+        const walletSettings = await readWalletFromScanSettings(
+          this.primary_address,
+          scan_settings_path
+        );
+        if (!walletSettings)
+          throw new Error(
+            `wallet not found in settings. did you call openwallet with the right params?
+          Either wrong file name supplied to params.scan_settings_path: ${scan_settings_path}
+          Or wrong primary_address supplied params.primary_address: ${this.primary_address}`
+          );
+        const last_subaddress_index = walletSettings.subaddress_index || 0;
+        let minor = last_subaddress_index + 1;
+        while (minor <= last_subaddress_index) {
+          const subaddress = this.makeSubaddress(minor);
+
+          const created_at_height = lastRange(cache.scanned_ranges)?.end || 0;
+          const created_at_timestamp = new Date().getTime();
+          if (!cache.subaddresses) cache.subaddresses = [];
+          cache.subaddresses.push({
+            minor,
+            address: subaddress,
+            created_at_height,
+            created_at_timestamp,
+          });
+          minor++;
+        }
+      },
+    });
   }
   /**
    * This method makes a Subaddress for the Address of the Viewpair it was opened with.

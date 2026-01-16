@@ -18,15 +18,14 @@ import {
   SCAN_SETTINGS_STORE_NAME_DEFAULT,
   walletSettingsPlusKeys,
   writeWalletToScanSettings,
-  type ScanSettings,
 } from "../scanSettings";
 import {
   lastRange,
   readCacheFileDefaultLocation,
-  writeCacheFileDefaultLocation,
   type CacheChangedCallback,
   type CacheChangedCallbackParameters,
   type ScanCache,
+  type Subaddress,
 } from "./scanCache";
 
 export type SlaveScanCache = boolean;
@@ -148,6 +147,13 @@ export class ScanCacheOpened {
     });
     return unsignedTx;
   }
+  get subaddresses() {
+    // we don't use this._cache.subaddresses directly,
+    // because the cache will be written by the background worker that does the scan
+    if (!this._subaddresses)
+      this._subaddresses = structuredClone(this._cache.subaddresses) || [];
+    return this._subaddresses;
+  }
   /**
    * makeStandardTransaction
    */
@@ -192,22 +198,17 @@ export class ScanCacheOpened {
       subaddress_index: minor,
       scan_settings_path: this.scan_settings_path,
     });
-    //TODO move this into the scan method on viewpair -> inside or before processResult
-    await writeCacheFileDefaultLocation({
-      primary_address: this.view_pair.primary_address,
-      pathPrefix: this.scan_settings_path,
-      writeCallback: (cache) => {
-        const created_at_height = lastRange(cache.scanned_ranges)?.end || 0;
-        const created_at_timestamp = new Date().getTime();
-        if (!cache.subaddresses) cache.subaddresses = [];
-        cache.subaddresses.push({
-          minor,
-          address: subaddress,
-          created_at_height,
-          created_at_timestamp,
-        });
-      },
+    const created_at_height = lastRange(this._cache.scanned_ranges)?.end || 0;
+    const created_at_timestamp = new Date().getTime();
+    if (!this._subaddresses)
+      this._subaddresses = structuredClone(this._cache.subaddresses) || [];
+    this._subaddresses.push({
+      minor,
+      address: subaddress,
+      created_at_height,
+      created_at_timestamp,
     });
+
     return subaddress;
   }
   /**
@@ -320,6 +321,7 @@ export class ScanCacheOpened {
     private pathPrefix?: string,
     private worker?: Worker
   ) {}
+  private _subaddresses: Subaddress[] | undefined;
   private notifyListeners: (CacheChangedCallback | null)[] = [];
 }
 export type ManyScanCachesOpenedCreateOptions = {

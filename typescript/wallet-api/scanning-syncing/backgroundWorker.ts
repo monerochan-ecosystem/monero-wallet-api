@@ -19,6 +19,7 @@ export async function scanWallets(
   const masterViewPair = await ViewPair.create(
     masterWalletSettings.primary_address,
     masterWithKeys.secret_view_key,
+    masterWalletSettings.subaddress_index,
     masterWalletSettings.node_url
   );
   await masterViewPair.scan(
