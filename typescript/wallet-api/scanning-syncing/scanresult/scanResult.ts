@@ -215,8 +215,6 @@ export async function detectOutputs(
 ) {
   let changed_outputs: ChangedOutput[] = [];
   for (const output of result.outputs) {
-    // TODO: extract into own function detectOutput()
-
     // 0. prevent burning bug and avoid overwriting earlier found outputs
     const duplicate = Object.values(cache.outputs).find(
       (ex) => ex.stealth_address === output.stealth_address && !ex.burned
@@ -265,7 +263,6 @@ export function detectOwnspends(result: ScanResult, cache: ScanCache) {
   let changed_outputs: ChangedOutput[] = [];
 
   for (const onchainKeyImage of result.all_key_images) {
-    // TODO: extract into own function detectOwnSpend()
     if (onchainKeyImage.key_image_hex in cache.own_key_images) {
       // this is one of ours
       const globalId = cache.own_key_images[onchainKeyImage.key_image_hex];
