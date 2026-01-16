@@ -11,7 +11,7 @@ use cuprate_fixed_bytes::ByteArrayVec;
 
 use curve25519_dalek::scalar::Scalar;
 use hex::FromHex;
-use monero_wallet::address::Network;
+use monero_wallet::address::{Network, SubaddressIndex};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -97,6 +97,7 @@ pub extern "C" fn make_viewkey(spend_key_string_len: usize) {
 pub extern "C" fn init_viewpair(
   primary_address_string_len: usize,
   secret_view_key_string_len: usize,
+  last_subaddress_index: u32,
 ) {
   let primary_address = input_string(primary_address_string_len);
   let secret_view_key = input_string(secret_view_key_string_len);
@@ -125,7 +126,16 @@ pub extern "C" fn init_viewpair(
       _ => output_string(&json!({"network": "testnet"}).to_string()),
     }
     global_state.primary_address = Some(primary_address.clone());
-    global_state.scanner = Some(Scanner::new(viewpair));
+    let mut scanner = Scanner::new(viewpair);
+    let mut minor = 1;
+    while minor <= last_subaddress_index {
+      // we set minor to 1 so this will never return None
+      let subaddress = SubaddressIndex::new(0, minor).unwrap();
+      scanner.register_subaddress(subaddress);
+      minor += 1;
+    }
+
+    global_state.scanner = Some(scanner);
   });
 }
 #[no_mangle]
@@ -150,6 +160,28 @@ pub extern "C" fn make_integrated_address(payment_id: u64) {
             }
         }
     });
+}
+#[no_mangle]
+pub extern "C" fn make_subaddress(major: u32, minor: u32) {
+  GLOBAL_STATE.with(|state| {
+    let global_state = state.borrow();
+    let mut global_state_mut = state.borrow_mut();
+    if let (Some(viewpair), Some(network), Some(scanner)) =
+      (&global_state.viewpair, &global_state.network, &mut global_state_mut.scanner)
+    {
+      let subaddress_index = SubaddressIndex::new(major, minor).expect("Invalid indices");
+      let subaddress = viewpair.subaddress(*network, subaddress_index);
+      scanner.register_subaddress(subaddress_index.clone());
+
+      output_string(&subaddress.to_string());
+    } else {
+      let error_json = json!({
+          "error": "viewpair or network or scanner not initialized"
+      })
+      .to_string();
+      output_error_string(&error_json);
+    }
+  });
 }
 #[no_mangle]
 pub extern "C" fn sample_decoys(sample_json_str_len: usize) {

@@ -89,6 +89,29 @@ export async function readCacheFileDefaultLocation(
     cacheFileDefaultLocation(primary_address, pathPrefix)
   );
 }
+export type WriteCacheFileParams = {
+  primary_address: string;
+  pathPrefix?: string;
+  writeCallback: (cache: ScanCache) => void | Promise<void>;
+};
+export async function writeCacheFileDefaultLocation(
+  params: WriteCacheFileParams
+) {
+  const cache = await readCacheFileDefaultLocation(
+    params.primary_address,
+    params.pathPrefix
+  );
+  if (!cache)
+    throw new Error(
+      `cache not found for primary address: ${params.primary_address}, and path prefix: ${params.pathPrefix}`
+    );
+  await params.writeCallback(cache);
+  // write to cache
+  await atomicWrite(
+    cacheFileDefaultLocation(cache.primary_address, params.pathPrefix),
+    JSON.stringify(cache, null, 2)
+  );
+}
 export function lastRange(ranges: CacheRange[]): CacheRange | undefined {
   if (!ranges.length) return undefined;
   return ranges.reduce(
@@ -132,11 +155,18 @@ export type CacheRange = {
 export type GlobalOutputId = string; // output.index_on_blockchain.toString()
 export type OutputsCache = Record<GlobalOutputId, Output>; // { "123": Output, "456": Output } keyed by index_on_blockchain.toString()
 export type OwnKeyImages = Record<KeyImage, GlobalOutputId>;
+export type Subaddress = {
+  minor: number;
+  address: string;
+  created_at_height: number;
+  created_at_timestamp: number;
+};
 export type ScanCache = {
   outputs: OutputsCache;
   own_key_images: OwnKeyImages;
   scanned_ranges: CacheRange[]; // list of block height ranges that have been scanned [0].start, [length-1].end <-- last scanned height
   primary_address: string;
+  subaddresses?: Subaddress[];
   reorg_info?: ReorgInfo;
 };
 

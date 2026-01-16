@@ -66,7 +66,6 @@ export class ViewPair extends WasmProcessor {
   protected constructor(
     public node_url: string,
     public primary_address: string,
-    public fallback_node_urls: string[] = [],
     public connection_status: ConnectionStatus = {
       status_updates: [],
       last_packet: {
@@ -82,13 +81,12 @@ export class ViewPair extends WasmProcessor {
   public static async create(
     primary_address: string,
     secret_view_key: string,
-    node_url?: string,
-    fallback_node_urls?: string[]
+    subaddress_index = 0,
+    node_url?: string
   ): Promise<ViewPair> {
     const viewPair = new ViewPair(
       node_url || LOCAL_NODE_DEFAULT_URL,
-      primary_address,
-      fallback_node_urls
+      primary_address
     );
     const tinywasi = await viewPair.initWasmModule();
     viewPair.writeToWasmMemory = (ptr, len) => {
@@ -104,7 +102,8 @@ export class ViewPair extends WasmProcessor {
     //@ts-ignore
     tinywasi.instance.exports.init_viewpair(
       primary_address.length,
-      secret_view_key.length
+      secret_view_key.length,
+      subaddress_index
     );
     if (!init_viewpair_result) {
       throw new Error("Failed to init viewpair");
@@ -240,6 +239,7 @@ export class ViewPair extends WasmProcessor {
         const viewpair = await ViewPair.create(
           slaveWallet.primary_address,
           slaveWithKeys.secret_view_key,
+          slaveWallet.subaddress_index,
           masterWalletSettings.node_url
         );
         slaveViewPairs.push({
@@ -356,6 +356,34 @@ export class ViewPair extends WasmProcessor {
     };
     //@ts-ignore
     this.tinywasi.instance.exports.make_integrated_address(BigInt(paymentId));
+    return address;
+  }
+  /**
+   * This method makes a Subaddress for the Address of the Viewpair it was opened with.
+   * The network (mainnet, stagenet, testnet) is the same as the one of the Viewpairaddress.
+   * if there is an active scan going on, call this on ScanCacheOpened, so the new subaddress will be scanned
+   *
+   * @param minor address index, we always set major (also called account index) to 0
+   * @returns Adressstring
+   */
+  public makeSubaddress(minor: number) {
+    return this.makeSubaddressRaw(0, minor);
+  }
+  /**
+   * This method makes a Subaddress for the Address of the Viewpair it was opened with.
+   * The network (mainnet, stagenet, testnet) is the same as the one of the Viewpairaddress.
+   *
+   * @param major account index should be set to 0 in most cases
+   * @param minor address index
+   * @returns Adressstring
+   */
+  private makeSubaddressRaw(major: number, minor: number) {
+    let address = "";
+    this.readFromWasmMemory = (ptr, len) => {
+      address = this.readString(ptr, len);
+    };
+    //@ts-ignore
+    this.tinywasi.instance.exports.make_subaddress(major, minor);
     return address;
   }
   /**

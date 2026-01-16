@@ -2,6 +2,7 @@ import { atomicWrite } from "../io/atomicWrite";
 import { LOCAL_NODE_DEFAULT_URL } from "../node-interaction/nodeUrl";
 
 export const SCAN_SETTINGS_STORE_NAME_DEFAULT = "ScanSettings.json";
+
 export type ScanSetting = {
   primary_address: string;
   start_height: number;
@@ -12,6 +13,7 @@ export type ScanSetting = {
 export type WriteScanSettingParams = {
   primary_address: string;
   start_height?: number;
+  subaddress_index?: number;
   halted?: boolean;
   scan_settings_path?: string; // write your settings to a different path
   node_url?: string;

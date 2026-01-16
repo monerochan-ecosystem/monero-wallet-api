@@ -21,7 +21,9 @@ import {
   type ScanSettings,
 } from "../scanSettings";
 import {
+  lastRange,
   readCacheFileDefaultLocation,
+  writeCacheFileDefaultLocation,
   type CacheChangedCallback,
   type CacheChangedCallbackParameters,
   type ScanCache,
@@ -71,6 +73,7 @@ export class ScanCacheOpened {
       await ViewPair.create(
         params.primary_address,
         walletSettingsWithKeys.secret_view_key,
+        walletSettings.subaddress_index,
         walletSettings.node_url
       ),
       params.no_worker || false,
@@ -152,6 +155,60 @@ export class ScanCacheOpened {
     return this.makeTransaction({
       payments: [{ address: destination_address, amount }],
     });
+  }
+  /**
+   * makeIntegratedAddress
+   */
+  public makeIntegratedAddress(paymentId: number) {
+    return this.view_pair.makeIntegratedAddress(paymentId);
+  }
+  /**
+   * This method makes a Subaddress for the Address of the Viewpair it was opened with.
+   * The network (mainnet, stagenet, testnet) is the same as the one of the Viewpairaddress.
+   * will increment minor by 1 on major 0 in "ScanSettings.json" subaddresses definition
+   *
+   * if there is an active scan going on, call this here on ScanCacheOpened, so the new subaddress will be scanned
+   * (and not on a viewpair / scancacheopened instance that is not conducting the scan, aka where no_worker is true)
+   *
+   * @returns Adressstring
+   */
+  public async makeSubaddress() {
+    const walletSettings = await readWalletFromScanSettings(
+      this.view_pair.primary_address,
+      this.scan_settings_path
+    );
+    if (!walletSettings)
+      throw new Error(
+        `wallet not found in settings. did you call openwallet with the right params?
+      Either wrong file name supplied to params.scan_settings_path: ${this.scan_settings_path}
+      Or wrong primary_address supplied params.primary_address: ${this.view_pair.primary_address}`
+      );
+    const last_subaddress_index = walletSettings.subaddress_index || 0;
+    const minor = last_subaddress_index + 1;
+    const subaddress = this.view_pair.makeSubaddress(minor);
+
+    await writeWalletToScanSettings({
+      primary_address: this.view_pair.primary_address,
+      subaddress_index: minor,
+      scan_settings_path: this.scan_settings_path,
+    });
+    //TODO move this into the scan method on viewpair -> inside or before processResult
+    await writeCacheFileDefaultLocation({
+      primary_address: this.view_pair.primary_address,
+      pathPrefix: this.scan_settings_path,
+      writeCallback: (cache) => {
+        const created_at_height = lastRange(cache.scanned_ranges)?.end || 0;
+        const created_at_timestamp = new Date().getTime();
+        if (!cache.subaddresses) cache.subaddresses = [];
+        cache.subaddresses.push({
+          minor,
+          address: subaddress,
+          created_at_height,
+          created_at_timestamp,
+        });
+      },
+    });
+    return subaddress;
   }
   /**
    * notify

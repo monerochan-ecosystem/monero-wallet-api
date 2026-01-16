@@ -91,6 +91,7 @@ export type Output = {
   tx_hash: string;
   is_miner_tx: boolean;
   primary_address: string;
+  subaddress_index: number | null;
   serialized: string;
   spent_relative_index?: number; // processScanResult sets this to relative index in the tx it was spent in
   spent_in_tx_hash?: string; // processScanResult will set this, if detected as ownspend (transaction)

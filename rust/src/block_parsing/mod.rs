@@ -235,6 +235,11 @@ fn wallet_output_to_json(
       "is_miner_tx": is_miner_tx,
       "block_height": block_height,
       "primary_address": primary_address,
+      "subaddress_index":  if let Some(subaddr) = wallet_output.subaddress() {
+        json!(subaddr.address())
+    } else {
+        json!(null)
+    },
       "serialized": hex::encode(wallet_output.serialize()),
   })
 }
