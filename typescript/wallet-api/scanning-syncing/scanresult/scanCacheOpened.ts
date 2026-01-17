@@ -93,7 +93,9 @@ export class ScanCacheOpened {
   get cache(): ScanCache {
     return this._cache;
   }
-
+  get primary_address(): string {
+    return this.view_pair.primary_address;
+  }
   get node_url(): string {
     return this.view_pair.node_url;
   }
