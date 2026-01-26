@@ -45,24 +45,24 @@ export class ScanCacheOpened {
   public static async create(params: ScanCacheOpenedCreateParams) {
     const theCatchToBeOpened = await readCacheFileDefaultLocation(
       params.primary_address,
-      params.pathPrefix
+      params.pathPrefix,
     );
 
     const walletSettings = await readWalletFromScanSettings(
       params.primary_address,
-      params.scan_settings_path
+      params.scan_settings_path,
     );
     if (!walletSettings)
       throw new Error(
         `wallet not found in settings. did you call openwallet with the right params?
       Either wrong file name supplied to params.scan_settings_path: ${params.scan_settings_path}
-      Or wrong primary_address supplied params.primary_address: ${params.primary_address}`
+      Or wrong primary_address supplied params.primary_address: ${params.primary_address}`,
       );
     if (!params.primary_address)
       throw new Error(
         `primary_address is required, potentially half filled out wallet setting in: ${
           params.scan_settings_path || SCAN_SETTINGS_STORE_NAME_DEFAULT
-        }`
+        }`,
       );
     // read secret_view_key and secret_spend_key from env
     const walletSettingsWithKeys = walletSettingsPlusKeys(walletSettings);
@@ -73,12 +73,12 @@ export class ScanCacheOpened {
         params.primary_address,
         walletSettingsWithKeys.secret_view_key,
         walletSettings.subaddress_index,
-        walletSettings.node_url
+        walletSettings.node_url,
       ),
       params.no_worker || false,
       params.masterCacheChanged || null,
       params.scan_settings_path,
-      params.pathPrefix
+      params.pathPrefix,
     );
     if (theCatchToBeOpened) scanCacheOpen._cache = theCatchToBeOpened;
 
@@ -110,7 +110,7 @@ export class ScanCacheOpened {
   }
   public async signTransaction(unsignedTx: string) {
     const privateSpendKey = readPrivateSpendKeyFromEnv(
-      this._cache.primary_address
+      this._cache.primary_address,
     );
     if (!privateSpendKey) throw new Error("privateSpendKey not found in env");
     return await signTransaction(unsignedTx, privateSpendKey);
@@ -136,7 +136,7 @@ export class ScanCacheOpened {
       const input = node.makeInput(
         preparedInput.input,
         preparedInput.sample.candidates,
-        await preparedInput.outsResponse
+        await preparedInput.outsResponse,
       );
       inputs.push(input);
     }
@@ -180,16 +180,16 @@ export class ScanCacheOpened {
    *
    * @returns Adressstring
    */
-  public async makeSubaddress() {
+  public async makeSubaddress(): Promise<Subaddress> {
     const walletSettings = await readWalletFromScanSettings(
       this.view_pair.primary_address,
-      this.scan_settings_path
+      this.scan_settings_path,
     );
     if (!walletSettings)
       throw new Error(
         `wallet not found in settings. did you call openwallet with the right params?
       Either wrong file name supplied to params.scan_settings_path: ${this.scan_settings_path}
-      Or wrong primary_address supplied params.primary_address: ${this.view_pair.primary_address}`
+      Or wrong primary_address supplied params.primary_address: ${this.view_pair.primary_address}`,
       );
     const last_subaddress_index = walletSettings.subaddress_index || 0;
     const minor = last_subaddress_index + 1;
@@ -204,14 +204,16 @@ export class ScanCacheOpened {
     const created_at_timestamp = new Date().getTime();
     if (!this._subaddresses)
       this._subaddresses = structuredClone(this._cache.subaddresses) || [];
-    this._subaddresses.push({
+    const new_subaddress: Subaddress = {
       minor,
       address: subaddress,
       created_at_height,
       created_at_timestamp,
-    });
+      not_yet_included: true,
+    };
+    this._subaddresses.push(new_subaddress);
 
-    return subaddress;
+    return new_subaddress;
   }
   /**
    * notify
@@ -241,7 +243,7 @@ export class ScanCacheOpened {
       this.worker = createWebworker(
         (params) => this.feed(params),
         this.scan_settings_path,
-        this.pathPrefix
+        this.pathPrefix,
       );
     }
     return await writeWalletToScanSettings({
@@ -321,7 +323,7 @@ export class ScanCacheOpened {
     public readonly masterCacheChanged: CacheChangedCallback | null,
     private scan_settings_path?: string,
     private pathPrefix?: string,
-    private worker?: Worker
+    private worker?: Worker,
   ) {}
   private _subaddresses: Subaddress[] | undefined;
   private notifyListeners: (CacheChangedCallback | null)[] = [];
@@ -343,10 +345,10 @@ export class ManyScanCachesOpened {
     if (!scan_settings?.wallets)
       throw new Error(
         `no wallets in settings file. Did you supply the right path?
-     are there wallets in the default '${SCAN_SETTINGS_STORE_NAME_DEFAULT}' file?`
+     are there wallets in the default '${SCAN_SETTINGS_STORE_NAME_DEFAULT}' file?`,
       );
     const nonHaltedWallets = scan_settings.wallets.filter(
-      (wallet) => !wallet?.halted
+      (wallet) => !wallet?.halted,
     );
     if (!nonHaltedWallets.length) return undefined;
     const openedWallets: ScanCacheOpened[] = [];

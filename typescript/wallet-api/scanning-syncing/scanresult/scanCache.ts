@@ -11,15 +11,15 @@ import type { WasmProcessor } from "../../wasm-processing/wasmProcessor";
 import { atomicWrite } from "../../io/atomicWrite";
 
 export async function initScanCache<
-  T extends WasmProcessor & HasGetBlockHeadersRangeMethod & HasPrimaryAddress
+  T extends WasmProcessor & HasGetBlockHeadersRangeMethod & HasPrimaryAddress,
 >(
   processor: T,
   start_height: number,
-  pathPrefix?: string
+  pathPrefix?: string,
 ): Promise<CacheRange> {
   const initialCache = await readCacheFileDefaultLocation(
     processor.primary_address,
-    pathPrefix
+    pathPrefix,
   );
   let cache: ScanCache = {
     outputs: {},
@@ -63,12 +63,12 @@ export async function initScanCache<
   // write to cache
   await atomicWrite(
     cacheFileDefaultLocation(cache.primary_address, pathPrefix),
-    JSON.stringify(cache, null, 2)
+    JSON.stringify(cache, null, 2),
   );
   return current_range;
 }
 export async function readCacheFile(
-  cacheFilePath: string
+  cacheFilePath: string,
 ): Promise<ScanCache | undefined> {
   const jsonString = await Bun.file(cacheFilePath)
     .text()
@@ -77,16 +77,16 @@ export async function readCacheFile(
 }
 export function cacheFileDefaultLocation(
   primary_address: string,
-  pathPrefix?: string
+  pathPrefix?: string,
 ) {
   return `${pathPrefix ?? ""}${primary_address}_cache.json`;
 }
 export async function readCacheFileDefaultLocation(
   primary_address: string,
-  pathPrefix?: string
+  pathPrefix?: string,
 ): Promise<ScanCache | undefined> {
   return await readCacheFile(
-    cacheFileDefaultLocation(primary_address, pathPrefix)
+    cacheFileDefaultLocation(primary_address, pathPrefix),
   );
 }
 export type WriteCacheFileParams = {
@@ -95,28 +95,28 @@ export type WriteCacheFileParams = {
   writeCallback: (cache: ScanCache) => void | Promise<void>;
 };
 export async function writeCacheFileDefaultLocation(
-  params: WriteCacheFileParams
+  params: WriteCacheFileParams,
 ) {
   const cache = await readCacheFileDefaultLocation(
     params.primary_address,
-    params.pathPrefix
+    params.pathPrefix,
   );
   if (!cache)
     throw new Error(
-      `cache not found for primary address: ${params.primary_address}, and path prefix: ${params.pathPrefix}`
+      `cache not found for primary address: ${params.primary_address}, and path prefix: ${params.pathPrefix}`,
     );
   await params.writeCallback(cache);
   // write to cache
   await atomicWrite(
     cacheFileDefaultLocation(cache.primary_address, params.pathPrefix),
-    JSON.stringify(cache, null, 2)
+    JSON.stringify(cache, null, 2),
   );
 }
 export function lastRange(ranges: CacheRange[]): CacheRange | undefined {
   if (!ranges.length) return undefined;
   return ranges.reduce(
     (maxRange, current) => (current.end > maxRange.end ? current : maxRange),
-    ranges[0]
+    ranges[0],
   );
 }
 
@@ -143,7 +143,7 @@ export function mergeRanges(ranges: CacheRange[]): CacheRange[] {
 // find the cache range that contains the given height, if not found return null
 export const findRange = (
   ranges: CacheRange[],
-  value: number
+  value: number,
 ): CacheRange | null =>
   ranges.find((r) => value >= r.start && value <= r.end) ?? null;
 export type CacheRange = {
@@ -160,6 +160,7 @@ export type Subaddress = {
   address: string;
   created_at_height: number;
   created_at_timestamp: number;
+  not_yet_included?: boolean;
 };
 export type ScanCache = {
   outputs: OutputsCache;
@@ -187,7 +188,7 @@ export type CacheChangedCallbackParameters = {
   connection_status: ConnectionStatus;
 };
 export type CacheChangedCallbackSync<R = void> = (
-  params: CacheChangedCallbackParameters
+  params: CacheChangedCallbackParameters,
 ) => R;
 
 export type CacheChangedCallbackAsync = CacheChangedCallbackSync<Promise<void>>;
@@ -218,7 +219,7 @@ export type CacheChangedCallback =
   | CacheChangedCallbackAsync; // accept async callbacks
 export interface HasGetBlockHeadersRangeMethod {
   getBlockHeadersRange: (
-    params: GetBlockHeadersRangeParams
+    params: GetBlockHeadersRangeParams,
   ) => Promise<GetBlockHeadersRange>;
 }
 
@@ -244,7 +245,7 @@ export function handleScanError(error: unknown) {
   } else {
     console.log(
       error,
-      "\n, scanWithCache in scanning-syncing/scanWithCache.ts`"
+      "\n, scanWithCache in scanning-syncing/scanWithCache.ts`",
     );
     throw error;
   }
