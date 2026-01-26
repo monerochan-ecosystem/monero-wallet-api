@@ -56,11 +56,11 @@ export type ScanSettingsOpened = {
  */
 export async function writeScanSettings(
   scan_settings: ScanSettings,
-  settingsStorePath: string = SCAN_SETTINGS_STORE_NAME_DEFAULT
+  settingsStorePath: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
 ) {
   return await atomicWrite(
     settingsStorePath,
-    JSON.stringify(scan_settings, null, 2)
+    JSON.stringify(scan_settings, null, 2),
   );
 }
 /**
@@ -79,18 +79,18 @@ export async function writeScanSettings(
  * @returns The parsed {@link ScanSettings} object if file exists and is valid JSON, otherwise `undefined`.
  */
 export async function readScanSettings(
-  scan_settings_path: string = SCAN_SETTINGS_STORE_NAME_DEFAULT
+  scan_settings_path: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
 ): Promise<ScanSettingsOpened | undefined> {
   const scanSettings = await openScanSettingsFile(scan_settings_path);
   const openScanSettings = Object.assign(
     {},
-    scanSettings
+    scanSettings,
   ) as ScanSettingsOpened;
   if (!scanSettings) return undefined;
   for (const [i, wallet] of scanSettings.wallets.entries()) {
     if (!wallet.primary_address)
       throw new Error(
-        "The entry ${i} in the wallet settings list in ${scan_settings_path} has no primary address"
+        "The entry ${i} in the wallet settings list in ${scan_settings_path} has no primary address",
       );
     const walletWithKeys = walletSettingsPlusKeys(wallet);
     openScanSettings.wallets[i]!.secret_view_key =
@@ -108,18 +108,18 @@ export function readPrivateViewKeyFromEnv(primary_address: string) {
 }
 export async function readWalletFromScanSettings(
   primary_address: string,
-  scan_settings_path: string = SCAN_SETTINGS_STORE_NAME_DEFAULT
+  scan_settings_path: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
 ): Promise<ScanSetting | undefined> {
   const scanSettings = await openScanSettingsFile(scan_settings_path);
   if (!scanSettings) return undefined;
   const walletSettings = scanSettings.wallets.find(
-    (wallet) => wallet?.primary_address === primary_address
+    (wallet) => wallet?.primary_address === primary_address,
   );
   if (!walletSettings)
     throw new Error(
       `wallet not found in settings. did you call openwallet with the right params?
       Either wrong file name supplied to params.scan_settings_path: ${scan_settings_path}
-      Or wrong primary_address supplied params.primary_address: ${primary_address}`
+      Or wrong primary_address supplied params.primary_address: ${primary_address}`,
     );
   return {
     ...walletSettings,
@@ -129,7 +129,7 @@ export async function readWalletFromScanSettings(
 export function walletSettingsPlusKeys(
   wallet_settings: ScanSetting,
   secret_view_key?: string,
-  secret_spend_key?: string
+  secret_spend_key?: string,
 ) {
   // read secret_view_key and secret_spend_key from env
   if (!secret_view_key)
@@ -155,14 +155,14 @@ export function walletSettingsPlusKeys(
 }
 
 export async function writeWalletToScanSettings(
-  params: WriteScanSettingParams
+  params: WriteScanSettingParams,
 ) {
   if (!params.node_url) params.node_url = LOCAL_NODE_DEFAULT_URL;
   if (!params.scan_settings_path)
     params.scan_settings_path = SCAN_SETTINGS_STORE_NAME_DEFAULT;
   if (!params.primary_address)
     throw new Error(
-      "no primary address provided to writeWalletToScanSettings()"
+      "no primary address provided to writeWalletToScanSettings()",
     );
   const scanSettings = await openScanSettingsFile(params.scan_settings_path);
   if (!scanSettings) {
@@ -173,23 +173,25 @@ export async function writeWalletToScanSettings(
           {
             primary_address: params.primary_address,
             start_height: params.start_height || 0,
+            subaddress_index: params.subaddress_index || 0,
             halted: params.halted,
           },
         ],
         node_urls: [params.node_url],
       },
-      params.scan_settings_path
+      params.scan_settings_path,
     );
   }
 
   const already_has_settings = scanSettings.wallets.findIndex(
-    (wallet) => wallet?.primary_address === params.primary_address
+    (wallet) => wallet?.primary_address === params.primary_address,
   );
   if (already_has_settings === -1) {
     // wallet does not exist yet in settings
     scanSettings.wallets.push({
       primary_address: params.primary_address,
       start_height: params.start_height || 0,
+      subaddress_index: params.subaddress_index || 0,
       halted: params.halted,
     });
   } else {
@@ -197,17 +199,19 @@ export async function writeWalletToScanSettings(
     const wallet = scanSettings.wallets[already_has_settings];
     if (wallet) {
       wallet.start_height = params.start_height || wallet.start_height;
+      wallet.subaddress_index =
+        params.subaddress_index || wallet.subaddress_index || 0;
       wallet.halted = params.halted;
     }
   }
 
   return await atomicWrite(
     params.scan_settings_path,
-    JSON.stringify(scanSettings, null, 2)
+    JSON.stringify(scanSettings, null, 2),
   );
 }
 export async function openScanSettingsFile(
-  scan_settings_path: string = SCAN_SETTINGS_STORE_NAME_DEFAULT
+  scan_settings_path: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
 ): Promise<ScanSettings | undefined> {
   const jsonString = await Bun.file(scan_settings_path)
     .text()
@@ -217,16 +221,16 @@ export async function openScanSettingsFile(
 }
 
 export async function openNonHaltedWallets(
-  scan_settings_path: string = SCAN_SETTINGS_STORE_NAME_DEFAULT
+  scan_settings_path: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
 ): Promise<ScanSetting[]> {
   const scan_settings = await openScanSettingsFile(scan_settings_path);
   if (!scan_settings)
     throw new Error(
-      "no scan settings file found at path: " + scan_settings_path
+      "no scan settings file found at path: " + scan_settings_path,
     );
   if (!scan_settings?.wallets) throw new Error("no wallets in scan settings");
   const nonHaltedWallets = scan_settings.wallets.filter(
-    (wallet) => !wallet?.halted
+    (wallet) => !wallet?.halted,
   );
   if (!nonHaltedWallets.length)
     throw new Error("no non halted wallets in scan settings");
