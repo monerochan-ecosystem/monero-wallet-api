@@ -79,7 +79,7 @@ export class ViewPair extends WasmProcessor {
         node_url: "",
         timestamp: new Date().toISOString(),
       },
-    }
+    },
   ) {
     super();
   }
@@ -87,11 +87,11 @@ export class ViewPair extends WasmProcessor {
     primary_address: string,
     secret_view_key: string,
     subaddress_index = 0,
-    node_url?: string
+    node_url?: string,
   ): Promise<ViewPair> {
     const viewPair = new ViewPair(
       node_url || LOCAL_NODE_DEFAULT_URL,
-      primary_address
+      primary_address,
     );
     const tinywasi = await viewPair.initWasmModule();
     viewPair.writeToWasmMemory = (ptr, len) => {
@@ -108,7 +108,7 @@ export class ViewPair extends WasmProcessor {
     tinywasi.instance.exports.init_viewpair(
       primary_address.length,
       secret_view_key.length,
-      subaddress_index
+      subaddress_index,
     );
     if (!init_viewpair_result) {
       throw new Error("Failed to init viewpair");
@@ -133,13 +133,13 @@ export class ViewPair extends WasmProcessor {
   public async getBlocksBin(
     params: GetBlocksBinRequest,
     metaCallBack?: GetBlocksBinMetaCallback,
-    stopSync?: AbortSignal
+    stopSync?: AbortSignal,
   ) {
     return await getBlocksBinScan(
       this,
       await this.addGenesisHashToBlockIds(params),
       metaCallBack,
-      stopSync
+      stopSync,
     );
   }
   async addGenesisHashToBlockIds(params: GetBlocksBinRequest) {
@@ -176,12 +176,12 @@ export class ViewPair extends WasmProcessor {
    */
   public async getBlocksBinExecuteRequest(
     params: GetBlocksBinRequest,
-    stopSync?: AbortSignal
+    stopSync?: AbortSignal,
   ) {
     return await getBlocksBinExecuteRequest(
       this,
       await this.addGenesisHashToBlockIds(params),
-      stopSync
+      stopSync,
     );
   }
   /**
@@ -195,12 +195,12 @@ export class ViewPair extends WasmProcessor {
    */
   public getBlocksBinScanResponse(
     getBlocksBinResponseBuffer: Uint8Array,
-    metaCallBack?: GetBlocksBinMetaCallback
+    metaCallBack?: GetBlocksBinMetaCallback,
   ) {
     return getBlocksBinScanResponse(
       this,
       getBlocksBinResponseBuffer,
-      metaCallBack
+      metaCallBack,
     );
   }
   /**
@@ -210,26 +210,26 @@ export class ViewPair extends WasmProcessor {
     cacheChanged: CacheChangedCallback = (params) => console.log(params),
     stopSync?: AbortSignal,
     scan_settings_path?: string,
-    pathPrefix?: string
+    pathPrefix?: string,
   ) {
     const processor = this;
     const nonHaltedWallets = await openNonHaltedWallets(scan_settings_path);
     const masterWalletSettings = nonHaltedWallets[0];
     if (masterWalletSettings.primary_address !== this.primary_address)
       throw new Error(
-        "master wallet should be the first of the non halted wallets"
+        "master wallet should be the first of the non halted wallets",
       );
     let current_range = await initScanCache(
       processor,
       masterWalletSettings.start_height,
-      pathPrefix
+      pathPrefix,
     );
     const blockGenerator = (async function* () {
       while (true) {
         if (stopSync?.aborted) return;
         const firstResponse = await processor.getBlocksBinExecuteRequest(
           { block_ids: current_range.block_hashes.map((b) => b.block_hash) },
-          stopSync
+          stopSync,
         );
 
         yield firstResponse;
@@ -245,14 +245,14 @@ export class ViewPair extends WasmProcessor {
           slaveWallet.primary_address,
           slaveWithKeys.secret_view_key,
           slaveWallet.subaddress_index,
-          masterWalletSettings.node_url
+          masterWalletSettings.node_url,
         );
         slaveViewPairs.push({
           viewpair,
           current_range: await initScanCache(
             viewpair,
             masterWalletSettings.start_height,
-            pathPrefix
+            pathPrefix,
           ),
           secret_spend_key: slaveWithKeys.secret_spend_key,
         });
@@ -279,18 +279,18 @@ export class ViewPair extends WasmProcessor {
             await writeGetblocksBinBuffer(
               firstResponse,
               result.block_infos,
-              pathPrefix
+              pathPrefix,
             ); // feed the slaves
           for (const slave of slaveViewPairs) {
             let blocksBinItems = await readGetblocksBinBuffer(
               slave.current_range.end,
-              pathPrefix
+              pathPrefix,
             );
             let use_master_current_range = false;
             if (!blocksBinItems.length) {
               blocksBinItems = await readGetblocksBinBuffer(
                 current_range.end, // we use the new current range end to find the blocks
-                pathPrefix
+                pathPrefix,
               );
               slave.current_range = structuredClone(oldMasterCurrentRange); // but we use the old master current range to scan with slaves
               use_master_current_range = true;
@@ -300,17 +300,16 @@ export class ViewPair extends WasmProcessor {
                 await Bun.file(
                   `${pathPrefix ?? ""}getblocksbinbuffer/${
                     blocksBinItem.filename
-                  }`
-                ).arrayBuffer()
+                  }`,
+                ).arrayBuffer(),
               );
               await slave.viewpair.writeSubaddressesToScanCache(
                 scan_settings_path,
-                pathPrefix
+                pathPrefix,
               );
 
-              const slaveResult = await slave.viewpair.getBlocksBinScanResponse(
-                blocksbin
-              );
+              const slaveResult =
+                await slave.viewpair.getBlocksBinScanResponse(blocksbin);
               slave.current_range = await processScanResult({
                 current_range: slave.current_range,
                 result: slaveResult,
@@ -340,11 +339,11 @@ export class ViewPair extends WasmProcessor {
 
       const cache = await readCacheFileDefaultLocation(
         processor.primary_address,
-        pathPrefix
+        pathPrefix,
       );
       if (!cache)
         throw new Error(
-          `${error} in scan() + cache not found for primary address: ${processor.primary_address} and path prefix: ${pathPrefix}`
+          `${error} in scan() + cache not found for primary address: ${processor.primary_address} and path prefix: ${pathPrefix}`,
         );
       await cacheChanged({
         newCache: cache,
@@ -381,7 +380,7 @@ export class ViewPair extends WasmProcessor {
   }
   private async writeSubaddressesToScanCache(
     scan_settings_path?: string,
-    pathPrefix?: string
+    pathPrefix?: string,
   ) {
     await writeCacheFileDefaultLocation({
       primary_address: this.primary_address,
@@ -389,22 +388,25 @@ export class ViewPair extends WasmProcessor {
       writeCallback: async (cache) => {
         const walletSettings = await readWalletFromScanSettings(
           this.primary_address,
-          scan_settings_path
+          scan_settings_path,
         );
         if (!walletSettings)
           throw new Error(
             `wallet not found in settings. did you call openwallet with the right params?
           Either wrong file name supplied to params.scan_settings_path: ${scan_settings_path}
-          Or wrong primary_address supplied params.primary_address: ${this.primary_address}`
+          Or wrong primary_address supplied params.primary_address: ${this.primary_address}`,
           );
-        const last_subaddress_index = walletSettings.subaddress_index || 0;
-        let minor = last_subaddress_index + 1;
+        const last_subaddress_index = walletSettings.subaddress_index || 1;
+        if (!cache.subaddresses) cache.subaddresses = [];
+        const highestMinor = Math.max(
+          ...cache.subaddresses.map((sub) => sub.minor),
+        );
+        let minor = highestMinor + 1;
         while (minor <= last_subaddress_index) {
           const subaddress = this.makeSubaddress(minor);
 
           const created_at_height = lastRange(cache.scanned_ranges)?.end || 0;
           const created_at_timestamp = new Date().getTime();
-          if (!cache.subaddresses) cache.subaddresses = [];
           cache.subaddresses.push({
             minor,
             address: subaddress,

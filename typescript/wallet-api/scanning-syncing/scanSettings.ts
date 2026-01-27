@@ -173,7 +173,7 @@ export async function writeWalletToScanSettings(
           {
             primary_address: params.primary_address,
             start_height: params.start_height || 0,
-            subaddress_index: params.subaddress_index || 0,
+            subaddress_index: params.subaddress_index || 1,
             halted: params.halted,
           },
         ],
@@ -191,7 +191,7 @@ export async function writeWalletToScanSettings(
     scanSettings.wallets.push({
       primary_address: params.primary_address,
       start_height: params.start_height || 0,
-      subaddress_index: params.subaddress_index || 0,
+      subaddress_index: params.subaddress_index || 1,
       halted: params.halted,
     });
   } else {
@@ -200,7 +200,7 @@ export async function writeWalletToScanSettings(
     if (wallet) {
       wallet.start_height = params.start_height || wallet.start_height;
       wallet.subaddress_index =
-        params.subaddress_index || wallet.subaddress_index || 0;
+        params.subaddress_index || wallet.subaddress_index || 1;
       wallet.halted = params.halted;
     }
   }
