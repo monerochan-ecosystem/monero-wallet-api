@@ -94,7 +94,7 @@ export class ScanCacheOpened {
       pathPrefix: params.pathPrefix,
       writeCallback: async (stats) => {
         const end = lastRange(scanCacheOpen._cache.scanned_ranges)?.end || 0;
-        if (end > stats.height) {
+        if (!end || end > stats.height) {
           // add cache subaddresses to statsfile
           for (const cacheSub of scanCacheOpen._cache.subaddresses || []) {
             if (!stats.subaddresses[cacheSub.minor.toString()])
@@ -110,6 +110,10 @@ export class ScanCacheOpened {
           let minor = 1;
           const highestSubaddressMinor = walletSettings.subaddress_index || 1;
           while (minor < highestSubaddressMinor) {
+            if (stats.subaddresses[minor.toString()]) {
+              minor++;
+              continue;
+            }
             const subaddress = scanCacheOpen.view_pair.makeSubaddress(minor);
             const created_at_height =
               lastRange(scanCacheOpen._cache.scanned_ranges)?.end || 0;
