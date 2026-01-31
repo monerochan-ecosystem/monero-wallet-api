@@ -128,10 +128,10 @@ export class ScanCacheOpened {
             stats.subaddresses[minor.toString()] = new_subaddress;
             minor++;
           }
-          // todo sum up amount for subaddresses + main wallet
           stats.amount = sumOutputs(scanCacheOpen._cache.outputs, stats);
           stats.height = end;
         }
+        scanCacheOpen._subaddresses = Object.values(stats.subaddresses);
       },
     });
     return scanCacheOpen;
@@ -259,7 +259,13 @@ export class ScanCacheOpened {
       not_yet_included: true,
     };
     this._subaddresses.push(new_subaddress);
-
+    await writeStatsFileDefaultLocation({
+      primary_address: this.primary_address,
+      pathPrefix: this.pathPrefix,
+      writeCallback: async (stats) => {
+        stats.subaddresses[minor.toString()] = new_subaddress;
+      },
+    });
     return new_subaddress;
   }
   /**
