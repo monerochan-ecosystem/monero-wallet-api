@@ -16,7 +16,8 @@ import {
 import {
   handleScanError,
   lastRange,
-  writeCacheFileDefaultLocation,
+  writeCacheFileDefaultLocationThrows,
+  type ScanCache,
 } from "../scanning-syncing/scanresult/scanCache";
 import {
   makeTransaction,
@@ -222,6 +223,7 @@ export class ViewPair extends WasmProcessor {
     let current_range = await initScanCache(
       processor,
       masterWalletSettings.start_height,
+      scan_settings_path,
       pathPrefix,
     );
     const blockGenerator = (async function* () {
@@ -252,6 +254,7 @@ export class ViewPair extends WasmProcessor {
           current_range: await initScanCache(
             viewpair,
             masterWalletSettings.start_height,
+            scan_settings_path,
             pathPrefix,
           ),
           secret_spend_key: slaveWithKeys.secret_spend_key,
@@ -382,41 +385,47 @@ export class ViewPair extends WasmProcessor {
     scan_settings_path?: string,
     pathPrefix?: string,
   ) {
-    await writeCacheFileDefaultLocation({
+    await writeCacheFileDefaultLocationThrows({
       primary_address: this.primary_address,
       pathPrefix: pathPrefix,
       writeCallback: async (cache) => {
-        const walletSettings = await readWalletFromScanSettings(
-          this.primary_address,
-          scan_settings_path,
-        );
-        if (!walletSettings)
-          throw new Error(
-            `wallet not found in settings. did you call openwallet with the right params?
-          Either wrong file name supplied to params.scan_settings_path: ${scan_settings_path}
-          Or wrong primary_address supplied params.primary_address: ${this.primary_address}`,
-          );
-        const last_subaddress_index = walletSettings.subaddress_index || 1;
-        if (!cache.subaddresses) cache.subaddresses = [];
-        const highestMinor = Math.max(
-          ...cache.subaddresses.map((sub) => sub.minor),
-        );
-        let minor = highestMinor + 1;
-        while (minor <= last_subaddress_index) {
-          const subaddress = this.makeSubaddress(minor);
-
-          const created_at_height = lastRange(cache.scanned_ranges)?.end || 0;
-          const created_at_timestamp = new Date().getTime();
-          cache.subaddresses.push({
-            minor,
-            address: subaddress,
-            created_at_height,
-            created_at_timestamp,
-          });
-          minor++;
-        }
+        await this.addSubaddressesToScanCache(cache, scan_settings_path);
       },
     });
+  }
+  public async addSubaddressesToScanCache(
+    cache: ScanCache,
+    scan_settings_path?: string,
+  ) {
+    const walletSettings = await readWalletFromScanSettings(
+      this.primary_address,
+      scan_settings_path,
+    );
+    if (!walletSettings)
+      throw new Error(
+        `wallet not found in settings. did you call openwallet with the right params?
+          Either wrong file name supplied to params.scan_settings_path: ${scan_settings_path}
+          Or wrong primary_address supplied params.primary_address: ${this.primary_address}`,
+      );
+    const last_subaddress_index = walletSettings.subaddress_index || 1;
+    if (!cache.subaddresses) cache.subaddresses = [];
+    const highestMinor = Math.max(
+      ...cache.subaddresses.map((sub) => sub.minor),
+    );
+    let minor = highestMinor + 1;
+    while (minor <= last_subaddress_index) {
+      const subaddress = this.makeSubaddress(minor);
+
+      const created_at_height = lastRange(cache.scanned_ranges)?.end || 0;
+      const created_at_timestamp = new Date().getTime();
+      cache.subaddresses.push({
+        minor,
+        address: subaddress,
+        created_at_height,
+        created_at_timestamp,
+      });
+      minor++;
+    }
   }
   /**
    * This method makes a Subaddress for the Address of the Viewpair it was opened with.
