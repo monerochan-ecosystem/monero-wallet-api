@@ -82,7 +82,7 @@ export type BlockInfo = {
 };
 
 export type Output = {
-  amount: number;
+  amount: bigint;
   block_height: number;
   index_in_transaction: number;
   index_on_blockchain: number;
@@ -120,7 +120,7 @@ export const STAGENET_GENESIS_BLOCK_HASH =
  */
 export function getBlocksBinMakeRequest<T extends WasmProcessor>(
   processor: T,
-  params: GetBlocksBinRequest
+  params: GetBlocksBinRequest,
 ) {
   // https://github.com/monero-project/monero/blob/941ecefab21db382e88065c16659864cb8e763ae/src/rpc/core_rpc_server_commands_defs.h#L178
   //    enum REQUESTED_INFO
@@ -152,7 +152,7 @@ export function getBlocksBinMakeRequest<T extends WasmProcessor>(
   };
   //@ts-ignore
   processor.tinywasi.instance.exports.build_getblocksbin_request(
-    json_params.length
+    json_params.length,
   );
   if (!getBlocksRequestArray!)
     // written in build_getblocksbin_request call to readFromWasmMemory
@@ -161,20 +161,20 @@ export function getBlocksBinMakeRequest<T extends WasmProcessor>(
 }
 
 export async function getBlocksBinExecuteRequest<
-  T extends WasmProcessor & HasNodeUrl
+  T extends WasmProcessor & HasNodeUrl,
 >(processor: T, params: GetBlocksBinRequest, stopSync?: AbortSignal) {
   const getBlocksRequestArray = getBlocksBinMakeRequest(processor, params);
   const getBlocksBinResponseBuffer = await binaryFetchRequest(
     processor.node_url + "/getblocks.bin",
     getBlocksRequestArray!, // written in build_getblocksbin_request call to readFromWasmMemory
-    stopSync
+    stopSync,
   );
   return getBlocksBinResponseBuffer;
 }
 export async function getBlocksBinScanResponse<T extends WasmProcessor>(
   processor: T,
   getBlocksBinResponseBuffer: Uint8Array,
-  metaCallBack?: GetBlocksBinMetaCallback
+  metaCallBack?: GetBlocksBinMetaCallback,
 ) {
   processor.writeToWasmMemory = (ptr, len) => {
     processor.writeArray(ptr, len, getBlocksBinResponseBuffer);
@@ -183,13 +183,14 @@ export async function getBlocksBinScanResponse<T extends WasmProcessor>(
   let result: ScanResult | ErrorResponse | undefined;
   processor.readFromWasmMemory = (ptr, len) => {
     resultMeta = JSON.parse(
-      processor.readString(ptr, len)
+      processor.readString(ptr, len),
     ) as GetBlocksResultMeta;
     if (metaCallBack) metaCallBack(resultMeta);
     processor.readFromWasmMemory = (ptr, len) => {
-      result = JSON.parse(processor.readString(ptr, len)) as
-        | ScanResult
-        | ErrorResponse;
+      result = JSON.parse(processor.readString(ptr, len), (key, value) => {
+        if (key === "amount") return BigInt(value);
+        return value;
+      }) as ScanResult | ErrorResponse;
       if (!("error" in result)) {
         result.new_height = resultMeta.new_height;
         result.primary_address = resultMeta.primary_address;
@@ -200,7 +201,7 @@ export async function getBlocksBinScanResponse<T extends WasmProcessor>(
   };
   //@ts-ignore
   processor.tinywasi.instance.exports.scan_blocks_with_get_blocks_bin(
-    getBlocksBinResponseBuffer.length
+    getBlocksBinResponseBuffer.length,
   );
   return result; //result written in scan_blocks_with_get_blocks_bin
 }
@@ -208,28 +209,28 @@ export async function getBlocksBinScan<T extends WasmProcessor & HasNodeUrl>(
   processor: T,
   params: GetBlocksBinRequest,
   metaCallBack?: GetBlocksBinMetaCallback,
-  stopSync?: AbortSignal
+  stopSync?: AbortSignal,
 ) {
   const getBlocksBinResponseBuffer = await getBlocksBinExecuteRequest(
     processor,
     params,
-    stopSync
+    stopSync,
   );
   return getBlocksBinScanResponse(
     processor,
     getBlocksBinResponseBuffer,
-    metaCallBack
+    metaCallBack,
   );
 }
 
 export async function getBlocksBinJson<T extends WasmProcessor & HasNodeUrl>(
   processor: T,
-  params: GetBlocksBinRequest
+  params: GetBlocksBinRequest,
 ) {
   const getBlocksRequestArray = getBlocksBinMakeRequest(processor, params);
   const getBlocksBinResponseBuffer = await binaryFetchRequest(
     processor.node_url + "/getblocks.bin",
-    getBlocksRequestArray // written in build_getblocksbin_request call to readFromWasmMemory
+    getBlocksRequestArray, // written in build_getblocksbin_request call to readFromWasmMemory
   );
   processor.writeToWasmMemory = (ptr, len) => {
     processor.writeArray(ptr, len, getBlocksBinResponseBuffer);
@@ -238,7 +239,7 @@ export async function getBlocksBinJson<T extends WasmProcessor & HasNodeUrl>(
   let result: GetBlocksBinResponse | ErrorResponse;
   processor.readFromWasmMemory = (ptr, len) => {
     resultMeta = JSON.parse(
-      processor.readString(ptr, len)
+      processor.readString(ptr, len),
     ) as GetBlocksResultMeta;
     processor.readFromWasmMemory = (ptr, len) => {
       result = JSON.parse(processor.readString(ptr, len)) as
@@ -251,7 +252,7 @@ export async function getBlocksBinJson<T extends WasmProcessor & HasNodeUrl>(
   };
   //@ts-ignore
   processor.tinywasi.instance.exports.convert_get_blocks_bin_response_to_json(
-    getBlocksBinResponseBuffer.length
+    getBlocksBinResponseBuffer.length,
   );
   return result!; //result written in convert_get_blocks_bin_response_to_json
 }
@@ -263,7 +264,7 @@ export async function getBlocksBinJson<T extends WasmProcessor & HasNodeUrl>(
  */
 export function getOutsBinMakeRequest<T extends WasmProcessor>(
   processor: T,
-  getouts_request_indices: GetOutsBinRequest
+  getouts_request_indices: GetOutsBinRequest,
 ) {
   let getOutsArray = undefined; // return value
   const getouts_json = JSON.stringify(getouts_request_indices); // argument
@@ -277,7 +278,7 @@ export function getOutsBinMakeRequest<T extends WasmProcessor>(
   };
   //@ts-ignore
   processor.tinywasi.instance.exports.build_getoutsbin_request(
-    getouts_json.length
+    getouts_json.length,
   );
   if (!getOutsArray) {
     throw new Error("Failed to build get_outs.bin request");
@@ -286,22 +287,22 @@ export function getOutsBinMakeRequest<T extends WasmProcessor>(
 }
 export type GetOutsResponseBuffer = Uint8Array;
 export async function getOutsBinExecuteRequest<
-  T extends WasmProcessor & HasNodeUrl
+  T extends WasmProcessor & HasNodeUrl,
 >(processor: T, params: GetOutsBinRequest): Promise<GetOutsResponseBuffer> {
   const getOutsRequestArray = getOutsBinMakeRequest(processor, params);
   const getOutsBinResponseBuffer = await binaryFetchRequest(
     processor.node_url + "/get_outs.bin",
-    getOutsRequestArray! // written in build_getoutsbin_request call to readFromWasmMemory
+    getOutsRequestArray!, // written in build_getoutsbin_request call to readFromWasmMemory
   );
   return getOutsBinResponseBuffer;
 }
 export async function getOutsBinJson<T extends WasmProcessor & HasNodeUrl>(
   processor: T,
-  params: GetOutsBinRequest
+  params: GetOutsBinRequest,
 ) {
   const getOutsBinResponseBuffer = await getOutsBinExecuteRequest(
     processor,
-    params
+    params,
   );
   processor.writeToWasmMemory = (ptr, len) => {
     processor.writeArray(ptr, len, getOutsBinResponseBuffer);
@@ -312,7 +313,7 @@ export async function getOutsBinJson<T extends WasmProcessor & HasNodeUrl>(
   };
   //@ts-ignore
   processor.tinywasi.instance.exports.convert_get_outs_bin_response_to_json(
-    getOutsBinResponseBuffer.length
+    getOutsBinResponseBuffer.length,
   );
   if (!result) {
     throw new Error("Failed to parse get_outs.bin response");
@@ -323,7 +324,7 @@ export async function getOutsBinJson<T extends WasmProcessor & HasNodeUrl>(
 export async function binaryFetchRequest(
   url: string,
   body: Uint8Array,
-  stopSync?: AbortSignal
+  stopSync?: AbortSignal,
 ): Promise<Uint8Array> {
   const response = await fetch(url, {
     body: body as BodyInit,
@@ -355,6 +356,6 @@ export async function binaryFetchRequest(
 
   // Always return what we got (even if partial)
   return Uint8Array.from(
-    chunks.reduce((acc: number[], chunk) => [...acc, ...chunk], [])
+    chunks.reduce((acc: number[], chunk) => [...acc, ...chunk], []),
   );
 }

@@ -226,7 +226,7 @@ fn wallet_output_to_json(
     _ => [0, 0, 0, 0, 0, 0, 0, 0],
   };
   json!({
-      "amount": wallet_output.commitment().amount,
+      "amount": wallet_output.commitment().amount.to_string(),
       "stealth_address": hex::encode(id),
       "tx_hash": hex::encode(wallet_output.transaction()),
       "index_in_transaction":wallet_output.index_in_transaction(),
