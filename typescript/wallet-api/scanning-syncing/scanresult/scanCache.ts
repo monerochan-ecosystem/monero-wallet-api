@@ -6,26 +6,25 @@ import type {
   GetBlockHeadersRange,
   GetBlockHeadersRangeParams,
   Output,
+  ViewPair,
 } from "../../api";
-import type { WasmProcessor } from "../../wasm-processing/wasmProcessor";
 import { atomicWrite } from "../../io/atomicWrite";
 
-export async function initScanCache<
-  T extends WasmProcessor & HasGetBlockHeadersRangeMethod & HasPrimaryAddress,
->(
-  processor: T,
+export async function initScanCache(
+  viewpair: ViewPair,
   start_height: number,
+  scan_settings_path?: string,
   pathPrefix?: string,
 ): Promise<CacheRange> {
   const initialCache = await readCacheFileDefaultLocation(
-    processor.primary_address,
+    viewpair.primary_address,
     pathPrefix,
   );
   let cache: ScanCache = {
     outputs: {},
     own_key_images: {},
     scanned_ranges: [],
-    primary_address: processor.primary_address,
+    primary_address: viewpair.primary_address,
   };
   if (initialCache) cache = initialCache;
   let current_height = start_height;
@@ -37,7 +36,7 @@ export async function initScanCache<
 
   if (!start_block_hash) {
     const blockHeaderResponse = (
-      await processor.getBlockHeadersRange({
+      await viewpair.getBlockHeadersRange({
         start_height,
         end_height: start_height,
       })
@@ -60,11 +59,12 @@ export async function initScanCache<
 
   if (current_range == null || !current_range?.block_hashes.length)
     throw new Error("current_range was malformed. block_hashes is empty");
+
+  await viewpair.addSubaddressesToScanCache(cache, scan_settings_path);
+
   // write to cache
-  await atomicWrite(
-    cacheFileDefaultLocation(cache.primary_address, pathPrefix),
-    JSON.stringify(cache, null, 2),
-  );
+  await writeCacheToFile(cache, pathPrefix);
+
   return current_range;
 }
 export async function readCacheFile(
@@ -73,7 +73,12 @@ export async function readCacheFile(
   const jsonString = await Bun.file(cacheFilePath)
     .text()
     .catch(() => undefined);
-  return jsonString ? (JSON.parse(jsonString) as ScanCache) : undefined;
+  return jsonString
+    ? (JSON.parse(jsonString, (key, value) => {
+        if (key === "amount") return BigInt(value);
+        return value;
+      }) as ScanCache)
+    : undefined;
 }
 export function cacheFileDefaultLocation(
   primary_address: string,
@@ -94,7 +99,7 @@ export type WriteCacheFileParams = {
   pathPrefix?: string;
   writeCallback: (cache: ScanCache) => void | Promise<void>;
 };
-export async function writeCacheFileDefaultLocation(
+export async function writeCacheFileDefaultLocationThrows(
   params: WriteCacheFileParams,
 ) {
   const cache = await readCacheFileDefaultLocation(
@@ -107,9 +112,18 @@ export async function writeCacheFileDefaultLocation(
     );
   await params.writeCallback(cache);
   // write to cache
-  await atomicWrite(
-    cacheFileDefaultLocation(cache.primary_address, params.pathPrefix),
-    JSON.stringify(cache, null, 2),
+  await writeCacheToFile(cache, params.pathPrefix);
+}
+export async function writeCacheToFile(cache: ScanCache, pathPrefix?: string) {
+  // write to cache
+  return await atomicWrite(
+    cacheFileDefaultLocation(cache.primary_address, pathPrefix),
+    JSON.stringify(
+      cache,
+      (key, value) =>
+        typeof value === "bigint" ? value.toString() + "n" : value,
+      2,
+    ),
   );
 }
 export function lastRange(ranges: CacheRange[]): CacheRange | undefined {
@@ -161,6 +175,7 @@ export type Subaddress = {
   created_at_height: number;
   created_at_timestamp: number;
   not_yet_included?: boolean;
+  amount?: bigint;
 };
 export type ScanCache = {
   outputs: OutputsCache;
