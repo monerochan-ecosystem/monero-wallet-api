@@ -27,6 +27,7 @@ import {
   type ScanCache,
   type Subaddress,
 } from "./scanCache";
+import { sumOutputs, writeStatsFileDefaultLocation } from "./scanStats";
 
 export type SlaveScanCache = boolean;
 export type ScanCacheOpenedCreateParams = {
@@ -34,6 +35,7 @@ export type ScanCacheOpenedCreateParams = {
   scan_settings_path?: string; // Default: SCAN_SETTINGS_STORE_NAME_DEFAULT = "ScanSettings.json"
   pathPrefix?: string;
   no_worker?: boolean;
+  no_stats?: boolean;
   masterCacheChanged?: CacheChangedCallback;
 };
 
@@ -87,6 +89,47 @@ export class ScanCacheOpened {
       // unpause will start scanning from this.wallet_scan_settings.start_height
       await scanCacheOpen.unpause();
     }
+    await writeStatsFileDefaultLocation({
+      primary_address: params.primary_address,
+      pathPrefix: params.pathPrefix,
+      writeCallback: async (stats) => {
+        const end = lastRange(scanCacheOpen._cache.scanned_ranges)?.end || 0;
+        if (end > stats.height) {
+          // add cache subaddresses to statsfile
+          for (const cacheSub of scanCacheOpen._cache.subaddresses || []) {
+            if (!stats.subaddresses[cacheSub.minor.toString()])
+              stats.subaddresses[cacheSub.minor.toString()] = {
+                minor: cacheSub.minor,
+                address: cacheSub.address,
+                created_at_height: cacheSub.created_at_height,
+                created_at_timestamp: cacheSub.created_at_timestamp,
+                amount: 0n,
+              };
+          }
+          // add subaddresses to statsfile that are not in the cache
+          let minor = 1;
+          const highestSubaddressMinor = walletSettings.subaddress_index || 1;
+          while (minor < highestSubaddressMinor) {
+            const subaddress = scanCacheOpen.view_pair.makeSubaddress(minor);
+            const created_at_height =
+              lastRange(scanCacheOpen._cache.scanned_ranges)?.end || 0;
+            const created_at_timestamp = new Date().getTime();
+            const new_subaddress: Subaddress = {
+              minor,
+              address: subaddress,
+              created_at_height,
+              created_at_timestamp,
+              not_yet_included: true,
+            };
+            stats.subaddresses[minor.toString()] = new_subaddress;
+            minor++;
+          }
+          // todo sum up amount for subaddresses + main wallet
+          stats.amount = sumOutputs(scanCacheOpen._cache.outputs, stats);
+          stats.height = end;
+        }
+      },
+    });
     return scanCacheOpen;
   }
 
@@ -124,7 +167,7 @@ export class ScanCacheOpened {
 
     const feeEstimate = await node.getFeeEstimate();
     const selectedInputs =
-      params.inputs || this.selectInputs(sum, feeEstimate.fees![0]);
+      params.inputs || this.selectInputs(sum, BigInt(feeEstimate.fees![0]));
     if (!selectedInputs.length) throw new Error("not enough funds");
     const distibution = await node.getOutputDistribution();
     const preparedInputs: PreparedInput[] = [];
@@ -256,8 +299,8 @@ export class ScanCacheOpened {
    * selectInputs returns array of inputs, whose sum is larger than amount
    * adds approximate fee for 10kb transaction to amount if feePerByte is supplied
    */
-  public selectInputs(amount: number, feePerByte?: number) {
-    if (feePerByte) amount += feePerByte * 10000; // 10kb * feePerByte; for sweeping low amounts inputs[] supplied directly
+  public selectInputs(amount: bigint, feePerByte?: bigint) {
+    if (feePerByte) amount += feePerByte * 10000n; // 10kb * feePerByte; for sweeping low amounts inputs[] supplied directly
     const oneInputIsEnough = this.selectOneInput(amount);
     if (oneInputIsEnough) return [oneInputIsEnough];
     return this.selectMultipleInputs(amount);
@@ -265,17 +308,19 @@ export class ScanCacheOpened {
   /**
    * selectOneInput larger than amount, (smallest one matching this amount)
    */
-  public selectOneInput(amount: number): Output | undefined {
+  public selectOneInput(amount: bigint): Output | undefined {
     return this.spendableInputs()
       .filter((output) => output.amount >= amount)
-      .sort((a, b) => a.amount - b.amount)[0];
+      .sort((a, b) =>
+        b.amount > a.amount ? -1 : b.amount < a.amount ? 1 : 0,
+      )[0];
   }
   /**
    * selectMultipleInputs larger than amount, sorted from largest to smallest until total reaches amount
    */
-  public selectMultipleInputs(amount: number) {
+  public selectMultipleInputs(amount: bigint) {
     const selected = [];
-    let total = 0;
+    let total = 0n;
 
     for (const output of this.spendableInputs()) {
       selected.push(output);
@@ -292,7 +337,7 @@ export class ScanCacheOpened {
   public spendableInputs() {
     return Object.values(this._cache.outputs)
       .filter((output) => spendable(output))
-      .sort((a, b) => b.amount - a.amount);
+      .sort((a, b) => (a.amount > b.amount ? -1 : a.amount < b.amount ? 1 : 0));
   }
   /**
    * feed the ScanCacheOpened with new ScanCache as syncing happens
@@ -333,6 +378,7 @@ export type ManyScanCachesOpenedCreateOptions = {
   pathPrefix?: string;
   no_worker?: boolean;
   notifyMasterChanged?: CacheChangedCallback;
+  no_stats?: boolean;
 };
 export class ManyScanCachesOpened {
   public static async create({
@@ -340,6 +386,7 @@ export class ManyScanCachesOpened {
     pathPrefix,
     no_worker,
     notifyMasterChanged,
+    no_stats,
   }: ManyScanCachesOpenedCreateOptions) {
     const scan_settings = await openScanSettingsFile(scan_settings_path);
     if (!scan_settings?.wallets)
@@ -363,6 +410,7 @@ export class ManyScanCachesOpened {
           no_worker: true, // slaves depend on master worker
           scan_settings_path,
           pathPrefix,
+          no_stats,
         });
         slaveWallets.push(slaveWallet);
       }
@@ -376,6 +424,7 @@ export class ManyScanCachesOpened {
         },
         scan_settings_path,
         pathPrefix,
+        no_stats,
         no_worker, // pass no_worker, if you want to manually feed()
       });
       openedWallets.push(masterWallet, ...slaveWallets);
@@ -384,6 +433,7 @@ export class ManyScanCachesOpened {
         ...firstNonHaltedWallet,
         scan_settings_path,
         pathPrefix,
+        no_stats,
       });
       openedWallets.push(onlyWallet);
     }
