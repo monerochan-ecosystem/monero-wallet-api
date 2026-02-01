@@ -27,7 +27,11 @@ import {
   type ScanCache,
   type Subaddress,
 } from "./scanCache";
-import { sumOutputs, writeStatsFileDefaultLocation } from "./scanStats";
+import {
+  sumOutputs,
+  writeStatsFileDefaultLocation,
+  type ScanStats,
+} from "./scanStats";
 
 export type SlaveScanCache = boolean;
 export type ScanCacheOpenedCreateParams = {
@@ -89,7 +93,7 @@ export class ScanCacheOpened {
       // unpause will start scanning from this.wallet_scan_settings.start_height
       await scanCacheOpen.unpause();
     }
-    await writeStatsFileDefaultLocation({
+    scanCacheOpen._stats = await writeStatsFileDefaultLocation({
       primary_address: params.primary_address,
       pathPrefix: params.pathPrefix,
       writeCallback: async (stats) => {
@@ -131,7 +135,6 @@ export class ScanCacheOpened {
           stats.amount = sumOutputs(scanCacheOpen._cache.outputs, stats);
           stats.height = end;
         }
-        scanCacheOpen._subaddresses = Object.values(stats.subaddresses);
       },
     });
     return scanCacheOpen;
@@ -196,12 +199,11 @@ export class ScanCacheOpened {
     });
     return unsignedTx;
   }
+  get amount() {
+    return this._stats?.amount || 0n;
+  }
   get subaddresses() {
-    // we don't use this._cache.subaddresses directly,
-    // because the cache will be written by the background worker that does the scan
-    if (!this._subaddresses)
-      this._subaddresses = structuredClone(this._cache.subaddresses) || [];
-    return this._subaddresses;
+    return Object.values(this._stats?.subaddresses || {});
   }
   /**
    * makeStandardTransaction
@@ -249,8 +251,7 @@ export class ScanCacheOpened {
     });
     const created_at_height = lastRange(this._cache.scanned_ranges)?.end || 0;
     const created_at_timestamp = new Date().getTime();
-    if (!this._subaddresses)
-      this._subaddresses = structuredClone(this._cache.subaddresses) || [];
+
     const new_subaddress: Subaddress = {
       minor,
       address: subaddress,
@@ -258,8 +259,7 @@ export class ScanCacheOpened {
       created_at_timestamp,
       not_yet_included: true,
     };
-    this._subaddresses.push(new_subaddress);
-    await writeStatsFileDefaultLocation({
+    this._stats = await writeStatsFileDefaultLocation({
       primary_address: this.primary_address,
       pathPrefix: this.pathPrefix,
       writeCallback: async (stats) => {
@@ -380,7 +380,7 @@ export class ScanCacheOpened {
     private pathPrefix?: string,
     private worker?: Worker,
   ) {}
-  private _subaddresses: Subaddress[] | undefined;
+  private _stats: ScanStats | null = null;
   private notifyListeners: (CacheChangedCallback | null)[] = [];
 }
 export type ManyScanCachesOpenedCreateOptions = {
