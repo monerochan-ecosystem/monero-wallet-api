@@ -1,7 +1,7 @@
 use curve25519_dalek::Scalar;
 use monero_wallet::{
   OutputWithDecoys, ViewPair,
-  address::{MoneroAddress},
+  address::{AddressType, MoneroAddress, Network},
   ringct::RctType,
   rpc::{FeePriority, FeeRate, RpcError},
   send::{Change, SignableTransaction},
@@ -97,7 +97,35 @@ struct PaymentJson {
   address: String,
   amount: String,
 }
-
+pub fn parse_address(address: &str) -> Result<MoneroAddress, String> {
+  let address = MoneroAddress::from_str_with_unchecked_network(address)
+    .map_err(|e| format!("failed to parse payment address '{}' : {:?}", address, e))?;
+  Ok(address)
+}
+pub fn address_to_json(address: &MoneroAddress) -> String {
+  let network_string = match address.network() {
+    Network::Mainnet => "mainnet",
+    Network::Stagenet => "stagenet",
+    Network::Testnet => "testnet",
+  };
+  let kind_string = match address.kind() {
+    AddressType::LegacyIntegrated(_) => "integrated".to_string(),
+    AddressType::Legacy => "primary".to_string(),
+    AddressType::Subaddress => "subaddress".to_string(),
+    AddressType::Featured { payment_id: Some(_), .. } => "featured".to_string(),
+    AddressType::Featured { payment_id: None, .. } => "featured".to_string(),
+  };
+  let payment_id_string = match address.payment_id() {
+    Some(payment_id) => u64::from_le_bytes(payment_id).to_string(),
+    None => "null".to_string(),
+  };
+  let address_string = address.to_string();
+  if payment_id_string == "null" {
+    return json!({"address":address_string,"network":network_string,"kind":kind_string})
+      .to_string();
+  }
+  json!({"address":address_string,"network":network_string,"kind":kind_string,"payment_id":payment_id_string}).to_string()
+}
 #[derive(Debug, Deserialize)]
 struct MakeTransactionParams {
   inputs: Vec<String>,

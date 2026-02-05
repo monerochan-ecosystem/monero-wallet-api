@@ -21,6 +21,8 @@ use std::cell::RefCell;
 use your_program::{input, input_string, output, output_string, output_error_string};
 use zeroize::Zeroizing;
 
+use crate::transaction_building::transaction::address_to_json;
+
 thread_local! {
   static GLOBAL_VIEWPAIR: RefCell<ViewPair> = panic!("GLOBAL_VIEWPAIR is not initialized, call init_viewpair first");
   static GLOBAL_SCANNER: RefCell<Scanner> = panic!("GLOBAL_SCANNER is not initialized, call init_viewpair first");
@@ -185,6 +187,20 @@ pub extern "C" fn make_input(output_json_len: usize, getouts_response_len: usize
     Err(e) => {
       println!("Error parsing getBlocksBin response: IO error: {}", e);
       return; // error handling becomes easier on the ts side if we just return nothing print the error
+    }
+  }
+}
+#[no_mangle]
+pub extern "C" fn parse_address(address_string_len: usize) {
+  let address_string = input_string(address_string_len);
+  match transaction_building::transaction::parse_address(&address_string) {
+    Ok(address) => {
+      let address_json = address_to_json(&address);
+      output_string(&address_json.to_string());
+    }
+    Err(e) => {
+      output_error_string(json!({"error":e.to_string()}).to_string().as_str());
+      return;
     }
   }
 }

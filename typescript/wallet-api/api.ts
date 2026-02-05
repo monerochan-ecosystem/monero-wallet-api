@@ -25,7 +25,10 @@ export {
   readScanSettings,
 } from "./scanning-syncing/scanSettings";
 
-export { signTransaction } from "./send-functionality/transactionBuilding";
+export {
+  signTransaction,
+  parseAddress,
+} from "./send-functionality/transactionBuilding";
 export { computeKeyImage } from "./scanning-syncing/scanresult/computeKeyImage";
 export {
   scanWallets,
