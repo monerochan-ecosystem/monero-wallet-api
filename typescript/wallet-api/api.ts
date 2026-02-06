@@ -28,6 +28,8 @@ export {
 export {
   signTransaction,
   parseAddress,
+  type ParsedAddress,
+  type ParseAddressError,
 } from "./send-functionality/transactionBuilding";
 export { computeKeyImage } from "./scanning-syncing/scanresult/computeKeyImage";
 export {
