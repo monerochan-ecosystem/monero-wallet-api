@@ -25,7 +25,6 @@ import {
   type UnsignedTransaction,
 } from "../send-functionality/transactionBuilding";
 import { WasmProcessor } from "../wasm-processing/wasmProcessor";
-import type { ConnectionStatus } from "../scanning-syncing/connectionStatus";
 import { LOCAL_NODE_DEFAULT_URL } from "../node-interaction/nodeUrl";
 import {
   get_block_headers_range,
@@ -72,15 +71,6 @@ export class ViewPair extends WasmProcessor {
   protected constructor(
     public node_url: string,
     public primary_address: string,
-    public connection_status: ConnectionStatus = {
-      status_updates: [],
-      last_packet: {
-        status: "no_connection_yet",
-        bytes_read: 0,
-        node_url: "",
-        timestamp: new Date().toISOString(),
-      },
-    },
   ) {
     super();
   }
@@ -273,7 +263,6 @@ export class ViewPair extends WasmProcessor {
           current_range,
           result,
           cacheChanged,
-          connection_status: processor.connection_status,
           secret_spend_key: masterWithKeys.secret_spend_key,
           pathPrefix,
         });
@@ -317,7 +306,6 @@ export class ViewPair extends WasmProcessor {
                 current_range: slave.current_range,
                 result: slaveResult,
                 cacheChanged,
-                connection_status: processor.connection_status,
                 secret_spend_key: slave.secret_spend_key,
                 pathPrefix,
                 use_master_current_range,
@@ -351,7 +339,6 @@ export class ViewPair extends WasmProcessor {
       await cacheChanged({
         newCache: cache,
         changed_outputs: [],
-        connection_status: processor.connection_status,
       });
     }
   }

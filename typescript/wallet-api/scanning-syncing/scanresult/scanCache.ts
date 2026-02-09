@@ -1,5 +1,4 @@
 import { type KeyImage } from "./computeKeyImage";
-import type { ConnectionStatus } from "../connectionStatus";
 import type { ReorgInfo } from "./reorg";
 import type {
   BlockInfo,
@@ -200,7 +199,6 @@ export type ChangedOutput = {
 export type CacheChangedCallbackParameters = {
   newCache: ScanCache;
   changed_outputs: ChangedOutput[];
-  connection_status: ConnectionStatus;
 };
 export type CacheChangedCallbackSync<R = void> = (
   params: CacheChangedCallbackParameters,
@@ -214,19 +212,6 @@ export type CacheChangedCallbackAsync = CacheChangedCallbackSync<Promise<void>>;
  * @param params.newCache - The updated scan cache.
  * @param params.changed_outputs - Contains output and change_reason. {@link ChangedOutput}
  *
- * @param params.connection_status - Connection status information.
- * @param params.connection_status.status_updates - Array of connection status messages:
- * - { message: "node_url_changed"; old_node_url: string; new_node_url: string }
- * - { message: "connection_error"; error: {} }
- * - { message: "connection_ok" }
- * - undefined
- *
- * @param params.connection_status.last_packet - Information about the last packet:
- * `{ connection_status: "OK" | "partial read" | "connection failed"; bytes_read: number; node_url: string; timestamp: string }`.
- *
- * @remarks
- * - `scanned_ranges` is expected to change on every invocation,
- *   except when there was a connection error, then only `connection_status` changes.
  */
 
 export type CacheChangedCallback =

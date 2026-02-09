@@ -9,7 +9,6 @@ import {
 } from "./scanCache";
 import { type ErrorResponse } from "../../node-interaction/binaryEndpoints";
 import { handleReorg } from "./reorg";
-import type { ConnectionStatus } from "../connectionStatus";
 import type {
   CacheChangedCallback,
   CacheRange,
@@ -21,7 +20,6 @@ export type ProcessScanResultParams = {
   current_range: CacheRange;
   result: ScanResult | ErrorResponse | undefined;
   cacheChanged: CacheChangedCallback;
-  connection_status: ConnectionStatus;
   secret_spend_key?: string;
   pathPrefix?: string;
   use_master_current_range?: boolean;
@@ -31,7 +29,6 @@ export async function processScanResult(params: ProcessScanResultParams) {
   const {
     result,
     cacheChanged,
-    connection_status,
     secret_spend_key,
     pathPrefix,
     use_master_current_range,
@@ -76,7 +73,6 @@ export async function processScanResult(params: ProcessScanResultParams) {
     await cacheChanged({
       newCache: cache,
       changed_outputs,
-      connection_status,
     });
   }
   return current_range;
