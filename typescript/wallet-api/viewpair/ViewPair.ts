@@ -27,6 +27,7 @@ import {
 import { WasmProcessor } from "../wasm-processing/wasmProcessor";
 import { LOCAL_NODE_DEFAULT_URL } from "../node-interaction/nodeUrl";
 import {
+  atomicWrite,
   get_block_headers_range,
   get_info,
   type GetBlockHeadersRangeParams,
@@ -48,6 +49,10 @@ import {
   walletSettingsPlusKeys,
 } from "../scanning-syncing/scanSettings";
 import { sleep } from "../io/sleep";
+import {
+  connectionStatusFilePath,
+  type ConnectionStatus,
+} from "../scanning-syncing/connectionStatus";
 export type NETWORKS = "mainnet" | "stagenet" | "testnet";
 /**
  * This class is useful to interact with Moneros DaemonRpc binary requests in a convenient way.
@@ -222,6 +227,18 @@ export class ViewPair extends WasmProcessor {
         const firstResponse = await processor.getBlocksBinExecuteRequest(
           { block_ids: current_range.block_hashes.map((b) => b.block_hash) },
           stopSync,
+        );
+        const connectionStatus: ConnectionStatus = {
+          last_packet: {
+            status: "OK",
+            bytes_read: firstResponse.length,
+            node_url: processor.node_url,
+            timestamp: new Date().toISOString(),
+          },
+        };
+        await atomicWrite(
+          connectionStatusFilePath(scan_settings_path),
+          JSON.stringify(connectionStatus, null, 2),
         );
 
         yield firstResponse;

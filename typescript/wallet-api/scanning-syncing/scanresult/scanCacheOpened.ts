@@ -1,4 +1,10 @@
-import { NodeUrl, signTransaction, ViewPair, type Output } from "../../api";
+import {
+  atomicWrite,
+  NodeUrl,
+  signTransaction,
+  ViewPair,
+  type Output,
+} from "../../api";
 import {
   prepareInput,
   sumPayments,
@@ -32,6 +38,10 @@ import {
   writeStatsFileDefaultLocation,
   type ScanStats,
 } from "./scanStats";
+import {
+  connectionStatusFilePath,
+  type ConnectionStatus,
+} from "../connectionStatus";
 
 export type SlaveScanCache = boolean;
 export type ScanCacheOpenedCreateParams = {
@@ -41,6 +51,7 @@ export type ScanCacheOpenedCreateParams = {
   no_worker?: boolean;
   no_stats?: boolean;
   masterCacheChanged?: CacheChangedCallback;
+  workerError?: (error: unknown) => void;
 };
 
 export type CreateTransactionParams = {
@@ -85,6 +96,7 @@ export class ScanCacheOpened {
       params.masterCacheChanged || null,
       params.scan_settings_path,
       params.pathPrefix,
+      params.workerError,
     );
     if (theCatchToBeOpened) scanCacheOpen._cache = theCatchToBeOpened;
 
@@ -150,6 +162,11 @@ export class ScanCacheOpened {
     return this.view_pair.node_url;
   }
   set node_url(nu: string) {
+    if (this.worker) {
+      this.worker.terminate();
+      delete this.worker;
+    }
+
     //TODO: write to scansettings
     // and do pause unpause
     this.view_pair.node_url = nu;
@@ -297,6 +314,23 @@ export class ScanCacheOpened {
         (params) => this.feed(params),
         this.scan_settings_path,
         this.pathPrefix,
+        (error) => {
+          const workerErrCB = this.workerError;
+          const connectionStatus: ConnectionStatus = {
+            last_packet: {
+              status: "connection_failed",
+              bytes_read: 0,
+              node_url: this.node_url,
+              timestamp: new Date().toISOString(),
+            },
+          };
+          atomicWrite(
+            connectionStatusFilePath(this.scan_settings_path),
+            JSON.stringify(connectionStatus, null, 2),
+          ).then(() => {
+            if (workerErrCB) workerErrCB(error);
+          });
+        },
       );
     }
     return await writeWalletToScanSettings({
@@ -372,13 +406,15 @@ export class ScanCacheOpened {
     scanned_ranges: [],
     primary_address: "",
   };
+  private worker?: Worker = undefined;
+
   private constructor(
     public readonly view_pair: ViewPair,
     public readonly no_worker: boolean,
     public readonly masterCacheChanged: CacheChangedCallback | null,
     private scan_settings_path?: string,
     private pathPrefix?: string,
-    private worker?: Worker,
+    private workerError?: (error: unknown) => void,
   ) {}
   private _stats: ScanStats | null = null;
   private notifyListeners: (CacheChangedCallback | null)[] = [];
@@ -389,6 +425,7 @@ export type ManyScanCachesOpenedCreateOptions = {
   no_worker?: boolean;
   notifyMasterChanged?: CacheChangedCallback;
   no_stats?: boolean;
+  workerError?: (error: unknown) => void;
 };
 export class ManyScanCachesOpened {
   public static async create({
@@ -397,6 +434,7 @@ export class ManyScanCachesOpened {
     no_worker,
     notifyMasterChanged,
     no_stats,
+    workerError,
   }: ManyScanCachesOpenedCreateOptions) {
     const scan_settings = await openScanSettingsFile(scan_settings_path);
     if (!scan_settings?.wallets)
@@ -436,6 +474,7 @@ export class ManyScanCachesOpened {
         pathPrefix,
         no_stats,
         no_worker, // pass no_worker, if you want to manually feed()
+        workerError,
       });
       openedWallets.push(masterWallet, ...slaveWallets);
     } else {

@@ -8,7 +8,6 @@ export type ScanSetting = {
   start_height: number;
   subaddress_index?: number;
   halted?: boolean;
-  node_url?: string;
 };
 export type WriteScanSettingParams = {
   primary_address: string;
@@ -22,17 +21,18 @@ export type ScanSettingOpened = {
   primary_address: string;
   start_height: number;
   node_url: string;
+  subaddress_index?: number;
   secret_view_key?: string;
   halted?: boolean;
   secret_spend_key?: string;
 };
 export type ScanSettings = {
   wallets: ScanSetting[];
-  node_urls: string[];
+  node_url: string;
 };
 export type ScanSettingsOpened = {
   wallets: (ScanSettingOpened | undefined)[]; // ts should treat arrays like this by default. (value|undefined)[]
-  node_urls: string[];
+  node_url: string;
 };
 /**
  * Writes scan settings to the default or specified storage file in json.
@@ -92,7 +92,11 @@ export async function readScanSettings(
       throw new Error(
         "The entry ${i} in the wallet settings list in ${scan_settings_path} has no primary address",
       );
-    const walletWithKeys = walletSettingsPlusKeys(wallet);
+
+    const walletWithKeys = walletSettingsPlusKeys({
+      ...wallet,
+      node_url: scanSettings.node_url,
+    });
     openScanSettings.wallets[i]!.secret_view_key =
       walletWithKeys.secret_view_key;
     openScanSettings.wallets[i]!.secret_spend_key =
@@ -109,7 +113,7 @@ export function readPrivateViewKeyFromEnv(primary_address: string) {
 export async function readWalletFromScanSettings(
   primary_address: string,
   scan_settings_path: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
-): Promise<ScanSetting | undefined> {
+): Promise<ScanSettingOpened | undefined> {
   const scanSettings = await openScanSettingsFile(scan_settings_path);
   if (!scanSettings) return undefined;
   const walletSettings = scanSettings.wallets.find(
@@ -123,11 +127,25 @@ export async function readWalletFromScanSettings(
     );
   return {
     ...walletSettings,
-    node_url: scanSettings.node_urls[0],
+    node_url: scanSettings.node_url,
   };
 }
+export async function readWalletsFromScanSettings(
+  scan_settings_path: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
+): Promise<ScanSettingOpened[]> {
+  const scanSettings = await openScanSettingsFile(scan_settings_path);
+  const scanSettingsOpened: ScanSettingOpened[] = [];
+  for (const wallet of scanSettings?.wallets || []) {
+    scanSettingsOpened.push({
+      ...wallet,
+      node_url: scanSettings?.node_url || LOCAL_NODE_DEFAULT_URL,
+    });
+  }
+
+  return scanSettingsOpened;
+}
 export function walletSettingsPlusKeys(
-  wallet_settings: ScanSetting,
+  wallet_settings: ScanSettingOpened,
   secret_view_key?: string,
   secret_spend_key?: string,
 ) {
@@ -177,7 +195,7 @@ export async function writeWalletToScanSettings(
             halted: params.halted,
           },
         ],
-        node_urls: [params.node_url],
+        node_url: params.node_url,
       },
       params.scan_settings_path,
     );
@@ -222,16 +240,14 @@ export async function openScanSettingsFile(
 
 export async function openNonHaltedWallets(
   scan_settings_path: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
-): Promise<ScanSetting[]> {
-  const scan_settings = await openScanSettingsFile(scan_settings_path);
+): Promise<ScanSettingOpened[]> {
+  const scan_settings = await readWalletsFromScanSettings(scan_settings_path);
   if (!scan_settings)
     throw new Error(
       "no scan settings file found at path: " + scan_settings_path,
     );
-  if (!scan_settings?.wallets) throw new Error("no wallets in scan settings");
-  const nonHaltedWallets = scan_settings.wallets.filter(
-    (wallet) => !wallet?.halted,
-  );
+  if (!scan_settings) throw new Error("no wallets in scan settings");
+  const nonHaltedWallets = scan_settings.filter((wallet) => !wallet?.halted);
   if (!nonHaltedWallets.length)
     throw new Error("no non halted wallets in scan settings");
   return nonHaltedWallets;

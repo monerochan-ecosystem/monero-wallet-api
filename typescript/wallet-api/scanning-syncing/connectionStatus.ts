@@ -1,26 +1,18 @@
-export type NodeUrlChangedMessage = {
-  message: "node_url_changed";
-  old_node_url: string;
-  new_node_url: string;
-};
-export type ConnectionErrorMessage = {
-  message: "connection_error";
-  error: {};
-};
-export type ConnectionOkMessage = {
-  message: "connection_ok";
-};
+import { SCAN_SETTINGS_STORE_NAME_DEFAULT } from "./scanSettings";
+
 export type ConnectionStatus = {
-  status_updates: (
-    | ConnectionOkMessage
-    | ConnectionErrorMessage
-    | NodeUrlChangedMessage
-    | undefined
-  )[]; // we have multiple messages, because connection status can change + node can change
   last_packet: {
-    status: "OK" | "partial read" | "connection failed" | "no_connection_yet";
+    status: "OK" | "partial_read" | "connection_failed" | "no_connection_yet";
     bytes_read: number;
     node_url: string;
     timestamp: string;
   };
 };
+
+export const DEFAULT_CONNECTION_STATUS_PREFIX = "ConnectionStatus-";
+
+export function connectionStatusFilePath(scan_settings_path?: string) {
+  if (!scan_settings_path)
+    scan_settings_path = SCAN_SETTINGS_STORE_NAME_DEFAULT;
+  return `${DEFAULT_CONNECTION_STATUS_PREFIX}${scan_settings_path}`;
+}
