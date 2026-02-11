@@ -10,3 +10,4 @@ async function makeWorkerSource() {
 }
 
 export const workerMainCode = await makeWorkerSource();
+console.log(workerMainCode);
