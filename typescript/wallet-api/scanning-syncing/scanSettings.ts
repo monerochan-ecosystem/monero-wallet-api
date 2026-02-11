@@ -67,13 +67,21 @@ export async function writeNodeUrlToScanSettings(
   node_url: string,
   settingsStorePath: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
 ) {
-  const scanSettings = await openScanSettingsFile(settingsStorePath);
-  if (!scanSettings) return;
+  const scanSettings = (await openScanSettingsFile(settingsStorePath)) || {
+    node_url: "",
+    wallets: [],
+  };
   scanSettings.node_url = node_url;
   return await atomicWrite(
     settingsStorePath,
     JSON.stringify(scanSettings, null, 2),
   );
+}
+export async function readNodeUrlFromScanSettings(
+  settingsStorePath: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
+) {
+  const scanSettings = await openScanSettingsFile(settingsStorePath);
+  return scanSettings?.node_url;
 }
 /**
  * Reads scan settings from the default or specified storage file.
@@ -94,11 +102,12 @@ export async function readScanSettings(
   scan_settings_path: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
 ): Promise<ScanSettingsOpened | undefined> {
   const scanSettings = await openScanSettingsFile(scan_settings_path);
+  if (!scanSettings) return undefined;
+
   const openScanSettings = Object.assign(
     {},
     scanSettings,
   ) as ScanSettingsOpened;
-  if (!scanSettings) return undefined;
   for (const [i, wallet] of scanSettings.wallets.entries()) {
     if (!wallet.primary_address)
       throw new Error(
