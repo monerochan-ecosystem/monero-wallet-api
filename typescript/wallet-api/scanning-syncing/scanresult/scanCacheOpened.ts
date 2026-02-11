@@ -23,6 +23,7 @@ import {
   readWalletFromScanSettings,
   SCAN_SETTINGS_STORE_NAME_DEFAULT,
   walletSettingsPlusKeys,
+  writeNodeUrlToScanSettings,
   writeWalletToScanSettings,
 } from "../scanSettings";
 import {
@@ -161,15 +162,26 @@ export class ScanCacheOpened {
   get node_url(): string {
     return this.view_pair.node_url;
   }
-  set node_url(nu: string) {
+  private set node_url(nu: string) {
+    this.view_pair.node_url = nu;
+  }
+  public async changeNodeUrl(node_url: string) {
     if (this.worker) {
       this.worker.terminate();
       delete this.worker;
     }
 
-    //TODO: write to scansettings
-    // and do pause unpause
-    this.view_pair.node_url = nu;
+    await writeNodeUrlToScanSettings(node_url, this.scan_settings_path);
+    this.node_url = node_url;
+    await this.unpause();
+  }
+  public async retry() {
+    if (this.worker) {
+      this.worker.terminate();
+      delete this.worker;
+    }
+    //write connection status retry
+    await this.unpause();
   }
   public async sendTransaction(signedTx: string) {
     const node = await NodeUrl.create(this.node_url);

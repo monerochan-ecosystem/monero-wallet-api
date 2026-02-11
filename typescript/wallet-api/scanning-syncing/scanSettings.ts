@@ -63,6 +63,18 @@ export async function writeScanSettings(
     JSON.stringify(scan_settings, null, 2),
   );
 }
+export async function writeNodeUrlToScanSettings(
+  node_url: string,
+  settingsStorePath: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
+) {
+  const scanSettings = await openScanSettingsFile(settingsStorePath);
+  if (!scanSettings) return;
+  scanSettings.node_url = node_url;
+  return await atomicWrite(
+    settingsStorePath,
+    JSON.stringify(scanSettings, null, 2),
+  );
+}
 /**
  * Reads scan settings from the default or specified storage file.
  * secret_view_key and spend_private_key are read from environment variables
