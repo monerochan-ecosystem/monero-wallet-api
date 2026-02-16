@@ -30,10 +30,10 @@ export async function deriveSecretKeyWebCrypto(
 }
 
 export type WalletRoute = {
-  identity: string;
-  domain: string;
+  identity: "main" | string;
+  domain: "no_domain" | string;
   wallet_type: "single" | "sa_multi" | "pl_multi";
-  wallet_id: string;
+  wallet_id: "0" | string;
 };
 
 export function getWalletSecret(
@@ -41,14 +41,24 @@ export function getWalletSecret(
   seedphrase: string,
   password: string = "",
 ): Uint8Array {
-  if (!identity || !domain) throw new Error("Invalid wallet route");
-  // default identity: "main", default domain: "no_domain"
-
-  if (wallet_type !== "single" || "sa_multi" || "pl_multi")
+  if (!identity || !domain)
+    throw new Error(
+      `Invalid wallet route,
+       identity and domain are required,
+       default identity: "main",
+       default domain: "no_domain"`,
+    );
+  if (
+    wallet_type !== "single" &&
+    wallet_type !== "sa_multi" &&
+    wallet_type !== "pl_multi"
+  )
     throw new Error("Unsupported wallet type");
 
   if (Number.isNaN(parseInt(wallet_id)))
-    throw new Error("Invalid wallet id: " + wallet_id);
+    throw new Error(
+      "Invalid wallet id: " + wallet_id + "has to be a number, default: 0",
+    );
 
   return deriveSecretKey(
     seedphrase,
