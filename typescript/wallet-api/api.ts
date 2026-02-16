@@ -44,3 +44,5 @@ export { spendable } from "./scanning-syncing/scanresult/scanResult";
 export { openWallets, openWallet } from "./scanning-syncing/openWallet";
 export * from "./scanning-syncing/connectionStatus";
 export * from "./scanning-syncing/scanSettings";
+export * from "./keypairs-seeds/writeKeypairs";
+export * from "./keypairs-seeds/keypairs";
