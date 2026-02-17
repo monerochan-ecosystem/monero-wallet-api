@@ -8,6 +8,9 @@ use zeroize::Zeroizing;
 pub fn make_spendkey() -> Scalar {
   Scalar::random(&mut OsRng)
 }
+pub fn make_spendkey_from_seed(seed: [u8; 64]) -> Scalar {
+  keccak256_to_scalar(seed)
+}
 pub fn make_viewkey(spend_key: [u8; 32]) -> Scalar {
   keccak256_to_scalar(spend_key)
 }

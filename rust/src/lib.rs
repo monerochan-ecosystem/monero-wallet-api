@@ -80,6 +80,17 @@ pub extern "C" fn make_spendkey() {
   output_string(hex::encode(keypairs::make_spendkey().to_bytes()).as_str());
 }
 #[no_mangle]
+pub extern "C" fn make_spendkey_from_seed(seed_string_len: usize) {
+  let seed_string = input_string(seed_string_len);
+  output_string(
+    hex::encode(
+      keypairs::make_spendkey_from_seed(<[u8; 64]>::from_hex(seed_string.as_str()).unwrap())
+        .to_bytes(),
+    )
+    .as_str(),
+  );
+}
+#[no_mangle]
 pub extern "C" fn make_viewkey(spend_key_string_len: usize) {
   let spend_key_string = input_string(spend_key_string_len);
   output_string(&convert_to_json(
