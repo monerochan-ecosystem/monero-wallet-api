@@ -8,6 +8,7 @@ export type ScanSetting = {
   start_height: number;
   subaddress_index?: number;
   halted?: boolean;
+  wallet_route?: string;
 };
 export type WriteScanSettingParams = {
   primary_address: string;
@@ -16,6 +17,7 @@ export type WriteScanSettingParams = {
   halted?: boolean;
   scan_settings_path?: string; // write your settings to a different path
   node_url?: string;
+  wallet_route?: string;
 };
 export type ScanSettingOpened = {
   primary_address: string;
@@ -196,6 +198,8 @@ export function walletSettingsPlusKeys(
 export async function writeWalletToScanSettings(
   params: WriteScanSettingParams,
 ) {
+  let wallet_route: string | undefined;
+  if (params.wallet_route) wallet_route = params.wallet_route;
   if (!params.node_url) params.node_url = LOCAL_NODE_DEFAULT_URL;
   if (!params.scan_settings_path)
     params.scan_settings_path = SCAN_SETTINGS_STORE_NAME_DEFAULT;
@@ -214,6 +218,7 @@ export async function writeWalletToScanSettings(
             start_height: params.start_height || 0,
             subaddress_index: params.subaddress_index || 1,
             halted: params.halted,
+            wallet_route,
           },
         ],
         node_url: params.node_url,
@@ -232,6 +237,7 @@ export async function writeWalletToScanSettings(
       start_height: params.start_height || 0,
       subaddress_index: params.subaddress_index || 1,
       halted: params.halted,
+      wallet_route,
     });
   } else {
     // wallet already exists
@@ -241,6 +247,7 @@ export async function writeWalletToScanSettings(
       wallet.subaddress_index =
         params.subaddress_index || wallet.subaddress_index || 1;
       wallet.halted = params.halted;
+      wallet.wallet_route = wallet_route;
     }
   }
 
