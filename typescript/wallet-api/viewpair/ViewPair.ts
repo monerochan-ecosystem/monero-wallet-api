@@ -47,6 +47,7 @@ import {
   openNonHaltedWallets,
   readWalletFromScanSettings,
   walletSettingsPlusKeys,
+  writeDaemonHeightAsStartHeightToScanSettings,
 } from "../scanning-syncing/scanSettings";
 import { sleep } from "../io/sleep";
 import {
@@ -215,9 +216,16 @@ export class ViewPair extends WasmProcessor {
       throw new Error(
         "master wallet should be the first of the non halted wallets",
       );
+    let masterStartHeight = masterWalletSettings.start_height;
+    if (masterStartHeight === null) {
+      masterStartHeight = await writeDaemonHeightAsStartHeightToScanSettings(
+        processor.node_url,
+        scan_settings_path,
+      );
+    }
     let current_range = await initScanCache(
       processor,
-      masterWalletSettings.start_height,
+      masterStartHeight,
       scan_settings_path,
       pathPrefix,
     );
@@ -260,7 +268,7 @@ export class ViewPair extends WasmProcessor {
           viewpair,
           current_range: await initScanCache(
             viewpair,
-            masterWalletSettings.start_height,
+            masterStartHeight,
             scan_settings_path,
             pathPrefix,
           ),

@@ -1,3 +1,4 @@
+import { get_info } from "../api";
 import { atomicWrite } from "../io/atomicWrite";
 import { LOCAL_NODE_DEFAULT_URL } from "../node-interaction/nodeUrl";
 
@@ -66,6 +67,21 @@ export async function writeScanSettings(
     JSON.stringify(scan_settings, null, 2),
   );
 }
+export async function writeDaemonHeightAsStartHeightToScanSettings(
+  node_url: string,
+  settingsStorePath: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
+): Promise<number> {
+  const getInfo = await get_info(node_url);
+
+  const scanSettings = (await openScanSettingsFile(settingsStorePath)) || {
+    node_url: "",
+    wallets: [],
+    start_height: null,
+  };
+  scanSettings.start_height = getInfo.height;
+  await atomicWrite(settingsStorePath, JSON.stringify(scanSettings, null, 2));
+  return getInfo.height;
+}
 export async function writeNodeUrlToScanSettings(
   node_url: string,
   settingsStorePath: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
@@ -73,6 +89,7 @@ export async function writeNodeUrlToScanSettings(
   const scanSettings = (await openScanSettingsFile(settingsStorePath)) || {
     node_url: "",
     wallets: [],
+    start_height: null,
   };
   scanSettings.node_url = node_url;
   return await atomicWrite(
