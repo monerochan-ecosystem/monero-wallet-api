@@ -65,3 +65,14 @@ export function getWalletSecret(
     `${identity}/${domain}/${wallet_type}/${wallet_id}/${password}`,
   );
 }
+
+export const WALLET_DEFAULT_ROUTE: WalletRoute = {
+  identity: "main",
+  domain: "no_domain",
+  wallet_type: "single",
+  wallet_id: "0",
+};
+
+export function walletRouteToString(route: WalletRoute): string {
+  return `${route.identity}/${route.domain}/${route.wallet_type}/${route.wallet_id}`;
+}
