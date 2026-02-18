@@ -495,6 +495,8 @@ export class ManyScanCachesOpened {
         scan_settings_path,
         pathPrefix,
         no_stats,
+        no_worker, // pass no_worker, if you want to manually feed()
+        workerError,
       });
       openedWallets.push(onlyWallet);
     }
