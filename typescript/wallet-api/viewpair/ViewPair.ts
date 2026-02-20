@@ -423,6 +423,7 @@ export class ViewPair extends WasmProcessor {
     if (!cache.subaddresses) cache.subaddresses = [];
     const highestMinor = Math.max(
       ...cache.subaddresses.map((sub) => sub.minor),
+      0,
     );
     let minor = highestMinor + 1;
     while (minor <= last_subaddress_index) {
