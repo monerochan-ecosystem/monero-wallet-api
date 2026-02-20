@@ -67,6 +67,21 @@ export async function writeScanSettings(
     JSON.stringify(scan_settings, null, 2),
   );
 }
+export async function writeStartHeightToScanSettings(
+  start_height: number | null,
+  settingsStorePath: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
+) {
+  const scanSettings = (await openScanSettingsFile(settingsStorePath)) || {
+    node_url: "",
+    wallets: [],
+    start_height: null,
+  };
+  scanSettings.start_height = start_height;
+  return await atomicWrite(
+    SCAN_SETTINGS_STORE_NAME_DEFAULT,
+    JSON.stringify(scanSettings, null, 2),
+  );
+}
 export async function writeDaemonHeightAsStartHeightToScanSettings(
   node_url: string,
   settingsStorePath: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
