@@ -444,10 +444,20 @@ export class ViewPair extends WasmProcessor {
    * The network (mainnet, stagenet, testnet) is the same as the one of the Viewpairaddress.
    *
    * @param major account index should be set to 0 in most cases
-   * @param minor address index
+   * @param minor address index starting at 1
    * @returns Adressstring
    */
   private makeSubaddressRaw(major: number, minor: number) {
+    if (
+      typeof major !== "number" ||
+      typeof minor !== "number" ||
+      major < 0 ||
+      minor < 1
+    )
+      throw new Error(
+        `subaddress major and minor must be positive numbers, minor index must be above 1.
+          makeSubaddressRaw arguments: major: ${major}, minor: ${minor}`,
+      );
     let address = "";
     this.readFromWasmMemory = (ptr, len) => {
       address = this.readString(ptr, len);
