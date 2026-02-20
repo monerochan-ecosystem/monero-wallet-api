@@ -24,6 +24,7 @@ import {
   SCAN_SETTINGS_STORE_NAME_DEFAULT,
   walletSettingsPlusKeys,
   writeNodeUrlToScanSettings,
+  writeStartHeightToScanSettings,
   writeWalletToScanSettings,
 } from "../scanSettings";
 import {
@@ -95,6 +96,7 @@ export class ScanCacheOpened {
       ),
       params.no_worker || false,
       params.masterCacheChanged || null,
+      walletSettings.start_height,
       params.scan_settings_path,
       params.pathPrefix,
       params.workerError,
@@ -151,6 +153,14 @@ export class ScanCacheOpened {
       },
     });
     return scanCacheOpen;
+  }
+  get start_height(): number | null {
+    return this._start_height;
+  }
+
+  public async changeStartHeight(start_height: number | null) {
+    await writeStartHeightToScanSettings(start_height, this.scan_settings_path);
+    this._start_height = start_height;
   }
 
   get cache(): ScanCache {
@@ -402,6 +412,7 @@ export class ScanCacheOpened {
    * for all primary addresses
    */
   public feed(params: CacheChangedCallbackParameters) {
+    //TODO update aggregated amount stats + height
     if (this.masterCacheChanged) this.masterCacheChanged(params);
     if (this.view_pair.primary_address !== params.newCache.primary_address)
       return;
@@ -424,6 +435,7 @@ export class ScanCacheOpened {
     public readonly view_pair: ViewPair,
     public readonly no_worker: boolean,
     public readonly masterCacheChanged: CacheChangedCallback | null,
+    private _start_height: number | null,
     private scan_settings_path?: string,
     private pathPrefix?: string,
     private workerError?: (error: unknown) => void,
@@ -440,6 +452,16 @@ export type ManyScanCachesOpenedCreateOptions = {
   workerError?: (error: unknown) => void;
 };
 export class ManyScanCachesOpened {
+  get start_height(): number | null {
+    if (this.wallets.length === 0) return null;
+    return this.wallets[0]?.start_height;
+  }
+
+  public async changeStartHeight(start_height: number | null) {
+    if (this.wallets.length === 0) throw new Error("no wallets");
+    const masterWallet = this.wallets[0];
+    return await masterWallet.changeStartHeight(start_height);
+  }
   public static async create({
     scan_settings_path,
     pathPrefix,
