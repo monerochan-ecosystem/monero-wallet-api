@@ -119,8 +119,7 @@ export async function writeCacheToFile(cache: ScanCache, pathPrefix?: string) {
     cacheFileDefaultLocation(cache.primary_address, pathPrefix),
     JSON.stringify(
       cache,
-      (key, value) =>
-        typeof value === "bigint" ? value.toString() + "n" : value,
+      (key, value) => (typeof value === "bigint" ? value.toString() : value),
       2,
     ),
   );

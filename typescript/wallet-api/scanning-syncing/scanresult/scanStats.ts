@@ -26,8 +26,7 @@ export async function writeStatsFileDefaultLocation(
     statsFileDefaultLocation(stats.primary_address, params.pathPrefix),
     JSON.stringify(
       stats,
-      (key, value) =>
-        typeof value === "bigint" ? value.toString() + "n" : value,
+      (key, value) => (typeof value === "bigint" ? value.toString() : value),
       2,
     ),
   );
