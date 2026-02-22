@@ -160,8 +160,14 @@ export class ScanCacheOpened {
   }
 
   public async changeStartHeight(start_height: number | null) {
+    if (this.worker) {
+      this.worker.terminate();
+      delete this.worker;
+    }
+
     await writeStartHeightToScanSettings(start_height, this.scan_settings_path);
     this._start_height = start_height;
+    await this.unpause();
   }
 
   get cache(): ScanCache {
@@ -175,6 +181,29 @@ export class ScanCacheOpened {
   }
   private set node_url(nu: string) {
     this.view_pair.node_url = nu;
+  }
+  public async changeNodeUrlAndStartHeight(
+    node_url?: string,
+    start_height?: number | null,
+  ) {
+    if (this.worker) {
+      this.worker.terminate();
+      delete this.worker;
+    }
+    if (node_url !== undefined) {
+      await writeNodeUrlToScanSettings(node_url, this.scan_settings_path);
+      this.node_url = node_url;
+    }
+
+    if (start_height !== undefined) {
+      await writeStartHeightToScanSettings(
+        start_height,
+        this.scan_settings_path,
+      );
+      this._start_height = start_height;
+    }
+
+    await this.unpause();
   }
   public async changeNodeUrl(node_url: string) {
     if (this.worker) {
@@ -458,7 +487,32 @@ export class ManyScanCachesOpened {
     if (this.wallets.length === 0) return null;
     return this.wallets[0]?.start_height;
   }
+  get node_url(): string {
+    if (this.wallets.length === 0) return "";
+    return this.wallets[0]?.node_url;
+  }
+  public async changeNodeUrlAndStartHeight(
+    node_url?: string,
+    start_height?: number | null,
+  ) {
+    if (this.wallets.length === 0) throw new Error("no wallets");
+    const masterWallet = this.wallets[0];
+    return await masterWallet.changeNodeUrlAndStartHeight(
+      node_url,
+      start_height,
+    );
+  }
+  public async retry() {
+    if (this.wallets.length === 0) throw new Error("no wallets");
+    const masterWallet = this.wallets[0];
+    return await masterWallet.retry();
+  }
 
+  public async changeNodeUrl(node_url: string) {
+    if (this.wallets.length === 0) throw new Error("no wallets");
+    const masterWallet = this.wallets[0];
+    return await masterWallet.changeNodeUrl(node_url);
+  }
   public async changeStartHeight(start_height: number | null) {
     if (this.wallets.length === 0) throw new Error("no wallets");
     const masterWallet = this.wallets[0];
