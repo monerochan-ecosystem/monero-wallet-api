@@ -46,3 +46,4 @@ export * from "./scanning-syncing/connectionStatus";
 export * from "./scanning-syncing/scanSettings";
 export * from "./keypairs-seeds/writeKeypairs";
 export * from "./keypairs-seeds/keypairs";
+export * from "./send-functionality/conversion";
