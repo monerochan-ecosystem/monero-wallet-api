@@ -62,7 +62,7 @@ export function getWalletSecret(
 
   return deriveSecretKey(
     seedphrase,
-    `${identity}/${domain}/${wallet_type}/${wallet_id}/${password}`,
+    `${identity}/${domain}/${wallet_type}/${wallet_id}/${password}-monero`,
   );
 }
 
