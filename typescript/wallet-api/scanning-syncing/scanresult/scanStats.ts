@@ -1,4 +1,4 @@
-import { atomicWrite, type Output } from "../../api";
+import { atomicWrite } from "../../api";
 import type { OutputsCache, Subaddress } from "./scanCache";
 
 type WriteStatsFileParams = {
@@ -18,6 +18,7 @@ export async function writeStatsFileDefaultLocation(
       height: 0,
       amount: 0n,
       primary_address: params.primary_address,
+      pending_amounts: [],
       subaddresses: {},
     };
 
@@ -78,9 +79,18 @@ export function sumOutputs(
 }
 export type SubaddressMinorIndex = string;
 export type Amount = bigint;
+export type PendingAmount = {
+  amount: bigint;
+  subaddress_index: number | null;
+  becomes_spendable_at_height: number;
+  output_index: number;
+  tx_hash: string;
+  block_height: number;
+};
 export type ScanStats = {
   height: number;
   amount: bigint;
+  pending_amounts: PendingAmount[];
   primary_address: string;
   subaddresses: Record<SubaddressMinorIndex, Subaddress>;
 };
