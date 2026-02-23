@@ -358,6 +358,12 @@ export class ScanCacheOpened {
       scan_settings_path: this.scan_settings_path,
     });
   }
+  public stopWorker() {
+    if (this.worker) {
+      this.worker.terminate();
+      delete this.worker;
+    }
+  }
   public async unpause() {
     // if worker does not exist yet, start it (if we are not slave / no_worker)
 
@@ -506,6 +512,11 @@ export class ManyScanCachesOpened {
     if (this.wallets.length === 0) throw new Error("no wallets");
     const masterWallet = this.wallets[0];
     return await masterWallet.retry();
+  }
+  public stopWorker() {
+    if (this.wallets.length === 0) throw new Error("no wallets");
+    const masterWallet = this.wallets[0];
+    return masterWallet.stopWorker();
   }
 
   public async changeNodeUrl(node_url: string) {
