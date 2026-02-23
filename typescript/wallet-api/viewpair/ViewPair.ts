@@ -44,10 +44,10 @@ import {
   type CacheChangedCallback,
 } from "../scanning-syncing/scanresult/scanCache";
 import {
+  cullTooLargeScanHeight,
   openNonHaltedWallets,
   readWalletFromScanSettings,
   walletSettingsPlusKeys,
-  writeDaemonHeightAsStartHeightToScanSettings,
 } from "../scanning-syncing/scanSettings";
 import { sleep } from "../io/sleep";
 import {
@@ -216,13 +216,11 @@ export class ViewPair extends WasmProcessor {
       throw new Error(
         "master wallet should be the first of the non halted wallets",
       );
-    let masterStartHeight = masterWalletSettings.start_height;
-    if (masterStartHeight === null) {
-      masterStartHeight = await writeDaemonHeightAsStartHeightToScanSettings(
-        processor.node_url,
-        scan_settings_path,
-      );
-    }
+    let masterStartHeight = await cullTooLargeScanHeight(
+      processor.node_url,
+      scan_settings_path,
+    );
+
     let current_range = await initScanCache(
       processor,
       masterStartHeight,

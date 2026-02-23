@@ -94,8 +94,29 @@ export async function writeDaemonHeightAsStartHeightToScanSettings(
     wallets: [],
     start_height: null,
   };
-  scanSettings.start_height = getInfo.height;
+  scanSettings.start_height = getInfo.height - 1;
   await atomicWrite(settingsStorePath, JSON.stringify(scanSettings, null, 2));
+  return getInfo.height;
+}
+export async function cullTooLargeScanHeight(
+  node_url: string,
+  settingsStorePath: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
+): Promise<number> {
+  const getInfo = await get_info(node_url);
+
+  const scanSettings = (await openScanSettingsFile(settingsStorePath)) || {
+    node_url: "",
+    wallets: [],
+    start_height: null,
+  };
+  if (
+    scanSettings.start_height === null ||
+    scanSettings.start_height > getInfo.height - 1
+  ) {
+    scanSettings.start_height = getInfo.height - 1;
+    await atomicWrite(settingsStorePath, JSON.stringify(scanSettings, null, 2));
+  }
+
   return getInfo.height;
 }
 export async function writeNodeUrlToScanSettings(
