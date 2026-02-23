@@ -231,10 +231,13 @@ export async function walletSettingsPlusKeys(
   secret_view_key?: string,
   secret_spend_key?: string,
 ) {
-  if (areWeInTheBrowser) await refreshEnvIndexedDB();
   // read secret_view_key and secret_spend_key from env
   if (!secret_view_key)
     secret_view_key = Bun.env[`vk${wallet_settings.primary_address}`];
+  if (!secret_view_key) {
+    await refreshEnvIndexedDB();
+    secret_view_key = Bun.env[`vk${wallet_settings.primary_address}`];
+  }
   if (!secret_view_key)
     throw (
       "no secret_view_key provided and not found in env for address: " +
