@@ -55,7 +55,12 @@ export type ScanCacheOpenedCreateParams = {
   masterCacheChanged?: CacheChangedCallback;
   workerError?: (error: unknown) => void;
 };
-
+// every tx has an output, get more info from outputs[0]
+export type FoundTransaction = {
+  amount: bigint;
+  outputs: Output[];
+  tx_hash: string;
+};
 export type CreateTransactionParams = {
   payments: Payment[];
   inputs?: Output[];
@@ -172,6 +177,24 @@ export class ScanCacheOpened {
 
   get cache(): ScanCache {
     return this._cache;
+  }
+  get transactions(): FoundTransaction[] {
+    const transactions: FoundTransaction[] = [];
+    let last_tx: FoundTransaction | null = null;
+    Object.entries(this._cache.outputs).forEach(([_, output]) => {
+      if (last_tx && last_tx?.tx_hash === output.tx_hash) {
+        last_tx.outputs.push(output);
+        last_tx.amount += output.amount;
+      } else {
+        last_tx = {
+          amount: output.amount,
+          outputs: [output],
+          tx_hash: output.tx_hash,
+        };
+        transactions.push(last_tx);
+      }
+    });
+    return transactions;
   }
   get primary_address(): string {
     return this.view_pair.primary_address;
