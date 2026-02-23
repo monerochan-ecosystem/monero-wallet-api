@@ -221,14 +221,16 @@ export class ScanCacheOpened {
       this.worker.terminate();
       delete this.worker;
     }
-    const scan_settings_exists = await doesScanSettingsFileExist(
+    const scan_settings = await readWalletFromScanSettings(
+      this.primary_address,
       this.scan_settings_path,
-    );
-    if (scan_settings_exists) {
+    ).catch(() => false);
+
+    if (scan_settings) {
       //TODO ? write connection status retry
       await this.unpause();
     }
-    return scan_settings_exists;
+    return scan_settings ? true : false;
   }
   public async sendTransaction(signedTx: string) {
     const node = await NodeUrl.create(this.node_url);
