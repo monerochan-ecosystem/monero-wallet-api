@@ -118,7 +118,7 @@ export async function cullTooLargeScanHeight(
     await atomicWrite(settingsStorePath, JSON.stringify(scanSettings, null, 2));
   }
 
-  return getInfo.height;
+  return scanSettings.start_height;
 }
 export async function writeNodeUrlToScanSettings(
   node_url: string,
