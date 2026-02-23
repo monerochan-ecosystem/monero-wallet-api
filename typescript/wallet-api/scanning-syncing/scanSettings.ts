@@ -1,5 +1,6 @@
 import { get_info } from "../api";
 import { atomicWrite } from "../io/atomicWrite";
+import { refreshEnvIndexedDB } from "../io/indexedDB";
 import { LOCAL_NODE_DEFAULT_URL } from "../node-interaction/nodeUrl";
 
 export const SCAN_SETTINGS_STORE_NAME_DEFAULT = "ScanSettings.json";
@@ -171,7 +172,7 @@ export async function readScanSettings(
         "The entry ${i} in the wallet settings list in ${scan_settings_path} has no primary address",
       );
 
-    const walletWithKeys = walletSettingsPlusKeys({
+    const walletWithKeys = await walletSettingsPlusKeys({
       ...wallet,
       node_url: scanSettings.node_url,
       start_height: scanSettings.start_height,
@@ -225,11 +226,12 @@ export async function readWalletsFromScanSettings(
 
   return scanSettingsOpened;
 }
-export function walletSettingsPlusKeys(
+export async function walletSettingsPlusKeys(
   wallet_settings: ScanSettingOpened,
   secret_view_key?: string,
   secret_spend_key?: string,
 ) {
+  if (areWeInTheBrowser) await refreshEnvIndexedDB();
   // read secret_view_key and secret_spend_key from env
   if (!secret_view_key)
     secret_view_key = Bun.env[`vk${wallet_settings.primary_address}`];

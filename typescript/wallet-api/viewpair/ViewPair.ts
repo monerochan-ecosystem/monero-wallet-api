@@ -251,11 +251,11 @@ export class ViewPair extends WasmProcessor {
       }
     })();
 
-    const masterWithKeys = walletSettingsPlusKeys(masterWalletSettings);
+    const masterWithKeys = await walletSettingsPlusKeys(masterWalletSettings);
     const slaveViewPairs: SlaveViewPair[] = [];
     if (nonHaltedWallets.length > 1) {
       for (const slaveWallet of nonHaltedWallets.slice(1)) {
-        const slaveWithKeys = walletSettingsPlusKeys(slaveWallet);
+        const slaveWithKeys = await walletSettingsPlusKeys(slaveWallet);
         const viewpair = await ViewPair.create(
           slaveWallet.primary_address,
           slaveWithKeys.secret_view_key,

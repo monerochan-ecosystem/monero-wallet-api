@@ -18,7 +18,6 @@ import type {
 import { createWebworker } from "../backgroundWorker";
 import { spendable } from "./scanResult";
 import {
-  doesScanSettingsFileExist,
   openScanSettingsFile,
   readPrivateSpendKeyFromEnv,
   readWalletFromScanSettings,
@@ -85,7 +84,7 @@ export class ScanCacheOpened {
         }`,
       );
     // read secret_view_key and secret_spend_key from env
-    const walletSettingsWithKeys = walletSettingsPlusKeys(walletSettings);
+    const walletSettingsWithKeys = await walletSettingsPlusKeys(walletSettings);
 
     // create viewpair + ScanCacheOpened instance
     const scanCacheOpen = new ScanCacheOpened(
