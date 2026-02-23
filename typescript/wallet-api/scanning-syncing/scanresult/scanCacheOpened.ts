@@ -129,7 +129,7 @@ export class ScanCacheOpened {
           // add subaddresses to statsfile that are not in the cache
           let minor = 1;
           const highestSubaddressMinor = walletSettings.subaddress_index || 1;
-          while (minor < highestSubaddressMinor) {
+          while (minor <= highestSubaddressMinor) {
             if (stats.subaddresses[minor.toString()]) {
               minor++;
               continue;
