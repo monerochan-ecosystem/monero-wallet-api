@@ -84,6 +84,7 @@ export type BlockInfo = {
 export type Output = {
   amount: bigint;
   block_height: number;
+  block_timestamp: number;
   index_in_transaction: number;
   index_on_blockchain: number;
   payment_id: number;

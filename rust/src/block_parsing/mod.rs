@@ -101,6 +101,7 @@ pub fn scan_blocks(
         continue;
       }
     };
+    let block_timestamp = block.header.timestamp;
 
     let mut transactions = Vec::new();
 
@@ -142,7 +143,7 @@ pub fn scan_blocks(
             key_image_hex,
             relative_index: i,
             tx_hash: tx_hash.clone(),
-            block_timestamp: block.header.timestamp,
+            block_timestamp,
             block_height: get_blocks_bin.start_height + (index as u64),
             block_hash: hex::encode(block.hash()),
           });
@@ -167,6 +168,7 @@ pub fn scan_blocks(
             output_jsons.push(wallet_output_to_json(
               wallet_output,
               block_height,
+              block_timestamp,
               primary_address,
               true,
             ));
@@ -193,6 +195,7 @@ pub fn scan_blocks(
           output_jsons.push(wallet_output_to_json(
             &wallet_output,
             block_height,
+            block_timestamp,
             primary_address,
             false,
           ));
@@ -216,6 +219,7 @@ pub fn scan_blocks(
 fn wallet_output_to_json(
   wallet_output: &WalletOutput,
   block_height: u64,
+  block_timestamp: u64,
   primary_address: &str,
   is_miner_tx: bool,
 ) -> Value {
@@ -234,6 +238,7 @@ fn wallet_output_to_json(
       "payment_id": u64::from_le_bytes(payment_id),
       "is_miner_tx": is_miner_tx,
       "block_height": block_height,
+      "block_timestamp": block_timestamp,
       "primary_address": primary_address,
       "subaddress_index":  if let Some(subaddr) = wallet_output.subaddress() {
         json!(subaddr.address())
