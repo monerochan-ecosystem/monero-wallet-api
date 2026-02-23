@@ -340,3 +340,16 @@ export async function openNonHaltedWallets(
     throw new Error("no non halted wallets in scan settings");
   return nonHaltedWallets;
 }
+
+export async function doesScanSettingsFileExist(
+  scan_settings_path: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
+): Promise<boolean> {
+  const scan_settings_file_content = await Bun.file(scan_settings_path)
+    .text()
+    .catch(() => "");
+  if (scan_settings_file_content.length) {
+    return true;
+  } else {
+    return false;
+  }
+}

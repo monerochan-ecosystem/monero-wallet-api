@@ -18,6 +18,7 @@ import type {
 import { createWebworker } from "../backgroundWorker";
 import { spendable } from "./scanResult";
 import {
+  doesScanSettingsFileExist,
   openScanSettingsFile,
   readPrivateSpendKeyFromEnv,
   readWalletFromScanSettings,
@@ -220,8 +221,14 @@ export class ScanCacheOpened {
       this.worker.terminate();
       delete this.worker;
     }
-    //write connection status retry
-    await this.unpause();
+    const scan_settings_exists = await doesScanSettingsFileExist(
+      this.scan_settings_path,
+    );
+    if (scan_settings_exists) {
+      //TODO ? write connection status retry
+      await this.unpause();
+    }
+    return scan_settings_exists;
   }
   public async sendTransaction(signedTx: string) {
     const node = await NodeUrl.create(this.node_url);
