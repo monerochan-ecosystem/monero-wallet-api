@@ -1,5 +1,11 @@
-import { atomicWrite, ViewPair } from "../../api";
-import type { OutputsCache, ScanCache, Subaddress } from "./scanCache";
+import { atomicWrite, ViewPair, type Output } from "../../api";
+import type {
+  ChangedOutput,
+  OutputsCache,
+  ScanCache,
+  Subaddress,
+} from "./scanCache";
+import { outputStatus } from "./scanResult";
 
 type WriteStatsFileParams = {
   primary_address: string;
@@ -61,22 +67,30 @@ export async function readStatsFileDefaultLocation(
 export function sumOutputs(
   outputs: OutputsCache,
   scan_stats: ScanStats,
-): Amount {
-  let amount = 0n;
+  current_scan_tip_height: number = 0,
+) {
+  scan_stats.total_amount = 0n;
   for (const output of Object.values(outputs)) {
-    amount += output.amount;
-    if (!output.subaddress_index) continue;
-    const statsSubaddress =
-      scan_stats.subaddresses[output.subaddress_index.toString()];
-    if (!statsSubaddress) continue;
-    if (!statsSubaddress.amount) {
-      statsSubaddress.amount = output.amount;
-    } else {
-      statsSubaddress.amount += output.amount;
-    }
+    const status = outputStatus(output, current_scan_tip_height);
+    if (status.status === "spendable") addSpendableAmount(scan_stats, output);
+    else if (status.status === "pending") addPendingAmount(scan_stats, output);
   }
-  scan_stats.total_amount = amount;
-  return amount;
+}
+export function addSpendableAmount(scan_stats: ScanStats, output: Output) {
+  scan_stats.total_amount += output.amount;
+  if (!output.subaddress_index) return;
+  const statsSubaddress =
+    scan_stats.subaddresses[output.subaddress_index.toString()];
+  if (!statsSubaddress || !statsSubaddress.amount) return;
+  statsSubaddress.amount += output.amount;
+}
+export function addPendingAmount(scan_stats: ScanStats, output: Output) {
+  scan_stats.total_pending_amount += output.amount;
+  if (!output.subaddress_index) return;
+  const statsSubaddress =
+    scan_stats.subaddresses[output.subaddress_index.toString()];
+  if (!statsSubaddress || !statsSubaddress.pending_amount) return;
+  statsSubaddress.pending_amount += output.amount;
 }
 export type SubaddressMinorIndex = string;
 export type Amount = bigint;
@@ -102,14 +116,14 @@ export function addSubAddressesFromCacheToScanStats(
 ) {
   // add cache subaddresses to statsfile
   for (const cacheSub of cache.subaddresses || []) {
-    if (!stats.subaddresses[cacheSub.minor.toString()])
-      stats.subaddresses[cacheSub.minor.toString()] = {
-        minor: cacheSub.minor,
-        address: cacheSub.address,
-        created_at_height: cacheSub.created_at_height,
-        created_at_timestamp: cacheSub.created_at_timestamp,
-        amount: 0n,
-      };
+    //if (!stats.subaddresses[cacheSub.minor.toString()]) <-- uncommented to overwrite existing
+    stats.subaddresses[cacheSub.minor.toString()] = {
+      minor: cacheSub.minor,
+      address: cacheSub.address,
+      created_at_height: cacheSub.created_at_height,
+      created_at_timestamp: cacheSub.created_at_timestamp,
+      amount: 0n,
+    };
   }
 }
 export function addMissingSubAddressesToScanStats(
@@ -162,7 +176,7 @@ export async function alignScanStatsWithCache(
           current_scan_tip_height,
         );
 
-        stats.total_amount = sumOutputs(cache.outputs, stats);
+        sumOutputs(cache.outputs, stats, current_scan_tip_height);
         stats.height = current_scan_tip_height;
       }
     },
