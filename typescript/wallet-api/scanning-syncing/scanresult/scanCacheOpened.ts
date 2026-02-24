@@ -16,7 +16,7 @@ import type {
   SendError,
 } from "../../send-functionality/transactionBuilding";
 import { createWebworker } from "../backgroundWorker";
-import { spendable } from "./scanResult";
+import { outputStatus, spendable, type OutputStatus } from "./scanResult";
 import {
   openScanSettingsFile,
   readPrivateSpendKeyFromEnv,
@@ -60,6 +60,7 @@ export type FoundTransaction = {
   amount: bigint;
   outputs: Output[];
   tx_hash: string;
+  status: OutputStatus;
 };
 export type CreateTransactionParams = {
   payments: Payment[];
@@ -156,6 +157,7 @@ export class ScanCacheOpened {
         last_tx.amount += output.amount;
       } else {
         last_tx = {
+          status: outputStatus(output, this.current_height || 0),
           amount: output.amount,
           outputs: [output],
           tx_hash: output.tx_hash,
