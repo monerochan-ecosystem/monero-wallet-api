@@ -37,6 +37,7 @@ import {
 } from "./scanCache";
 import {
   addMissingSubAddressesToScanStats,
+  addSubAddressesFromCacheToScanStats,
   sumOutputs,
   writeStatsFileDefaultLocation,
   type ScanStats,
@@ -121,17 +122,7 @@ export class ScanCacheOpened {
       writeCallback: async (stats) => {
         const end = lastRange(scanCacheOpen._cache.scanned_ranges)?.end || 0;
         if (!end || end > stats.height) {
-          // add cache subaddresses to statsfile
-          for (const cacheSub of scanCacheOpen._cache.subaddresses || []) {
-            if (!stats.subaddresses[cacheSub.minor.toString()])
-              stats.subaddresses[cacheSub.minor.toString()] = {
-                minor: cacheSub.minor,
-                address: cacheSub.address,
-                created_at_height: cacheSub.created_at_height,
-                created_at_timestamp: cacheSub.created_at_timestamp,
-                amount: 0n,
-              };
-          }
+          addSubAddressesFromCacheToScanStats(scanCacheOpen._cache, stats);
           addMissingSubAddressesToScanStats(
             stats,
             scanCacheOpen.view_pair,

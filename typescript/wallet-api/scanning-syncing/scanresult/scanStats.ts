@@ -1,5 +1,5 @@
 import { atomicWrite, ViewPair } from "../../api";
-import type { OutputsCache, Subaddress } from "./scanCache";
+import type { OutputsCache, ScanCache, Subaddress } from "./scanCache";
 
 type WriteStatsFileParams = {
   primary_address: string;
@@ -96,7 +96,22 @@ export type ScanStats = {
   primary_address: string;
   subaddresses: Record<SubaddressMinorIndex, Subaddress>;
 };
-
+export function addSubAddressesFromCacheToScanStats(
+  cache: ScanCache,
+  stats: ScanStats,
+) {
+  // add cache subaddresses to statsfile
+  for (const cacheSub of cache.subaddresses || []) {
+    if (!stats.subaddresses[cacheSub.minor.toString()])
+      stats.subaddresses[cacheSub.minor.toString()] = {
+        minor: cacheSub.minor,
+        address: cacheSub.address,
+        created_at_height: cacheSub.created_at_height,
+        created_at_timestamp: cacheSub.created_at_timestamp,
+        amount: 0n,
+      };
+  }
+}
 export function addMissingSubAddressesToScanStats(
   stats: ScanStats,
   view_pair: ViewPair,
