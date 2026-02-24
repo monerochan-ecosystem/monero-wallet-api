@@ -141,3 +141,30 @@ export function addMissingSubAddressesToScanStats(
     minor++;
   }
 }
+export async function alignScanStatsWithCache(
+  cache: ScanCache,
+  view_pair: ViewPair,
+  primary_address: string,
+  pathPrefix?: string,
+  highestSubaddressMinor: number = 1,
+  current_scan_tip_height: number = 0,
+) {
+  return await writeStatsFileDefaultLocation({
+    primary_address,
+    pathPrefix,
+    writeCallback: async (stats) => {
+      if (!current_scan_tip_height || current_scan_tip_height > stats.height) {
+        addSubAddressesFromCacheToScanStats(cache, stats);
+        addMissingSubAddressesToScanStats(
+          stats,
+          view_pair,
+          highestSubaddressMinor,
+          current_scan_tip_height,
+        );
+
+        stats.total_amount = sumOutputs(cache.outputs, stats);
+        stats.height = current_scan_tip_height;
+      }
+    },
+  });
+}

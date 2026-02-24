@@ -36,9 +36,7 @@ import {
   type Subaddress,
 } from "./scanCache";
 import {
-  addMissingSubAddressesToScanStats,
-  addSubAddressesFromCacheToScanStats,
-  sumOutputs,
+  alignScanStatsWithCache,
   writeStatsFileDefaultLocation,
   type ScanStats,
 } from "./scanStats";
@@ -116,25 +114,14 @@ export class ScanCacheOpened {
       // unpause will start scanning from this.wallet_scan_settings.start_height
       await scanCacheOpen.unpause();
     }
-    scanCacheOpen._stats = await writeStatsFileDefaultLocation({
-      primary_address: params.primary_address,
-      pathPrefix: params.pathPrefix,
-      writeCallback: async (stats) => {
-        const end = lastRange(scanCacheOpen._cache.scanned_ranges)?.end || 0;
-        if (!end || end > stats.height) {
-          addSubAddressesFromCacheToScanStats(scanCacheOpen._cache, stats);
-          addMissingSubAddressesToScanStats(
-            stats,
-            scanCacheOpen.view_pair,
-            walletSettings.subaddress_index,
-            lastRange(scanCacheOpen._cache.scanned_ranges)?.end,
-          );
-
-          stats.total_amount = sumOutputs(scanCacheOpen._cache.outputs, stats);
-          stats.height = end;
-        }
-      },
-    });
+    scanCacheOpen._stats = await alignScanStatsWithCache(
+      scanCacheOpen._cache,
+      scanCacheOpen.view_pair,
+      params.primary_address,
+      params.pathPrefix,
+      walletSettings.subaddress_index,
+      lastRange(scanCacheOpen._cache.scanned_ranges)?.end,
+    );
     return scanCacheOpen;
   }
   get start_height(): number | null {
