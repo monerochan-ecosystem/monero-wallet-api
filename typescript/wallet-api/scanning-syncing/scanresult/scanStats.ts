@@ -16,7 +16,8 @@ export async function writeStatsFileDefaultLocation(
   if (!stats)
     stats = {
       height: 0,
-      amount: 0n,
+      total_amount: 0n,
+      total_pending_amount: 0n,
       primary_address: params.primary_address,
       pending_amounts: [],
       subaddresses: {},
@@ -74,7 +75,7 @@ export function sumOutputs(
       statsSubaddress.amount += output.amount;
     }
   }
-  scan_stats.amount = amount;
+  scan_stats.total_amount = amount;
   return amount;
 }
 export type SubaddressMinorIndex = string;
@@ -89,7 +90,8 @@ export type PendingAmount = {
 };
 export type ScanStats = {
   height: number;
-  amount: bigint;
+  total_amount: bigint;
+  total_pending_amount: bigint;
   pending_amounts: PendingAmount[];
   primary_address: string;
   subaddresses: Record<SubaddressMinorIndex, Subaddress>;

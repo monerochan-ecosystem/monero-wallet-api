@@ -153,7 +153,7 @@ export class ScanCacheOpened {
             stats.subaddresses[minor.toString()] = new_subaddress;
             minor++;
           }
-          stats.amount = sumOutputs(scanCacheOpen._cache.outputs, stats);
+          stats.total_amount = sumOutputs(scanCacheOpen._cache.outputs, stats);
           stats.height = end;
         }
       },
@@ -300,7 +300,7 @@ export class ScanCacheOpened {
     return unsignedTx;
   }
   get amount() {
-    return this._stats?.amount || 0n;
+    return this._stats?.total_amount || 0n;
   }
   get subaddresses() {
     return Object.values(this._stats?.subaddresses || {});
