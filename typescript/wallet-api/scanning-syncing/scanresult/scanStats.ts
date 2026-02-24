@@ -47,13 +47,25 @@ export function statsFileDefaultLocation(
   return `${pathPrefix ?? ""}${primary_address}_stats.json`;
 }
 
+// amount | total_amount | total_pending_amount | pending_amount  :->  all bigint keys
 export async function readStatsFile(
   cacheFilePath: string,
 ): Promise<ScanStats | undefined> {
   const jsonString = await Bun.file(cacheFilePath)
     .text()
     .catch(() => undefined);
-  return jsonString ? (JSON.parse(jsonString) as ScanStats) : undefined;
+  return jsonString
+    ? (JSON.parse(jsonString, (key, value) => {
+        if (
+          key === "amount" ||
+          key === "pending_amount" ||
+          key === "total_amount" ||
+          key === "total_pending_amount"
+        )
+          return BigInt(value);
+        return value;
+      }) as ScanStats)
+    : undefined;
 }
 
 export async function readStatsFileDefaultLocation(
