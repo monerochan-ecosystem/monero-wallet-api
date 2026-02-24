@@ -127,6 +127,10 @@ export class ScanCacheOpened {
   get start_height(): number | null {
     return this._start_height;
   }
+  get current_height(): number | null {
+    if (typeof this._stats === "undefined" || this._stats === null) return null;
+    return this._stats.height;
+  }
 
   public async changeStartHeight(start_height: number | null) {
     if (this.worker) {
@@ -433,7 +437,7 @@ export class ScanCacheOpened {
    */
   public spendableInputs() {
     return Object.values(this._cache.outputs)
-      .filter((output) => spendable(output))
+      .filter((output) => spendable(output, this.current_height || 0))
       .sort((a, b) => (a.amount > b.amount ? -1 : a.amount < b.amount ? 1 : 0));
   }
   /**
@@ -487,6 +491,10 @@ export class ManyScanCachesOpened {
   get start_height(): number | null {
     if (this.wallets.length === 0) return null;
     return this.wallets[0]?.start_height;
+  }
+  get current_height(): number | null {
+    if (this.wallets.length === 0) return null;
+    return this.wallets[0]?.current_height;
   }
   get node_url(): string {
     if (this.wallets.length === 0) return "";
