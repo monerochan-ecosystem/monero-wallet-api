@@ -382,7 +382,7 @@ export class ScanCacheOpened {
 
     if (!this.worker && !this.no_worker) {
       this.worker = createWebworker(
-        (params) => this.feed(params),
+        async (params) => await this.feed(params),
         this.scan_settings_path,
         this.pathPrefix,
         (error) => {
@@ -460,13 +460,22 @@ export class ScanCacheOpened {
    * if masterCacheChanged is set, it will be called here
    * for all primary addresses
    */
-  public feed(params: CacheChangedCallbackParameters) {
+  public async feed(params: CacheChangedCallbackParameters) {
     //TODO update aggregated amount stats + height
     if (this.masterCacheChanged) this.masterCacheChanged(params);
     if (this.view_pair.primary_address !== params.newCache.primary_address)
       return;
     this._cache = params.newCache;
-    this.notifyListeners;
+    if (params.changed_outputs.length > 0) {
+      this._stats = await alignScanStatsWithCache(
+        this._cache,
+        this.view_pair,
+        this.primary_address,
+        this.pathPrefix,
+        undefined,
+        lastRange(this._cache.scanned_ranges)?.end,
+      );
+    }
     for (const listener of this.notifyListeners) {
       if (listener) listener(params);
     }
@@ -582,10 +591,10 @@ export class ManyScanCachesOpened {
       }
       const masterWallet = await ScanCacheOpened.create({
         ...firstNonHaltedWallet,
-        masterCacheChanged: (params) => {
+        masterCacheChanged: async (params) => {
           notifyMasterChanged?.(params);
           for (const slave of slaveWallets) {
-            slave.feed(params);
+            await slave.feed(params);
           }
         },
         scan_settings_path,
@@ -612,8 +621,8 @@ export class ManyScanCachesOpened {
   /**
    * feed the master wallet and therefore all wallets
    */
-  public feed(params: CacheChangedCallbackParameters) {
-    this.wallets[0].feed(params);
+  public async feed(params: CacheChangedCallbackParameters) {
+    await this.wallets[0].feed(params);
   }
   private constructor(public readonly wallets: ScanCacheOpened[]) {}
 }
