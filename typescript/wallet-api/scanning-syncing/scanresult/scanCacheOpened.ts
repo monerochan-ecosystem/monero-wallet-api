@@ -247,7 +247,7 @@ export class ScanCacheOpened {
     const feePerByte = BigInt(feeEstimate.fees![0]);
     if (!params.no_fee_circuit_breaker) {
       // default is false / undefined -> use fee circuit breaker
-      const max_plausible_fee = 1000000000n; // 0.001 XMR
+      const max_plausible_fee = 20000000000n; // 0.02 XMR
       const feeFor10kb = feePerByte * 10000n;
       if (feeFor10kb > max_plausible_fee) {
         throw new Error(
