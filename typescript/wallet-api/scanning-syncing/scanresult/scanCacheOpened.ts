@@ -64,6 +64,7 @@ export type FoundTransaction = {
 export type CreateTransactionParams = {
   payments: Payment[];
   inputs?: Output[];
+  no_fee_circuit_breaker?: boolean;
 };
 export class ScanCacheOpened {
   public static async create(params: ScanCacheOpenedCreateParams) {
@@ -241,8 +242,21 @@ export class ScanCacheOpened {
     const node = await NodeUrl.create(this.node_url);
 
     const feeEstimate = await node.getFeeEstimate();
-    const selectedInputs =
-      params.inputs || this.selectInputs(sum, BigInt(feeEstimate.fees![0]));
+    const feePerByte = BigInt(feeEstimate.fees![0]);
+    if (!params.no_fee_circuit_breaker) {
+      // default is false / undefined -> use fee circuit breaker
+      const max_plausible_fee = 1000000000n; // 0.001 XMR
+      const feeFor10kb = feePerByte * 10000n;
+      if (feeFor10kb > max_plausible_fee) {
+        throw new Error(
+          `fee too high: 
+          ${feeFor10kb} (fee for 10kb tx size) > ${max_plausible_fee} (0.001 XMR)
+          most likely your node is faulty. connect to another node.
+           preferably run one yourself locally.`,
+        );
+      }
+    }
+    const selectedInputs = params.inputs || this.selectInputs(sum, feePerByte);
     if (!selectedInputs.length) throw new Error("not enough funds");
     const distibution = await node.getOutputDistribution();
     const preparedInputs: PreparedInput[] = [];
