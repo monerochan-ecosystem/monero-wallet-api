@@ -284,6 +284,9 @@ export class ScanCacheOpened {
   get amount() {
     return this._stats?.total_amount || 0n;
   }
+  get pending_amount() {
+    return this._stats?.total_pending_amount || 0n;
+  }
   get subaddresses() {
     return Object.values(this._stats?.subaddresses || {});
   }
