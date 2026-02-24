@@ -609,6 +609,9 @@ export class ManyScanCachesOpened {
       openedWallets.push(masterWallet, ...slaveWallets);
     } else {
       const onlyWallet = await ScanCacheOpened.create({
+        masterCacheChanged: async (params) => {
+          notifyMasterChanged?.(params);
+        },
         ...firstNonHaltedWallet,
         scan_settings_path,
         pathPrefix,
