@@ -274,10 +274,47 @@ export function detectOwnspends(result: ScanResult, cache: ScanCache) {
   }
   return changed_outputs;
 }
-//TODO respect 10 blocks lock and 60 blocks for minertx
-export function spendable(output: Output) {
-  return (
-    !(typeof output.burned === "number") &&
-    !(typeof output.spent_in_tx_hash === "string")
-  );
+export function unlockedAtHeight(output: Output) {
+  if (output.is_miner_tx) {
+    return output.block_height + 60;
+  } else {
+    return output.block_height + 10;
+  }
+}
+export type Pending = {
+  status: "pending";
+  unlock_height: number;
+};
+export type Spent = {
+  status: "spent";
+};
+export type Burnt = {
+  status: "burnt";
+};
+export type Reorged = {
+  status: "reorged";
+};
+export type Spendable = {
+  status: "spendable";
+};
+export type OutputStatus = Pending | Spent | Burnt | Reorged | Spendable;
+export function outputStatus(
+  output: Output,
+  current_height: number,
+): OutputStatus {
+  if (typeof output.burned === "number") {
+    return { status: "burnt" };
+  }
+  if (typeof output.spent_in_tx_hash === "string") {
+    return { status: "spent" };
+  }
+  const unlock_height = unlockedAtHeight(output);
+  if (unlock_height > current_height) {
+    return { status: "pending", unlock_height };
+  }
+  return { status: "spendable" };
+}
+export function spendable(output: Output, current_height: number) {
+  const status = outputStatus(output, current_height);
+  return status.status === "spendable";
 }
