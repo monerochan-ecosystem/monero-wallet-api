@@ -174,6 +174,7 @@ export type Subaddress = {
   created_at_timestamp: number;
   not_yet_included?: boolean;
   amount?: bigint;
+  pending_amount?: bigint;
 };
 export type ScanCache = {
   outputs: OutputsCache;
