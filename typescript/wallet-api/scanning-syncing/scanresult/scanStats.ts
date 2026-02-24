@@ -1,4 +1,4 @@
-import { atomicWrite } from "../../api";
+import { atomicWrite, ViewPair } from "../../api";
 import type { OutputsCache, Subaddress } from "./scanCache";
 
 type WriteStatsFileParams = {
@@ -96,3 +96,33 @@ export type ScanStats = {
   primary_address: string;
   subaddresses: Record<SubaddressMinorIndex, Subaddress>;
 };
+
+export function addMissingSubAddressesToScanStats(
+  stats: ScanStats,
+  view_pair: ViewPair,
+  highestSubaddressMinor: number = 1,
+  created_at_height: number = 0,
+) {
+  // add subaddresses to statsfile that are not in the cache
+  let minor = 1;
+  //const highestSubaddressMinor = walletSettings.subaddress_index || 1;
+  while (minor <= highestSubaddressMinor) {
+    if (stats.subaddresses[minor.toString()]) {
+      minor++;
+      continue;
+    }
+    const subaddress = view_pair.makeSubaddress(minor);
+    //const created_at_height =
+    //   lastRange(scanCacheOpen._cache.scanned_ranges)?.end || 0;
+    const created_at_timestamp = new Date().getTime();
+    const new_subaddress: Subaddress = {
+      minor,
+      address: subaddress,
+      created_at_height,
+      created_at_timestamp,
+      not_yet_included: true,
+    };
+    stats.subaddresses[minor.toString()] = new_subaddress;
+    minor++;
+  }
+}

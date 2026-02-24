@@ -36,6 +36,7 @@ import {
   type Subaddress,
 } from "./scanCache";
 import {
+  addMissingSubAddressesToScanStats,
   sumOutputs,
   writeStatsFileDefaultLocation,
   type ScanStats,
@@ -131,28 +132,13 @@ export class ScanCacheOpened {
                 amount: 0n,
               };
           }
-          // add subaddresses to statsfile that are not in the cache
-          let minor = 1;
-          const highestSubaddressMinor = walletSettings.subaddress_index || 1;
-          while (minor <= highestSubaddressMinor) {
-            if (stats.subaddresses[minor.toString()]) {
-              minor++;
-              continue;
-            }
-            const subaddress = scanCacheOpen.view_pair.makeSubaddress(minor);
-            const created_at_height =
-              lastRange(scanCacheOpen._cache.scanned_ranges)?.end || 0;
-            const created_at_timestamp = new Date().getTime();
-            const new_subaddress: Subaddress = {
-              minor,
-              address: subaddress,
-              created_at_height,
-              created_at_timestamp,
-              not_yet_included: true,
-            };
-            stats.subaddresses[minor.toString()] = new_subaddress;
-            minor++;
-          }
+          addMissingSubAddressesToScanStats(
+            stats,
+            scanCacheOpen.view_pair,
+            walletSettings.subaddress_index,
+            lastRange(scanCacheOpen._cache.scanned_ranges)?.end,
+          );
+
           stats.total_amount = sumOutputs(scanCacheOpen._cache.outputs, stats);
           stats.height = end;
         }
