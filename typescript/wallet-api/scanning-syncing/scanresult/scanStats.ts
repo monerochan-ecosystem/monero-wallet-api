@@ -188,18 +188,22 @@ export async function alignScanStatsWithCache(
     primary_address,
     pathPrefix,
     writeCallback: async (stats) => {
-      if (!current_scan_tip_height || current_scan_tip_height > stats.height) {
-        addSubAddressesFromCacheToScanStats(cache, stats);
-        addMissingSubAddressesToScanStats(
-          stats,
-          view_pair,
-          highestSubaddressMinor,
-          current_scan_tip_height,
-        );
+      // this condition misses reorgs
+      // it seems wasteful to re read the cache on every wallet open
+      // not doing it is premature optimization.
+      // This is not computationally expensive + memory bandwith is tens of gb per second
+      //if (!current_scan_tip_height || current_scan_tip_height > stats.height) {
+      addSubAddressesFromCacheToScanStats(cache, stats);
+      addMissingSubAddressesToScanStats(
+        stats,
+        view_pair,
+        highestSubaddressMinor,
+        current_scan_tip_height,
+      );
 
-        sumOutputs(cache.outputs, stats, current_scan_tip_height);
-        stats.height = current_scan_tip_height;
-      }
+      sumOutputs(cache.outputs, stats, current_scan_tip_height);
+      stats.height = current_scan_tip_height;
+      //}
     },
   });
 }
