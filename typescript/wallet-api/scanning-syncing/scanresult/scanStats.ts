@@ -2,7 +2,7 @@ import { atomicWrite, ViewPair, type Output } from "../../api";
 import type { ScanCache, Subaddress } from "./scanCache";
 import { outputStatus, type OutputStatus } from "./scanResult";
 
-type WriteStatsFileParams = {
+export type WriteStatsFileParams = {
   primary_address: string;
   pathPrefix?: string | undefined;
   writeCallback: (stats: ScanStats) => void | Promise<void>;
