@@ -1,11 +1,6 @@
 import { atomicWrite, ViewPair, type Output } from "../../api";
-import type {
-  ChangedOutput,
-  OutputsCache,
-  ScanCache,
-  Subaddress,
-} from "./scanCache";
-import { outputStatus } from "./scanResult";
+import type { ScanCache, Subaddress } from "./scanCache";
+import { outputStatus, type OutputStatus } from "./scanResult";
 
 type WriteStatsFileParams = {
   primary_address: string;
@@ -26,6 +21,8 @@ export async function writeStatsFileDefaultLocation(
       total_pending_amount: 0n,
       primary_address: params.primary_address,
       pending_amounts: [],
+      found_transactions: {},
+      ordered_transactions: [],
       subaddresses: {},
     };
 
@@ -76,18 +73,6 @@ export async function readStatsFileDefaultLocation(
     statsFileDefaultLocation(primary_address, pathPrefix),
   );
 }
-export function sumOutputs(
-  outputs: OutputsCache,
-  scan_stats: ScanStats,
-  current_scan_tip_height: number = 0,
-) {
-  scan_stats.total_amount = 0n;
-  for (const output of Object.values(outputs)) {
-    const status = outputStatus(output, current_scan_tip_height);
-    if (status.status === "spendable") addSpendableAmount(scan_stats, output);
-    else if (status.status === "pending") addPendingAmount(scan_stats, output);
-  }
-}
 export function addSpendableAmount(scan_stats: ScanStats, output: Output) {
   scan_stats.total_amount += output.amount;
   if (!output.subaddress_index) return;
@@ -120,6 +105,16 @@ export type PendingAmount = {
   tx_hash: string;
   block_height: number;
 };
+// every tx has an output, get more info from outputs[0]
+export type FoundTransaction = {
+  amount: bigint;
+  inputs: Output[];
+  outputs: Output[];
+  tx_hash: string;
+  status: OutputStatus;
+};
+export type TxHash = string;
+
 export type ScanStats = {
   height: number;
   total_amount: bigint;
@@ -127,7 +122,61 @@ export type ScanStats = {
   pending_amounts: PendingAmount[];
   primary_address: string;
   subaddresses: Record<SubaddressMinorIndex, Subaddress>;
+  found_transactions: Record<TxHash, FoundTransaction>;
+  ordered_transactions: TxHash[];
 };
+export function processFoundTransactions(
+  cache: ScanCache,
+  stats: ScanStats,
+  current_height: number,
+) {
+  stats.found_transactions = {};
+  stats.ordered_transactions = [];
+  Object.entries(cache.outputs).forEach(([_, output]) => {
+    const status = outputStatus(output, current_height || 0);
+
+    const in_ordered_transactions = stats.ordered_transactions.includes(
+      output.tx_hash,
+    );
+    if (!in_ordered_transactions)
+      stats.ordered_transactions.push(output.tx_hash);
+    const receivedTx = stats.found_transactions[output.tx_hash];
+    if (receivedTx) {
+      receivedTx.outputs.push(output);
+      receivedTx.amount += output.amount;
+      // we possibly first added the tx_hash when we found a spent output
+      // placehodler pending status that we added in "handle spent case"
+      // needs to be updated
+      receivedTx.status = status;
+    } else {
+      stats.found_transactions[output.tx_hash] = {
+        status,
+        inputs: [],
+        amount: output.amount,
+        outputs: [output],
+        tx_hash: output.tx_hash,
+      };
+    }
+    // handle spent case
+    if (output.spent_in_tx_hash) {
+      const spentTx = stats.found_transactions[output.spent_in_tx_hash];
+      if (spentTx) {
+        spentTx.amount -= output.amount;
+        spentTx.inputs.push(output);
+      } else {
+        stats.found_transactions[output.spent_in_tx_hash] = {
+          status: { status: "pending", unlock_height: 0 },
+          inputs: [output],
+          amount: -output.amount,
+          outputs: [],
+          tx_hash: output.spent_in_tx_hash,
+        };
+      }
+    }
+    if (status.status === "spendable") addSpendableAmount(stats, output);
+    else if (status.status === "pending") addPendingAmount(stats, output);
+  });
+}
 export function addSubAddressesFromCacheToScanStats(
   cache: ScanCache,
   stats: ScanStats,
@@ -201,7 +250,7 @@ export async function alignScanStatsWithCache(
         current_scan_tip_height,
       );
 
-      sumOutputs(cache.outputs, stats, current_scan_tip_height);
+      processFoundTransactions(cache, stats, current_scan_tip_height);
       stats.height = current_scan_tip_height;
       //}
     },

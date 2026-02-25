@@ -16,7 +16,7 @@ import type {
   SendError,
 } from "../../send-functionality/transactionBuilding";
 import { createWebworker } from "../backgroundWorker";
-import { outputStatus, spendable, type OutputStatus } from "./scanResult";
+import { spendable } from "./scanResult";
 import {
   openScanSettingsFile,
   readPrivateSpendKeyFromEnv,
@@ -38,6 +38,7 @@ import {
 import {
   alignScanStatsWithCache,
   writeStatsFileDefaultLocation,
+  type FoundTransaction,
   type ScanStats,
 } from "./scanStats";
 import {
@@ -55,13 +56,7 @@ export type ScanCacheOpenedCreateParams = {
   masterCacheChanged?: CacheChangedCallback;
   workerError?: (error: unknown) => void;
 };
-// every tx has an output, get more info from outputs[0]
-export type FoundTransaction = {
-  amount: bigint;
-  outputs: Output[];
-  tx_hash: string;
-  status: OutputStatus;
-};
+
 export type CreateTransactionParams = {
   payments: Payment[];
   inputs?: Output[];
@@ -149,22 +144,11 @@ export class ScanCacheOpened {
     return this._cache;
   }
   get transactions(): FoundTransaction[] {
+    if (typeof this._stats === "undefined" || this._stats === null) return [];
     const transactions: FoundTransaction[] = [];
-    let last_tx: FoundTransaction | null = null;
-    Object.entries(this._cache.outputs).forEach(([_, output]) => {
-      if (last_tx && last_tx?.tx_hash === output.tx_hash) {
-        last_tx.outputs.push(output);
-        last_tx.amount += output.amount;
-      } else {
-        last_tx = {
-          status: outputStatus(output, this.current_height || 0),
-          amount: output.amount,
-          outputs: [output],
-          tx_hash: output.tx_hash,
-        };
-        transactions.push(last_tx);
-      }
-    });
+    for (const tx of this._stats?.ordered_transactions) {
+      transactions.push(this._stats.found_transactions[tx]);
+    }
     return transactions;
   }
   get primary_address(): string {
