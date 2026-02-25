@@ -93,7 +93,10 @@ export function addSpendableAmount(scan_stats: ScanStats, output: Output) {
   if (!output.subaddress_index) return;
   const statsSubaddress =
     scan_stats.subaddresses[output.subaddress_index.toString()];
-  if (!statsSubaddress || !statsSubaddress.amount) return;
+  if (!statsSubaddress) return;
+  if (typeof statsSubaddress.amount === "undefined")
+    statsSubaddress.amount = 0n;
+
   statsSubaddress.amount += output.amount;
 }
 export function addPendingAmount(scan_stats: ScanStats, output: Output) {
@@ -101,7 +104,10 @@ export function addPendingAmount(scan_stats: ScanStats, output: Output) {
   if (!output.subaddress_index) return;
   const statsSubaddress =
     scan_stats.subaddresses[output.subaddress_index.toString()];
-  if (!statsSubaddress || !statsSubaddress.pending_amount) return;
+  if (!statsSubaddress) return;
+  if (typeof statsSubaddress.pending_amount === "undefined")
+    statsSubaddress.pending_amount = 0n;
+
   statsSubaddress.pending_amount += output.amount;
 }
 export type SubaddressMinorIndex = string;
@@ -135,6 +141,7 @@ export function addSubAddressesFromCacheToScanStats(
       created_at_height: cacheSub.created_at_height,
       created_at_timestamp: cacheSub.created_at_timestamp,
       amount: 0n,
+      pending_amount: 0n,
     };
   }
 }
@@ -162,6 +169,8 @@ export function addMissingSubAddressesToScanStats(
       created_at_height,
       created_at_timestamp,
       not_yet_included: true,
+      amount: 0n,
+      pending_amount: 0n,
     };
     stats.subaddresses[minor.toString()] = new_subaddress;
     minor++;
