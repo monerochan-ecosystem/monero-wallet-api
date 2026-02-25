@@ -51,7 +51,8 @@ import {
 } from "../scanning-syncing/scanSettings";
 import { sleep } from "../io/sleep";
 import {
-  connectionStatusFilePath,
+  readWriteConnectionStatusFile,
+  writeConnectionStatusFile,
   type ConnectionStatus,
 } from "../scanning-syncing/connectionStatus";
 export type NETWORKS = "mainnet" | "stagenet" | "testnet";
@@ -234,18 +235,18 @@ export class ViewPair extends WasmProcessor {
           { block_ids: current_range.block_hashes.map((b) => b.block_hash) },
           stopSync,
         );
-        const connectionStatus: ConnectionStatus = {
-          last_packet: {
-            status: "OK",
-            bytes_read: firstResponse.length,
-            node_url: processor.node_url,
-            timestamp: new Date().toISOString(),
-          },
-        };
-        await atomicWrite(
-          connectionStatusFilePath(scan_settings_path),
-          JSON.stringify(connectionStatus, null, 2),
-        );
+        await readWriteConnectionStatusFile((cs) => {
+          if (cs?.last_packet.status === "catastrophic_reorg") return;
+          const connectionStatus: ConnectionStatus = {
+            last_packet: {
+              status: "OK",
+              bytes_read: firstResponse.length,
+              node_url: processor.node_url,
+              timestamp: new Date().toISOString(),
+            },
+          };
+          return connectionStatus;
+        });
 
         yield firstResponse;
       }
@@ -274,7 +275,14 @@ export class ViewPair extends WasmProcessor {
         });
       }
     }
-
+    const catastrophic_reorg_cb = async () => {
+      writeConnectionStatusFile(
+        "catastrophic_reorg",
+        processor.node_url,
+        undefined,
+        scan_settings_path,
+      );
+    };
     try {
       for await (const firstResponse of blockGenerator) {
         if (!firstResponse) continue;
@@ -288,6 +296,7 @@ export class ViewPair extends WasmProcessor {
           cacheChanged,
           secret_spend_key: masterWithKeys.secret_spend_key,
           pathPrefix,
+          catastrophic_reorg_cb,
         });
         if (slaveViewPairs.length > 0) {
           if (result && "block_infos" in result)
@@ -332,6 +341,7 @@ export class ViewPair extends WasmProcessor {
                 secret_spend_key: slave.secret_spend_key,
                 pathPrefix,
                 use_master_current_range,
+                catastrophic_reorg_cb,
               });
             }
           } // scan the slaves

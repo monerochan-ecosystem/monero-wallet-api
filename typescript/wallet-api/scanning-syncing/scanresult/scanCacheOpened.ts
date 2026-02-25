@@ -42,7 +42,7 @@ import {
   type ScanStats,
 } from "./scanStats";
 import {
-  connectionStatusFilePath,
+  readWriteConnectionStatusFile,
   type ConnectionStatus,
 } from "../connectionStatus";
 
@@ -226,13 +226,14 @@ export class ScanCacheOpened {
   public async makeTransaction(params: CreateTransactionParams) {
     const sum = sumPayments(params.payments);
     const node = await NodeUrl.create(this.node_url);
-
+    // 1. get fee estimate
     const feeEstimate = await node.getFeeEstimate();
     const feePerByte = BigInt(feeEstimate.fees![0]);
     if (!params.no_fee_circuit_breaker) {
       // default is false / undefined -> use fee circuit breaker
       const max_plausible_fee = 20000000000n; // 0.02 XMR
       const feeFor10kb = feePerByte * 10000n;
+      //2. check if fee is too high
       if (feeFor10kb > max_plausible_fee) {
         throw new Error(
           `fee too high: 
@@ -242,15 +243,19 @@ export class ScanCacheOpened {
         );
       }
     }
+    // 3. select inputs
     const selectedInputs = params.inputs || this.selectInputs(sum, feePerByte);
     if (!selectedInputs.length) throw new Error("not enough funds");
+    // 4. get output distribution
     const distibution = await node.getOutputDistribution();
     const preparedInputs: PreparedInput[] = [];
     for (const input of selectedInputs) {
+      // 5. sample decoys & get outs from node
       preparedInputs.push(prepareInput(node, distibution, input));
     }
     const inputs: Input[] = [];
     for (const preparedInput of preparedInputs) {
+      // 6. make input: combine output with sampled and verified unlocked decoys
       const input = node.makeInput(
         preparedInput.input,
         preparedInput.sample.candidates,
@@ -258,7 +263,7 @@ export class ScanCacheOpened {
       );
       inputs.push(input);
     }
-
+    // 7. make transaction: combine inputs, payments + fee info
     const unsignedTx = this.view_pair.makeTransaction({
       inputs,
       payments: params.payments,
@@ -376,18 +381,18 @@ export class ScanCacheOpened {
         this.pathPrefix,
         (error) => {
           const workerErrCB = this.workerError;
-          const connectionStatus: ConnectionStatus = {
-            last_packet: {
-              status: "connection_failed",
-              bytes_read: 0,
-              node_url: this.node_url,
-              timestamp: new Date().toISOString(),
-            },
-          };
-          atomicWrite(
-            connectionStatusFilePath(this.scan_settings_path),
-            JSON.stringify(connectionStatus, null, 2),
-          ).then(() => {
+          readWriteConnectionStatusFile((cs) => {
+            if (cs?.last_packet.status === "catastrophic_reorg") return;
+            const connectionStatus: ConnectionStatus = {
+              last_packet: {
+                status: "connection_failed",
+                bytes_read: 0,
+                node_url: this.node_url,
+                timestamp: new Date().toISOString(),
+              },
+            };
+            return connectionStatus;
+          }).then(() => {
             if (workerErrCB) workerErrCB(error);
           });
         },

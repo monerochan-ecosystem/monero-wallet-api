@@ -20,6 +20,7 @@ export type ProcessScanResultParams = {
   current_range: CacheRange;
   result: ScanResult | ErrorResponse | undefined;
   cacheChanged: CacheChangedCallback;
+  catastrophic_reorg_cb: () => void;
   secret_spend_key?: string;
   pathPrefix?: string;
   use_master_current_range?: boolean;
@@ -52,30 +53,35 @@ export async function processScanResult(params: ProcessScanResultParams) {
       cache.scanned_ranges.push(current_range);
     }
   }
-  if (result && "new_height" in result) {
-    const [new_range, changed_outputs] = updateScanHeight(
-      current_range,
-      result,
-      cache,
-    );
-    current_range = new_range;
+  try {
+    if (result && "new_height" in result) {
+      const [new_range, changed_outputs] = updateScanHeight(
+        current_range,
+        result,
+        cache,
+      );
+      current_range = new_range;
 
-    changed_outputs.push(
-      ...(await detectOutputs(result, cache, secret_spend_key)),
-    );
+      changed_outputs.push(
+        ...(await detectOutputs(result, cache, secret_spend_key)),
+      );
 
-    if (secret_spend_key)
-      changed_outputs.push(...detectOwnspends(result, cache));
+      if (secret_spend_key)
+        changed_outputs.push(...detectOwnspends(result, cache));
 
-    // write to cache
-    await writeCacheToFile(cache, params.pathPrefix);
+      // write to cache
+      await writeCacheToFile(cache, params.pathPrefix);
 
-    await cacheChanged({
-      newCache: cache,
-      changed_outputs,
-    });
+      await cacheChanged({
+        newCache: cache,
+        changed_outputs,
+      });
+    }
+    return current_range;
+  } catch (e) {
+    params.catastrophic_reorg_cb();
+    throw e;
   }
-  return current_range;
 }
 export type OnchainKeyImage = {
   key_image_hex: KeyImage;
