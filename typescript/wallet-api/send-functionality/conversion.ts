@@ -7,6 +7,7 @@ export function truncateDecimalString(str: string, decimals = 3): string {
 }
 
 export function convertBigIntAmount(amount: bigint): string {
+  if (amount < 0) amount *= -1n;
   let display_amount = "";
   // to go from atomic units to display amount,
   // we move from the end to the beginning and insert a dot 12 digits in
