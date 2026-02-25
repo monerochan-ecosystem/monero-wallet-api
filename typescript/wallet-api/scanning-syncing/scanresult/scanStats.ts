@@ -237,6 +237,7 @@ export async function alignScanStatsWithCache(
     primary_address,
     pathPrefix,
     writeCallback: async (stats) => {
+      resetStats(stats);
       // this condition misses reorgs
       // it seems wasteful to re read the cache on every wallet open
       // not doing it is premature optimization.
@@ -255,4 +256,13 @@ export async function alignScanStatsWithCache(
       //}
     },
   });
+}
+export function resetStats(stats: ScanStats) {
+  stats.height = 0;
+  stats.total_amount = 0n;
+  stats.total_pending_amount = 0n;
+  stats.pending_amounts = [];
+  stats.found_transactions = {};
+  stats.ordered_transactions = [];
+  stats.subaddresses = {};
 }
