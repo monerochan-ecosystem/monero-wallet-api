@@ -32,10 +32,12 @@ import {
 import {
   lastRange,
   readCacheFileDefaultLocation,
+  writeCacheFileDefaultLocationThrows,
   type CacheChangedCallback,
   type CacheChangedCallbackParameters,
   type ScanCache,
   type Subaddress,
+  type TxLog,
 } from "./scanCache";
 import {
   alignScanStatsWithCache,
@@ -315,15 +317,78 @@ export class ScanCacheOpened {
   }
 
   public async makeSignSendTransaction(params: CreateTransactionParams) {
-    const { selectedInputs, feeEstimate } =
-      await this.calculateFeeAndSelectInputs(params);
-    const unsignedTx = await this.makeTransactionFromSelectedInputs(
-      params.payments,
-      selectedInputs,
-      feeEstimate,
-    );
-    const signedTx = await this.signTransaction(unsignedTx);
-    return await this.sendTransaction(signedTx);
+    let maybeInputs: Output[] = [];
+    let maybeFeeEstimate: FeeEstimateResponse;
+    let maybeSendResult: SendRawTransactionResult;
+    try {
+      const { selectedInputs, feeEstimate } =
+        await this.calculateFeeAndSelectInputs(params);
+      maybeInputs = selectedInputs;
+      maybeFeeEstimate = feeEstimate;
+      const unsignedTx = await this.makeTransactionFromSelectedInputs(
+        params.payments,
+        selectedInputs,
+        feeEstimate,
+      );
+      const signedTx = await this.signTransaction(unsignedTx);
+      const sendResult = await this.sendTransaction(signedTx);
+      maybeSendResult = sendResult;
+      if (sendResult.status !== "OK")
+        throw new Error("send raw transaction rpc returned error");
+
+      // write txlog to cache + update pending_spent_utxos (affects stats + spendability)
+      await writeCacheFileDefaultLocationThrows({
+        primary_address: this.primary_address,
+        pathPrefix: this.pathPrefix,
+        writeCallback: async (cache) => {
+          if (!cache.tx_logs) cache.tx_logs = [];
+          if (!cache.pending_spent_utxos) cache.pending_spent_utxos = {};
+          const inputs_index = selectedInputs.map((input) =>
+            String(input.index_on_blockchain),
+          );
+          const txLog: TxLog = {
+            sendResult,
+            feeEstimate,
+            payments: params.payments,
+            node_url: this.node_url,
+            inputs_index,
+            height: this.current_height!,
+            timestamp: Date.now(),
+          };
+          const newLen = cache.tx_logs.push(txLog);
+          const txLogIndex = newLen - 1;
+          for (const inputId of inputs_index) {
+            cache.pending_spent_utxos[inputId] = txLogIndex;
+          }
+        },
+      });
+      return sendResult;
+    } catch (e) {
+      // write txlog error to cache
+      await writeCacheFileDefaultLocationThrows({
+        primary_address: this.primary_address,
+        pathPrefix: this.pathPrefix,
+        writeCallback: async (cache) => {
+          if (!cache.tx_logs) cache.tx_logs = [];
+          if (!cache.pending_spent_utxos) cache.pending_spent_utxos = {};
+          const inputs_index = maybeInputs.map((input) =>
+            String(input.index_on_blockchain),
+          );
+          const txLog: TxLog = {
+            sendResult: maybeSendResult,
+            error: String(e || "unknown error"),
+            feeEstimate: maybeFeeEstimate,
+            payments: params.payments,
+            node_url: this.node_url,
+            inputs_index,
+            height: this.current_height!,
+            timestamp: Date.now(),
+          };
+          const newLen = cache.tx_logs.push(txLog);
+        },
+      });
+      throw e;
+    }
   }
   /**
    * makeStandardTransaction

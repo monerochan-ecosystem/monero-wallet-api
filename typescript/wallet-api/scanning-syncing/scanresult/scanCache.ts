@@ -2,12 +2,15 @@ import { type KeyImage } from "./computeKeyImage";
 import type { ReorgInfo } from "./reorg";
 import type {
   BlockInfo,
+  FeeEstimateResponse,
   GetBlockHeadersRange,
   GetBlockHeadersRangeParams,
   Output,
+  SendRawTransactionResult,
   ViewPair,
 } from "../../api";
 import { atomicWrite } from "../../io/atomicWrite";
+import type { Payment } from "../../send-functionality/inputSelection";
 
 export async function initScanCache(
   viewpair: ViewPair,
@@ -181,8 +184,20 @@ export type ScanCache = {
   own_key_images: OwnKeyImages;
   scanned_ranges: CacheRange[]; // list of block height ranges that have been scanned [0].start, [length-1].end <-- last scanned height
   primary_address: string;
+  tx_logs?: TxLog[];
+  pending_spent_utxos?: Record<GlobalOutputId, number>; // { "123": txlog index } mapping of utxo global index to txlog entry in tx_logs array
   subaddresses?: Subaddress[];
   reorg_info?: ReorgInfo;
+};
+export type TxLog = {
+  inputs_index: string[];
+  payments: Payment[];
+  node_url: string;
+  height: number;
+  timestamp: number;
+  feeEstimate?: FeeEstimateResponse;
+  sendResult?: SendRawTransactionResult;
+  error?: string;
 };
 
 export type ChangeReason =
