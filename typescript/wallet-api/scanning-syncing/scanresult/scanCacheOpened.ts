@@ -209,6 +209,11 @@ export class ScanCacheOpened {
     ).catch(() => false);
 
     if (scan_settings) {
+      // if there is no scan settings file,
+      // the retry loop is stopped.
+      // the wallet reset happens through deleting all the scan setting + cache files
+      // we want any background retry loops to stop in this case
+
       //TODO ? write connection status retry
       await this.unpause();
     }
@@ -338,6 +343,12 @@ export class ScanCacheOpened {
       maybeSendResult = sendResult;
       if (sendResult.status !== "OK")
         throw new Error("send raw transaction rpc returned error");
+      // before writing the scan cache, we stop the worker to avoid a race
+      if (this.worker) {
+        this.worker.terminate();
+        delete this.worker;
+      }
+
       // write txlog to cache + update pending_spent_utxos (affects stats + spendability)
       await writeCacheFileDefaultLocationThrows({
         primary_address: this.primary_address,
@@ -380,8 +391,17 @@ export class ScanCacheOpened {
         newCache,
         changed_outputs,
       });
+
+      // restart the worker
+      await this.unpause();
+
       return sendResult;
     } catch (e) {
+      // before writing the scan cache, we stop the worker to avoid a race
+      if (this.worker) {
+        this.worker.terminate();
+        delete this.worker;
+      }
       // write txlog error to cache
       await writeCacheFileDefaultLocationThrows({
         primary_address: this.primary_address,
@@ -421,6 +441,10 @@ export class ScanCacheOpened {
         newCache,
         changed_outputs,
       });
+
+      // restart the worker
+      await this.unpause();
+
       throw e;
     }
   }
