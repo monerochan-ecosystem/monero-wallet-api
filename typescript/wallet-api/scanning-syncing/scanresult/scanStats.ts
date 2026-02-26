@@ -1,5 +1,5 @@
 import { atomicWrite, ViewPair, type Output } from "../../api";
-import type { ScanCache, Subaddress } from "./scanCache";
+import type { ScanCache, Subaddress, TxLog } from "./scanCache";
 import { outputStatus, type OutputStatus } from "./scanResult";
 
 export type WriteStatsFileParams = {
@@ -133,7 +133,7 @@ export function processFoundTransactions(
   stats.found_transactions = {};
   stats.ordered_transactions = [];
   Object.entries(cache.outputs).forEach(([_, output]) => {
-    const status = outputStatus(output, current_height || 0);
+    const status = outputStatus(output, cache, current_height || 0);
 
     const in_ordered_transactions = stats.ordered_transactions.includes(
       output.tx_hash,
@@ -225,6 +225,54 @@ export function addMissingSubAddressesToScanStats(
     minor++;
   }
 }
+function isSelfSpent(address: string, cache: ScanCache) {
+  if (address === cache.primary_address) return true;
+  for (const subaddress of cache.subaddresses || []) {
+    if (subaddress.address === address) return true;
+  }
+  return false;
+}
+function processTxlogPayments(txlog: TxLog, cache: ScanCache) {
+  let outWardPaymentSum = 0n;
+  for (const payment of txlog.payments) {
+    if (!isSelfSpent(payment.address, cache)) {
+      outWardPaymentSum += BigInt(payment.amount);
+    }
+  }
+  return outWardPaymentSum;
+}
+function processTxlogInputs(txlog: TxLog, cache: ScanCache) {
+  let alreadyRegognizedAsSpend = false;
+  let inputSum = 0n;
+  for (const inputId of txlog.inputs_index) {
+    const input = cache.outputs[inputId];
+    if (typeof input.spent_in_tx_hash === "string") {
+      alreadyRegognizedAsSpend = true;
+      continue;
+    }
+    inputSum += input.amount;
+  }
+  return { inputSum, alreadyRegognizedAsSpend };
+}
+export function processTxlogs(cache: ScanCache, stats: ScanStats) {
+  for (const txlog of cache.tx_logs || []) {
+    if (
+      !txlog ||
+      !txlog.sendResult ||
+      (txlog.sendResult && txlog.sendResult.status !== "OK")
+    )
+      continue;
+    const { inputSum, alreadyRegognizedAsSpend } = processTxlogInputs(
+      txlog,
+      cache,
+    );
+    if (alreadyRegognizedAsSpend) continue;
+    const outWardPaymentSum = processTxlogPayments(txlog, cache);
+    stats.total_amount -= inputSum;
+    const newPending = inputSum - outWardPaymentSum;
+    stats.total_pending_amount += newPending;
+  }
+}
 export async function alignScanStatsWithCache(
   cache: ScanCache,
   view_pair: ViewPair,
@@ -252,6 +300,7 @@ export async function alignScanStatsWithCache(
       );
 
       processFoundTransactions(cache, stats, current_scan_tip_height);
+      processTxlogs(cache, stats);
       stats.height = current_scan_tip_height;
       //}
     },

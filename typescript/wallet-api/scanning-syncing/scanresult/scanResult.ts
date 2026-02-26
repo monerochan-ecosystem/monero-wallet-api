@@ -287,6 +287,9 @@ export function unlockedAtHeight(output: Output) {
     return output.block_height + 10;
   }
 }
+export type PrePending = {
+  status: "prepending";
+};
 export type Pending = {
   status: "pending";
   unlock_height: number;
@@ -303,24 +306,43 @@ export type Reorged = {
 export type Spendable = {
   status: "spendable";
 };
-export type OutputStatus = Pending | Spent | Burnt | Reorged | Spendable;
+export type OutputStatus =
+  | PrePending
+  | Pending
+  | Spent
+  | Burnt
+  | Reorged
+  | Spendable;
 export function outputStatus(
   output: Output,
+  cache: ScanCache,
   current_height: number,
 ): OutputStatus {
+  if (
+    // order matters, check this before "spent" check + "pending" check
+    cache.pending_spent_utxos &&
+    cache.pending_spent_utxos[output.index_on_blockchain.toString()]
+  ) {
+    return { status: "prepending" };
+  }
   if (typeof output.burned === "number") {
     return { status: "burnt" };
   }
   if (typeof output.spent_in_tx_hash === "string") {
     return { status: "spent" };
   }
+
   const unlock_height = unlockedAtHeight(output);
   if (unlock_height > current_height) {
     return { status: "pending", unlock_height };
   }
   return { status: "spendable" };
 }
-export function spendable(output: Output, current_height: number) {
-  const status = outputStatus(output, current_height);
+export function spendable(
+  output: Output,
+  cache: ScanCache,
+  current_height: number,
+) {
+  const status = outputStatus(output, cache, current_height);
   return status.status === "spendable";
 }

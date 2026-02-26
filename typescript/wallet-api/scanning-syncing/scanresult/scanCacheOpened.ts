@@ -612,7 +612,9 @@ export class ScanCacheOpened {
    */
   public spendableInputs() {
     return Object.values(this._cache.outputs)
-      .filter((output) => spendable(output, this.current_height || 0))
+      .filter((output) =>
+        spendable(output, this._cache, this.current_height || 0),
+      )
       .sort((a, b) => (a.amount > b.amount ? -1 : a.amount < b.amount ? 1 : 0));
   }
   /**
