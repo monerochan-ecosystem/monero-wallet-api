@@ -35,6 +35,7 @@ import {
   writeCacheFileDefaultLocationThrows,
   type CacheChangedCallback,
   type CacheChangedCallbackParameters,
+  type ChangedOutput,
   type ScanCache,
   type Subaddress,
   type TxLog,
@@ -315,7 +316,9 @@ export class ScanCacheOpened {
   get subaddresses() {
     return Object.values(this._stats?.subaddresses || {});
   }
-
+  get tx_logs() {
+    return this._cache.tx_logs || [];
+  }
   public async makeSignSendTransaction(params: CreateTransactionParams) {
     let maybeInputs: Output[] = [];
     let maybeFeeEstimate: FeeEstimateResponse;
@@ -335,7 +338,6 @@ export class ScanCacheOpened {
       maybeSendResult = sendResult;
       if (sendResult.status !== "OK")
         throw new Error("send raw transaction rpc returned error");
-
       // write txlog to cache + update pending_spent_utxos (affects stats + spendability)
       await writeCacheFileDefaultLocationThrows({
         primary_address: this.primary_address,
@@ -362,6 +364,22 @@ export class ScanCacheOpened {
           }
         },
       });
+      const newCache = await readCacheFileDefaultLocation(
+        this.primary_address,
+        this.pathPrefix,
+      );
+      if (!newCache)
+        throw new Error(
+          `cache not found for primary address: ${this.primary_address}, and path prefix: ${this.pathPrefix}`,
+        );
+      const changed_outputs: ChangedOutput[] = selectedInputs.map((input) => ({
+        change_reason: "spent",
+        output: input,
+      }));
+      await this.feed({
+        newCache,
+        changed_outputs,
+      });
       return sendResult;
     } catch (e) {
       // write txlog error to cache
@@ -386,6 +404,22 @@ export class ScanCacheOpened {
           };
           const newLen = cache.tx_logs.push(txLog);
         },
+      });
+      const newCache = await readCacheFileDefaultLocation(
+        this.primary_address,
+        this.pathPrefix,
+      );
+      if (!newCache)
+        throw new Error(
+          `cache not found for primary address: ${this.primary_address}, and path prefix: ${this.pathPrefix}`,
+        );
+      const changed_outputs: ChangedOutput[] = maybeInputs.map((input) => ({
+        change_reason: "spent",
+        output: input,
+      }));
+      await this.feed({
+        newCache,
+        changed_outputs,
       });
       throw e;
     }

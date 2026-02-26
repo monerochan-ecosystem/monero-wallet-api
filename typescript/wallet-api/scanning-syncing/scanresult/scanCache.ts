@@ -201,6 +201,7 @@ export type TxLog = {
 };
 
 export type ChangeReason =
+  | "spent"
   | "added"
   | "ownspend"
   | "reorged"
