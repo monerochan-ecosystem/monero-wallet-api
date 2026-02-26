@@ -75,7 +75,7 @@ export const GetOutputDistributionResponseSchema = z.object({
         base: z.number(),
         distribution: z.array(z.number()),
         start_height: z.number(),
-      })
+      }),
     ),
     status: z.string(),
   }),
@@ -85,7 +85,7 @@ export type GetOutputDistributionResponse = z.infer<
 >;
 
 export function parseGetOutputDistributionResponse(
-  data: unknown
+  data: unknown,
 ): GetOutputDistributionResponse | null {
   const result = GetOutputDistributionResponseSchema.safeParse(data);
 
@@ -160,7 +160,7 @@ export async function get_output_distribution(
     amounts: [0],
     binary: false,
     cumulative: true,
-  }
+  },
 ) {
   const getOutputDistributionResponse = await fetch(NODE_URL + "/json_rpc", {
     method: "POST",
@@ -177,7 +177,7 @@ export async function get_output_distribution(
 
   if (!getOutputDistributionResponse.ok) {
     throw new Error(
-      `Failed to get output distribution (for decoy sampling): ${getOutputDistributionResponse.statusText}`
+      `Failed to get output distribution (for decoy sampling): ${getOutputDistributionResponse.statusText}`,
     );
   }
 
@@ -185,12 +185,12 @@ export async function get_output_distribution(
     await getOutputDistributionResponse.json();
 
   const parsedResult = parseGetOutputDistributionResponse(
-    getOutputDistributionResult
+    getOutputDistributionResult,
   );
 
   if (parsedResult === null || !parsedResult.result) {
     throw new Error(
-      "Failed to receive output distribution from node (get_output_distribution result)"
+      "Failed to receive output distribution from node (get_output_distribution result)",
     );
   }
 
@@ -224,7 +224,7 @@ export type GetFeeEstimateResponse = z.infer<
 >;
 
 export function parseGetFeeEstimateResponse(
-  data: unknown
+  data: unknown,
 ): GetFeeEstimateResponse | null {
   const result = GetFeeEstimateResponseSchema.safeParse(data);
 
@@ -241,8 +241,15 @@ export type GetFeeEstimateResult = {
   fees?: number[];
   quantization_mask: number;
 };
-
-export async function get_fee_estimate(NODE_URL: string) {
+export type FeeEstimateResponse = {
+  status: string;
+  fee: number;
+  quantization_mask: number;
+  fees?: number[] | undefined;
+};
+export async function get_fee_estimate(
+  NODE_URL: string,
+): Promise<FeeEstimateResponse> {
   // GRACE_BLOCKS_FOR_FEE_ESTIMATE: u64 = 10 (0xA) accoding to monero oxide
   const GRACE_BLOCKS_FOR_FEE_ESTIMATE = 10;
 
@@ -261,7 +268,7 @@ export async function get_fee_estimate(NODE_URL: string) {
 
   if (!getFeeEstimateResponse.ok) {
     throw new Error(
-      `Failed to get fee estimate: ${getFeeEstimateResponse.statusText}`
+      `Failed to get fee estimate: ${getFeeEstimateResponse.statusText}`,
     );
   }
 
@@ -271,7 +278,7 @@ export async function get_fee_estimate(NODE_URL: string) {
 
   if (parsedResult === null || !parsedResult.result) {
     throw new Error(
-      "Failed to receive fee estimate from node (get_fee_estimate result)"
+      "Failed to receive fee estimate from node (get_fee_estimate result)",
     );
   }
 
@@ -297,7 +304,7 @@ export type SendRawTransactionResponse = z.infer<
 >;
 
 export function parseSendRawTransactionResponse(
-  data: unknown
+  data: unknown,
 ): SendRawTransactionResponse | null {
   const result = SendRawTransactionResponseSchema.safeParse(data);
   if (result.success) {
@@ -307,12 +314,25 @@ export function parseSendRawTransactionResponse(
     return null;
   }
 }
-
+export type SendRawTransactionResult = {
+  double_spend: boolean;
+  fee_too_low: boolean;
+  invalid_input: boolean;
+  invalid_output: boolean;
+  low_mixin: boolean;
+  not_relayed: boolean;
+  overspend: boolean;
+  reason: string;
+  status: string;
+  too_big: boolean;
+  untrusted: boolean;
+  not_rct?: boolean | undefined;
+};
 export async function send_raw_transaction(
   NODE_URL: string,
   tx_as_hex: SignedTransaction, // tx_as_hex - string; Full transaction information as hexadecimal string.
-  do_not_relay: boolean = false // do_not_relay - (Optional) boolean; Stop relaying transaction to other nodes. Defaults to false.
-) {
+  do_not_relay: boolean = false, // do_not_relay - (Optional) boolean; Stop relaying transaction to other nodes. Defaults to false.
+): Promise<SendRawTransactionResult> {
   const sendRawTransactionResponse = await fetch(
     NODE_URL + "/send_raw_transaction",
     {
@@ -321,20 +341,20 @@ export async function send_raw_transaction(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ tx_as_hex, do_not_relay }),
-    }
+    },
   );
   if (!sendRawTransactionResponse.ok) {
     throw new Error(
-      `Failed to send raw transaction: ${sendRawTransactionResponse.statusText}`
+      `Failed to send raw transaction: ${sendRawTransactionResponse.statusText}`,
     );
   }
   const sendRawTransactionResult = await sendRawTransactionResponse.json();
   const parsedResult = parseSendRawTransactionResponse(
-    sendRawTransactionResult
+    sendRawTransactionResult,
   );
   if (parsedResult === null) {
     throw new Error(
-      "Failed to receive response from node (send_raw_transaction result)"
+      "Failed to receive response from node (send_raw_transaction result)",
     );
   }
   return parsedResult;
@@ -406,7 +426,7 @@ export const GetBlockHeadersRangeResponseSchema = z.object({
           timestamp: z.number(),
           wide_cumulative_difficulty: z.string(),
           wide_difficulty: z.string(),
-        })
+        }),
       ),
       status: z.string(),
       top_hash: z.string(),
@@ -456,7 +476,7 @@ export type GetBlockHeadersRange = {
 };
 
 export function parseGetBlockHeadersRangeResponse(
-  data: unknown
+  data: unknown,
 ): GetBlockHeadersRangeResponse | null {
   const result = GetBlockHeadersRangeResponseSchema.safeParse(data);
   if (result.success) {
@@ -482,14 +502,14 @@ export type GetBlockHeadersRangeParams = {
 export const RESTRICTED_BLOCK_HEADER_RANGE = 1000;
 export async function get_block_headers_range(
   NODE_URL: string,
-  params: GetBlockHeadersRangeParams
+  params: GetBlockHeadersRangeParams,
 ): Promise<GetBlockHeadersRange> {
   //https://github.com/monero-project/monero/blob/48ad374b0d6d6e045128729534dc2508e6999afe/src/rpc/core_rpc_server.cpp#L74
   // #define RESTRICTED_BLOCK_HEADER_RANGE 1000
   // https://github.com/monero-project/monero/blob/48ad374b0d6d6e045128729534dc2508e6999afe/src/rpc/core_rpc_server.cpp#L2612
   if (params.end_height - params.start_height > RESTRICTED_BLOCK_HEADER_RANGE) {
     throw new Error(
-      "Too many block headers requested. Max: " + RESTRICTED_BLOCK_HEADER_RANGE
+      "Too many block headers requested. Max: " + RESTRICTED_BLOCK_HEADER_RANGE,
     );
   }
   const getBlockHeadersRangeResponse = await fetch(NODE_URL + "/json_rpc", {
@@ -506,24 +526,24 @@ export async function get_block_headers_range(
   });
   if (!getBlockHeadersRangeResponse.ok) {
     throw new Error(
-      `Failed to get block headers range: ${getBlockHeadersRangeResponse.statusText}`
+      `Failed to get block headers range: ${getBlockHeadersRangeResponse.statusText}`,
     );
   }
   const getBlockHeadersRangeResult = await getBlockHeadersRangeResponse.json();
   const parsedResult = parseGetBlockHeadersRangeResponse(
-    getBlockHeadersRangeResult
+    getBlockHeadersRangeResult,
   );
   if (parsedResult === null) {
     throw new Error("Failed to parse block headers range response from node");
   }
   if (parsedResult.error) {
     throw new Error(
-      `RPC error: ${parsedResult.error.message} (code: ${parsedResult.error.code})`
+      `RPC error: ${parsedResult.error.message} (code: ${parsedResult.error.code})`,
     );
   }
   if (!parsedResult.result) {
     throw new Error(
-      "Failed to receive block headers range from node (missing result)"
+      "Failed to receive block headers range from node (missing result)",
     );
   }
   return parsedResult.result;

@@ -3,7 +3,9 @@ import {
   NodeUrl,
   signTransaction,
   ViewPair,
+  type FeeEstimateResponse,
   type Output,
+  type SendRawTransactionResult,
 } from "../../api";
 import {
   prepareInput,
@@ -209,7 +211,9 @@ export class ScanCacheOpened {
     }
     return scan_settings ? true : false;
   }
-  public async sendTransaction(signedTx: string) {
+  public async sendTransaction(
+    signedTx: string,
+  ): Promise<SendRawTransactionResult> {
     const node = await NodeUrl.create(this.node_url);
     return await node.sendRawTransaction(signedTx);
   }
@@ -220,10 +224,17 @@ export class ScanCacheOpened {
     if (!privateSpendKey) throw new Error("privateSpendKey not found in env");
     return await signTransaction(unsignedTx, privateSpendKey);
   }
-  /**
-   * this function returns the unsigned transaction, throws {@link SendError}
-   */
-  public async makeTransaction(params: CreateTransactionParams) {
+  public async calculateFeeAndSelectInputs(
+    params: CreateTransactionParams,
+  ): Promise<{
+    selectedInputs: Output[];
+    feeEstimate: {
+      status: string;
+      fee: number;
+      quantization_mask: number;
+      fees?: number[] | undefined;
+    };
+  }> {
     const sum = sumPayments(params.payments);
     const node = await NodeUrl.create(this.node_url);
     // 1. get fee estimate
@@ -243,14 +254,23 @@ export class ScanCacheOpened {
         );
       }
     }
-    // 3. select inputs
+    // 3. select inputs TODO: log inputs indices
     const selectedInputs = params.inputs || this.selectInputs(sum, feePerByte);
     if (!selectedInputs.length) throw new Error("not enough funds");
+    return { selectedInputs, feeEstimate };
+  }
+  public async makeTransactionFromSelectedInputs(
+    payments: Payment[],
+    selectedInputs: Output[],
+    feeEstimate: FeeEstimateResponse,
+  ) {
     // 4. get output distribution
+    const node = await NodeUrl.create(this.node_url);
+
     const distibution = await node.getOutputDistribution();
     const preparedInputs: PreparedInput[] = [];
     for (const input of selectedInputs) {
-      // 5. sample decoys & get outs from node
+      // 5. sample decoys & get outs from node: here is where a privacy compromising event could happen
       preparedInputs.push(prepareInput(node, distibution, input));
     }
     const inputs: Input[] = [];
@@ -266,11 +286,23 @@ export class ScanCacheOpened {
     // 7. make transaction: combine inputs, payments + fee info
     const unsignedTx = this.view_pair.makeTransaction({
       inputs,
-      payments: params.payments,
+      payments,
       fee_response: feeEstimate,
       fee_priority: "unimportant",
     });
     return unsignedTx;
+  }
+  /**
+   * this function returns the unsigned transaction, throws {@link SendError}
+   */
+  public async makeTransaction(params: CreateTransactionParams) {
+    const { selectedInputs, feeEstimate } =
+      await this.calculateFeeAndSelectInputs(params);
+    return await this.makeTransactionFromSelectedInputs(
+      params.payments,
+      selectedInputs,
+      feeEstimate,
+    );
   }
   get amount() {
     return this._stats?.total_amount || 0n;
@@ -280,6 +312,18 @@ export class ScanCacheOpened {
   }
   get subaddresses() {
     return Object.values(this._stats?.subaddresses || {});
+  }
+
+  public async makeSignSendTransaction(params: CreateTransactionParams) {
+    const { selectedInputs, feeEstimate } =
+      await this.calculateFeeAndSelectInputs(params);
+    const unsignedTx = await this.makeTransactionFromSelectedInputs(
+      params.payments,
+      selectedInputs,
+      feeEstimate,
+    );
+    const signedTx = await this.signTransaction(unsignedTx);
+    return await this.sendTransaction(signedTx);
   }
   /**
    * makeStandardTransaction

@@ -12,9 +12,10 @@ import {
   get_info,
   get_output_distribution,
   send_raw_transaction,
+  type FeeEstimateResponse,
   type GetBlockHeadersRangeParams,
   type GetOutputDistributionParams,
-  type SendRawTransactionResponse,
+  type SendRawTransactionResult,
 } from "./jsonEndpoints";
 
 import {
@@ -73,7 +74,7 @@ export class NodeUrl extends WasmProcessor {
    * @returns returns output distribution necessary to sample input candidates
    */
   public async getOutputDistribution(
-    params?: GetOutputDistributionParams
+    params?: GetOutputDistributionParams,
   ): Promise<number[]> {
     return (await get_output_distribution(this.node_url, params))
       .distributions[0].distribution;
@@ -82,7 +83,7 @@ export class NodeUrl extends WasmProcessor {
    * fetch fee estimate from node
    * @returns fee estimate response
    */
-  public getFeeEstimate() {
+  public getFeeEstimate(): Promise<FeeEstimateResponse> {
     return get_fee_estimate(this.node_url);
   }
   /**
@@ -95,13 +96,13 @@ export class NodeUrl extends WasmProcessor {
   public sampleDecoys(
     outputToBeSpentIndex: number,
     distribution: number[],
-    candidatesLength: number
+    candidatesLength: number,
   ) {
     return sampleDecoys(
       this,
       outputToBeSpentIndex,
       distribution,
-      candidatesLength
+      candidatesLength,
     );
   }
   /**
@@ -114,7 +115,7 @@ export class NodeUrl extends WasmProcessor {
   public makeInput(
     outputToBeSpent: Output,
     candidates: number[],
-    get_outs_Response: Uint8Array
+    get_outs_Response: Uint8Array,
   ): Input {
     return makeInput(this, outputToBeSpent, candidates, get_outs_Response);
   }
@@ -127,8 +128,8 @@ export class NodeUrl extends WasmProcessor {
    */
   public async sendRawTransaction(
     tx_as_hex: SignedTransaction,
-    do_not_relay: boolean = false
-  ): Promise<SendRawTransactionResponse> {
+    do_not_relay: boolean = false,
+  ): Promise<SendRawTransactionResult> {
     return send_raw_transaction(this.node_url, tx_as_hex, do_not_relay);
   }
   /**
