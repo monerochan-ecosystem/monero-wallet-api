@@ -42,8 +42,12 @@ import {
 } from "./scanCache";
 import {
   alignScanStatsWithCache,
+  isSelfSpent,
+  processTxlogInputs,
+  processTxlogPayments,
   writeStatsFileDefaultLocation,
   type FoundTransaction,
+  type PrePendingTx,
   type ScanStats,
 } from "./scanStats";
 import {
@@ -147,6 +151,37 @@ export class ScanCacheOpened {
 
   get cache(): ScanCache {
     return this._cache;
+  }
+  get prepending_txs(): PrePendingTx[] {
+    const txs = [];
+    for (const txlog of this._cache.tx_logs || []) {
+      const { inputSum, alreadyRegognizedAsSpend } = processTxlogInputs(
+        txlog,
+        this._cache,
+      );
+      if (alreadyRegognizedAsSpend) continue;
+      const outWardPaymentSum = processTxlogPayments(txlog, this._cache);
+      const self_spent = isSelfSpent(txlog.payments[0].address, this._cache);
+      const destination_address = txlog.payments[0].address;
+      const inputs = [];
+      for (const inputId of txlog.inputs_index) {
+        const input = this._cache.outputs[inputId];
+        inputs.push(input);
+      }
+      const amount = inputSum - outWardPaymentSum;
+
+      const prepending_tx: PrePendingTx = {
+        amount,
+        txlog,
+        inputSum,
+        outWardPaymentSum,
+        self_spent,
+        destination_address,
+        inputs,
+      };
+      txs.push(prepending_tx);
+    }
+    return txs;
   }
   get transactions(): FoundTransaction[] {
     if (typeof this._stats === "undefined" || this._stats === null) return [];

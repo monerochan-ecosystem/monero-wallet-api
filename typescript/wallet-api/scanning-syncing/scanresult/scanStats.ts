@@ -112,6 +112,7 @@ export type FoundTransaction = {
   outputs: Output[];
   tx_hash: string;
   status: OutputStatus;
+  txlog?: TxLog;
 };
 export type TxHash = string;
 
@@ -159,6 +160,13 @@ export function processFoundTransactions(
     }
     // handle spent case
     if (output.spent_in_tx_hash) {
+      const spent_utxo_value = cache.pending_spent_utxos
+        ? cache.pending_spent_utxos[output.index_on_blockchain]
+        : null;
+      const txlog =
+        cache.tx_logs && spent_utxo_value
+          ? cache.tx_logs[spent_utxo_value]
+          : undefined;
       const spentTx = stats.found_transactions[output.spent_in_tx_hash];
       if (spentTx) {
         spentTx.amount -= output.amount;
@@ -170,6 +178,7 @@ export function processFoundTransactions(
           amount: -output.amount,
           outputs: [],
           tx_hash: output.spent_in_tx_hash,
+          txlog,
         };
       }
     }
@@ -225,14 +234,24 @@ export function addMissingSubAddressesToScanStats(
     minor++;
   }
 }
-function isSelfSpent(address: string, cache: ScanCache) {
+export function isSelfSpent(address: string, cache: ScanCache) {
   if (address === cache.primary_address) return true;
   for (const subaddress of cache.subaddresses || []) {
     if (subaddress.address === address) return true;
   }
   return false;
 }
-function processTxlogPayments(txlog: TxLog, cache: ScanCache) {
+
+export type PrePendingTx = {
+  amount: bigint;
+  inputs: Output[];
+  txlog: TxLog;
+  inputSum: bigint;
+  outWardPaymentSum: bigint;
+  self_spent: boolean;
+  destination_address: string;
+};
+export function processTxlogPayments(txlog: TxLog, cache: ScanCache) {
   let outWardPaymentSum = 0n;
   for (const payment of txlog.payments) {
     if (!isSelfSpent(payment.address, cache)) {
@@ -241,7 +260,7 @@ function processTxlogPayments(txlog: TxLog, cache: ScanCache) {
   }
   return outWardPaymentSum;
 }
-function processTxlogInputs(txlog: TxLog, cache: ScanCache) {
+export function processTxlogInputs(txlog: TxLog, cache: ScanCache) {
   let alreadyRegognizedAsSpend = false;
   let inputSum = 0n;
   for (const inputId of txlog.inputs_index) {
