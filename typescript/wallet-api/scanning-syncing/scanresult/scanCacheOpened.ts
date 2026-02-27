@@ -30,6 +30,7 @@ import {
   writeWalletToScanSettings,
 } from "../scanSettings";
 import {
+  findRange,
   lastRange,
   readCacheFileDefaultLocation,
   writeCacheFileDefaultLocationThrows,
@@ -134,6 +135,14 @@ export class ScanCacheOpened {
     return this._start_height;
   }
   get current_height(): number | null {
+    let current_range = findRange(
+      this._cache.scanned_ranges,
+      this._start_height || 0,
+    );
+
+    return current_range?.end || null;
+  }
+  get current_top_range_height(): number | null {
     if (typeof this._stats === "undefined" || this._stats === null) return null;
     return this._stats.height;
   }
