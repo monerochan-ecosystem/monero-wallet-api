@@ -629,16 +629,15 @@ export class ScanCacheOpened {
     if (this.view_pair.primary_address !== params.newCache.primary_address)
       return;
     this._cache = params.newCache;
-    if (params.changed_outputs.length > 0) {
-      this._stats = await alignScanStatsWithCache(
-        this._cache,
-        this.view_pair,
-        this.primary_address,
-        this.pathPrefix,
-        undefined,
-        lastRange(this._cache.scanned_ranges)?.end,
-      );
-    }
+    this._stats = await alignScanStatsWithCache(
+      this._cache,
+      this.view_pair,
+      this.primary_address,
+      this.pathPrefix,
+      undefined,
+      lastRange(this._cache.scanned_ranges)?.end,
+    );
+
     for (const listener of this.notifyListeners) {
       if (listener) listener(params);
     }
