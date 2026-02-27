@@ -43,7 +43,8 @@ export async function processScanResult(params: ProcessScanResultParams) {
     throw new Error(
       `cache not found for primary address: ${result.primary_address} and path prefix: ${pathPrefix}`,
     );
-
+  if (result && "daemon_height" in result)
+    cache.daemon_height = result.daemon_height;
   if (use_master_current_range) {
     const last = lastRange(cache.scanned_ranges);
     if (last) {

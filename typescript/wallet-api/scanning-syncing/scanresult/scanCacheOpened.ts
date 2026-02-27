@@ -350,6 +350,9 @@ export class ScanCacheOpened {
       feeEstimate,
     );
   }
+  get daemon_height() {
+    return this._cache.daemon_height;
+  }
   get amount() {
     return this._stats?.total_amount || 0n;
   }
@@ -682,6 +685,7 @@ export class ScanCacheOpened {
   }
 
   private _cache: ScanCache = {
+    daemon_height: 0,
     outputs: {},
     own_key_images: {},
     scanned_ranges: [],

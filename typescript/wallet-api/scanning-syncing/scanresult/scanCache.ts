@@ -23,6 +23,7 @@ export async function initScanCache(
     pathPrefix,
   );
   let cache: ScanCache = {
+    daemon_height: 0,
     outputs: {},
     own_key_images: {},
     scanned_ranges: [],
@@ -188,6 +189,7 @@ export type ScanCache = {
   pending_spent_utxos?: Record<GlobalOutputId, number>; // { "123": txlog index } mapping of utxo global index to txlog entry in tx_logs array
   subaddresses?: Subaddress[];
   reorg_info?: ReorgInfo;
+  daemon_height: number;
 };
 export type TxLog = {
   inputs_index: string[];
