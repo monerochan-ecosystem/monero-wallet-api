@@ -261,17 +261,17 @@ export function processTxlogPayments(txlog: TxLog, cache: ScanCache) {
   return outWardPaymentSum;
 }
 export function processTxlogInputs(txlog: TxLog, cache: ScanCache) {
-  let alreadyRegognizedAsSpend = false;
+  let alreadyRecognizedAsSpend = false;
   let inputSum = 0n;
   for (const inputId of txlog.inputs_index) {
     const input = cache.outputs[inputId];
     if (typeof input.spent_in_tx_hash === "string") {
-      alreadyRegognizedAsSpend = true;
+      alreadyRecognizedAsSpend = true;
       continue;
     }
     inputSum += input.amount;
   }
-  return { inputSum, alreadyRegognizedAsSpend };
+  return { inputSum, alreadyRecognizedAsSpend };
 }
 export function processTxlogs(cache: ScanCache, stats: ScanStats) {
   for (const txlog of cache.tx_logs || []) {
@@ -281,11 +281,11 @@ export function processTxlogs(cache: ScanCache, stats: ScanStats) {
       (txlog.sendResult && txlog.sendResult.status !== "OK")
     )
       continue;
-    const { inputSum, alreadyRegognizedAsSpend } = processTxlogInputs(
+    const { inputSum, alreadyRecognizedAsSpend } = processTxlogInputs(
       txlog,
       cache,
     );
-    if (alreadyRegognizedAsSpend) continue;
+    if (alreadyRecognizedAsSpend) continue;
     const outWardPaymentSum = processTxlogPayments(txlog, cache);
     stats.total_amount -= inputSum;
     const newPending = inputSum - outWardPaymentSum;

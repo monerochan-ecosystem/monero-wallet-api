@@ -155,11 +155,12 @@ export class ScanCacheOpened {
   get prepending_txs(): PrePendingTx[] {
     const txs = [];
     for (const txlog of this._cache.tx_logs || []) {
-      const { inputSum, alreadyRegognizedAsSpend } = processTxlogInputs(
+      const { inputSum, alreadyRecognizedAsSpend } = processTxlogInputs(
         txlog,
         this._cache,
       );
-      if (alreadyRegognizedAsSpend) continue;
+      if (alreadyRecognizedAsSpend) continue;
+
       const outWardPaymentSum = processTxlogPayments(txlog, this._cache);
       const self_spent = isSelfSpent(txlog.payments[0].address, this._cache);
       const destination_address = txlog.payments[0].address;
@@ -168,7 +169,9 @@ export class ScanCacheOpened {
         const input = this._cache.outputs[inputId];
         inputs.push(input);
       }
-      const amount = inputSum - outWardPaymentSum;
+      const typical_fee = 1000000000n; // 0.001 XMR
+
+      const amount = -outWardPaymentSum - typical_fee;
 
       const prepending_tx: PrePendingTx = {
         amount,
