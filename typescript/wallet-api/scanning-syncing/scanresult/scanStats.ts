@@ -20,7 +20,6 @@ export async function writeStatsFileDefaultLocation(
       total_amount: 0n,
       total_pending_amount: 0n,
       primary_address: params.primary_address,
-      pending_amounts: [],
       found_transactions: {},
       ordered_transactions: [],
       subaddresses: {},
@@ -120,7 +119,6 @@ export type ScanStats = {
   height: number;
   total_amount: bigint;
   total_pending_amount: bigint;
-  pending_amounts: PendingAmount[];
   primary_address: string;
   subaddresses: Record<SubaddressMinorIndex, Subaddress>;
   found_transactions: Record<TxHash, FoundTransaction>;
@@ -329,7 +327,6 @@ export function resetStats(stats: ScanStats) {
   stats.height = 0;
   stats.total_amount = 0n;
   stats.total_pending_amount = 0n;
-  stats.pending_amounts = [];
   stats.found_transactions = {};
   stats.ordered_transactions = [];
   stats.subaddresses = {};
