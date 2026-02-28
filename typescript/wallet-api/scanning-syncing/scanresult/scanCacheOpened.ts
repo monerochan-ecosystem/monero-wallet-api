@@ -164,6 +164,12 @@ export class ScanCacheOpened {
   get prepending_txs(): PrePendingTx[] {
     const txs = [];
     for (const txlog of this._cache.tx_logs || []) {
+      if (
+        !txlog ||
+        !txlog.sendResult ||
+        (txlog.sendResult && txlog.sendResult.status !== "OK")
+      )
+        continue;
       const { inputSum, alreadyRecognizedAsSpend } = processTxlogInputs(
         txlog,
         this._cache,
@@ -363,7 +369,7 @@ export class ScanCacheOpened {
     return this._cache.daemon_height;
   }
   get amount() {
-    return this._stats?.total_amount || 0n;
+    return this._stats?.total_spendable_amount || 0n;
   }
   get pending_amount() {
     return this._stats?.total_pending_amount || 0n;

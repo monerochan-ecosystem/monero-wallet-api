@@ -1,3 +1,4 @@
+import { stat } from "fs";
 import { atomicWrite, ViewPair, type Output } from "../../api";
 import type { ScanCache, Subaddress, TxLog } from "./scanCache";
 import { outputStatus, type OutputStatus } from "./scanResult";
@@ -17,7 +18,7 @@ export async function writeStatsFileDefaultLocation(
   if (!stats)
     stats = {
       height: 0,
-      total_amount: 0n,
+      total_spendable_amount: 0n,
       total_pending_amount: 0n,
       primary_address: params.primary_address,
       found_transactions: {},
@@ -72,20 +73,45 @@ export async function readStatsFileDefaultLocation(
     statsFileDefaultLocation(primary_address, pathPrefix),
   );
 }
-export function addSpendableAmount(scan_stats: ScanStats, output: Output) {
-  scan_stats.total_amount += output.amount;
-  if (!output.subaddress_index) return;
+export function addSpentAmount(scan_stats: ScanStats, output: Output) {
+  if (!output.subaddress_index) {
+    if (!scan_stats.primary_address_received_amount)
+      scan_stats.primary_address_received_amount = 0n;
+    scan_stats.primary_address_received_amount += output.amount;
+    return;
+  }
   const statsSubaddress =
     scan_stats.subaddresses[output.subaddress_index.toString()];
   if (!statsSubaddress) return;
-  if (typeof statsSubaddress.amount === "undefined")
-    statsSubaddress.amount = 0n;
+  if (typeof statsSubaddress.received_amount === "undefined")
+    statsSubaddress.received_amount = 0n;
 
-  statsSubaddress.amount += output.amount;
+  statsSubaddress.received_amount += output.amount;
+}
+export function addSpendableAmount(scan_stats: ScanStats, output: Output) {
+  scan_stats.total_spendable_amount += output.amount;
+  if (!output.subaddress_index) {
+    if (!scan_stats.primary_address_received_amount)
+      scan_stats.primary_address_received_amount = 0n;
+    scan_stats.primary_address_received_amount += output.amount;
+    return;
+  }
+  const statsSubaddress =
+    scan_stats.subaddresses[output.subaddress_index.toString()];
+  if (!statsSubaddress) return;
+  if (typeof statsSubaddress.received_amount === "undefined")
+    statsSubaddress.received_amount = 0n;
+
+  statsSubaddress.received_amount += output.amount;
 }
 export function addPendingAmount(scan_stats: ScanStats, output: Output) {
   scan_stats.total_pending_amount += output.amount;
-  if (!output.subaddress_index) return;
+  if (!output.subaddress_index) {
+    if (!scan_stats.primary_address_pending_amount)
+      scan_stats.primary_address_pending_amount = 0n;
+    scan_stats.primary_address_pending_amount += output.amount;
+    return;
+  }
   const statsSubaddress =
     scan_stats.subaddresses[output.subaddress_index.toString()];
   if (!statsSubaddress) return;
@@ -96,14 +122,6 @@ export function addPendingAmount(scan_stats: ScanStats, output: Output) {
 }
 export type SubaddressMinorIndex = string;
 export type Amount = bigint;
-export type PendingAmount = {
-  amount: bigint;
-  subaddress_index: number | null;
-  becomes_spendable_at_height: number;
-  output_index: number;
-  tx_hash: string;
-  block_height: number;
-};
 // every tx has an output, get more info from outputs[0]
 export type FoundTransaction = {
   amount: bigint;
@@ -117,9 +135,11 @@ export type TxHash = string;
 
 export type ScanStats = {
   height: number;
-  total_amount: bigint;
+  total_spendable_amount: bigint;
   total_pending_amount: bigint;
   primary_address: string;
+  primary_address_received_amount?: bigint;
+  primary_address_pending_amount?: bigint;
   subaddresses: Record<SubaddressMinorIndex, Subaddress>;
   found_transactions: Record<TxHash, FoundTransaction>;
   ordered_transactions: TxHash[];
@@ -182,8 +202,10 @@ export function processFoundTransactions(
     }
     if (status.status === "spendable") addSpendableAmount(stats, output);
     else if (status.status === "pending") addPendingAmount(stats, output);
+    else if (status.status === "spent") addSpentAmount(stats, output);
   });
 }
+export function removeChangeFromPrimaddressAmounts(stats: ScanStats) {}
 export function addSubAddressesFromCacheToScanStats(
   cache: ScanCache,
   stats: ScanStats,
@@ -196,7 +218,7 @@ export function addSubAddressesFromCacheToScanStats(
       address: cacheSub.address,
       created_at_height: cacheSub.created_at_height,
       created_at_timestamp: cacheSub.created_at_timestamp,
-      amount: 0n,
+      received_amount: 0n,
       pending_amount: 0n,
     };
   }
@@ -225,7 +247,7 @@ export function addMissingSubAddressesToScanStats(
       created_at_height,
       created_at_timestamp,
       not_yet_included: true,
-      amount: 0n,
+      received_amount: 0n,
       pending_amount: 0n,
     };
     stats.subaddresses[minor.toString()] = new_subaddress;
@@ -239,7 +261,26 @@ export function isSelfSpent(address: string, cache: ScanCache) {
   }
   return false;
 }
+export function removeChangeFromPrimAddressReceivedAmounts(stats: ScanStats) {
+  if (!stats.primary_address_pending_amount)
+    stats.primary_address_pending_amount = 0n;
+  if (!stats.primary_address_received_amount)
+    stats.primary_address_received_amount = 0n;
 
+  for (const tx of stats.ordered_transactions) {
+    const transaction = stats.found_transactions[tx];
+    if (
+      transaction.status.status === "pending" ||
+      transaction.status.status === "prepending"
+    )
+      stats.primary_address_pending_amount -= transaction.amount;
+    else if (
+      transaction.status.status === "spendable" ||
+      transaction.status.status === "spent"
+    )
+      stats.primary_address_received_amount -= transaction.amount;
+  }
+}
 export type PrePendingTx = {
   amount: bigint;
   inputs: Output[];
@@ -285,7 +326,7 @@ export function processTxlogs(cache: ScanCache, stats: ScanStats) {
     );
     if (alreadyRecognizedAsSpend) continue;
     const outWardPaymentSum = processTxlogPayments(txlog, cache);
-    stats.total_amount -= inputSum;
+    stats.total_spendable_amount -= inputSum;
     const newPending = inputSum - outWardPaymentSum;
     stats.total_pending_amount += newPending;
   }
@@ -325,7 +366,7 @@ export async function alignScanStatsWithCache(
 }
 export function resetStats(stats: ScanStats) {
   stats.height = 0;
-  stats.total_amount = 0n;
+  stats.total_spendable_amount = 0n;
   stats.total_pending_amount = 0n;
   stats.found_transactions = {};
   stats.ordered_transactions = [];
