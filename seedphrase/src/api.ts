@@ -33,11 +33,11 @@ export type WalletRoute = {
   identity: "main" | string;
   domain: "no_domain" | string;
   wallet_type: "single" | "sa_multi" | "pl_multi";
-  wallet_id: "0" | string;
+  wallet_slot: "0" | string;
 };
 
 export function getWalletSecret(
-  { identity, domain, wallet_type, wallet_id }: WalletRoute,
+  { identity, domain, wallet_type, wallet_slot }: WalletRoute,
   seedphrase: string,
   password: string = "",
 ): Uint8Array {
@@ -55,14 +55,14 @@ export function getWalletSecret(
   )
     throw new Error("Unsupported wallet type");
 
-  if (Number.isNaN(parseInt(wallet_id)))
+  if (Number.isNaN(parseInt(wallet_slot)))
     throw new Error(
-      "Invalid wallet id: " + wallet_id + "has to be a number, default: 0",
+      "Invalid wallet id: " + wallet_slot + "has to be a number, default: 0",
     );
 
   return deriveSecretKey(
     seedphrase,
-    `${identity}/${domain}/${wallet_type}/${wallet_id}/${password}-monero`,
+    `${identity}/${domain}/${wallet_type}/${wallet_slot}/${password}-monero`,
   );
 }
 
@@ -70,9 +70,9 @@ export const WALLET_DEFAULT_ROUTE: WalletRoute = {
   identity: "main",
   domain: "no_domain",
   wallet_type: "single",
-  wallet_id: "0",
+  wallet_slot: "0",
 };
 
 export function walletRouteToString(route: WalletRoute): string {
-  return `${route.identity}/${route.domain}/${route.wallet_type}/${route.wallet_id}`;
+  return `${route.identity}/${route.domain}/${route.wallet_type}/${route.wallet_slot}`;
 }
