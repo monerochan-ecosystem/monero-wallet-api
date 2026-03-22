@@ -5,6 +5,16 @@
   "type": "module",
   "main": "dist/api.js",
   "types": "dist/api.d.ts",
+  "exports": {
+  ".": {
+    "types": "./dist/api.d.ts",
+    "import": "./dist/api.js"
+  },
+  "./tools": {
+    "types": "./dist/tools/monero-tools.d.ts",
+    "import": "./dist/tools/monero-tools.js"
+  }
+},
   "publishConfig": {
     "access": "public"
   },
