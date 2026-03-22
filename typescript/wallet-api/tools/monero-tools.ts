@@ -1,0 +1,99 @@
+export const TOOL_MAGIC_STRING = "monerochan";
+export function innerToolLinkParse(link: string): Tool | null {
+  const magic_str_index = link.lastIndexOf(TOOL_MAGIC_STRING);
+  if (magic_str_index !== -1) {
+    const link_start_index = magic_str_index + TOOL_MAGIC_STRING.length;
+
+    const tool_id = link.substring(link_start_index, link_start_index + 3);
+    const args = link
+      .substring(link_start_index + 3)
+      .split("_")
+      .slice(1);
+    if (tool_id === "001") return parseSendTransactionToolArgs(args);
+    if (tool_id === "002")
+      return parseCreateAndShareViewOnlyWalletToolArgs(args);
+  }
+  return null;
+}
+
+export function parseToolLink(link: string, linkText: string): Tool | null {
+  return innerToolLinkParse(link) || innerToolLinkParse(linkText);
+}
+export type SendTransactionTool = {
+  tool_id: "001";
+  payload: SendTransactionToolPayload;
+};
+export type SendTransactionToolPayload = {
+  address: string;
+  amount: string;
+};
+export function parseSendTransactionToolArgs(
+  args: string[],
+): SendTransactionTool | null {
+  const address = args[1];
+  const amount = args[3];
+  if (address && amount) {
+    return {
+      tool_id: "001",
+      payload: {
+        address,
+        amount,
+      },
+    };
+  }
+  return null;
+}
+export function createSendTransactionToolLink(
+  address: string,
+  amount: string,
+): string {
+  return `${TOOL_MAGIC_STRING}001_amount_${amount}_address_${address}`;
+}
+export function make001ToolLink(address: string, amount: string): string {
+  return createSendTransactionToolLink(address, amount);
+}
+
+export type CreateAndShareViewOnlyWalletTool = {
+  tool_id: "002";
+  payload: CreateAndShareViewOnlyWalletToolPayload;
+};
+export type CreateAndShareViewOnlyWalletToolPayload = {
+  wallet_slot: number;
+};
+export function parseCreateAndShareViewOnlyWalletToolArgs(
+  args: string[],
+): CreateAndShareViewOnlyWalletTool | null {
+  const wallet_slot = args[5];
+  if (wallet_slot && !isNaN(parseInt(wallet_slot))) {
+    return {
+      tool_id: "002",
+      payload: {
+        wallet_slot: parseInt(wallet_slot),
+      },
+    };
+  }
+  return null;
+}
+export function createCreateAndShareViewOnlyWalletToolLink(
+  wallet_slot?: number,
+): string {
+  wallet_slot = Number(wallet_slot) || 0;
+  return `${TOOL_MAGIC_STRING}002_create_and_share_viewkey_slot_${wallet_slot}`;
+}
+export function make002ToolLink(wallet_slot?: number): string {
+  return createCreateAndShareViewOnlyWalletToolLink(wallet_slot);
+}
+
+export type Tool = SendTransactionTool | CreateAndShareViewOnlyWalletTool;
+export function createToolLink(tool: Tool): string {
+  if (tool.tool_id === "001") {
+    return createSendTransactionToolLink(
+      tool.payload.address,
+      tool.payload.amount,
+    );
+  }
+  if (tool.tool_id === "002") {
+    return createCreateAndShareViewOnlyWalletToolLink(tool.payload.wallet_slot);
+  }
+  throw new Error("unknown tool");
+}
