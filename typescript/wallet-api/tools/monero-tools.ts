@@ -1,5 +1,5 @@
 export const TOOL_MAGIC_STRING = "monerochan";
-export function innerToolLinkParse(link: string): Tool | null {
+export function innerToolLinkParse(link: string): MoneroTool | null {
   const magic_str_index = link.lastIndexOf(TOOL_MAGIC_STRING);
   if (magic_str_index !== -1) {
     const link_start_index = magic_str_index + TOOL_MAGIC_STRING.length;
@@ -16,7 +16,10 @@ export function innerToolLinkParse(link: string): Tool | null {
   return null;
 }
 
-export function parseToolLink(link: string, linkText: string): Tool | null {
+export function parseToolLink(
+  link: string,
+  linkText: string,
+): MoneroTool | null {
   return innerToolLinkParse(link) || innerToolLinkParse(linkText);
 }
 export type SendTransactionTool = {
@@ -84,8 +87,8 @@ export function make002ToolLink(wallet_slot?: number): string {
   return createCreateAndShareViewOnlyWalletToolLink(wallet_slot);
 }
 
-export type Tool = SendTransactionTool | CreateAndShareViewOnlyWalletTool;
-export function createToolLink(tool: Tool): string {
+export type MoneroTool = SendTransactionTool | CreateAndShareViewOnlyWalletTool;
+export function createToolLink(tool: MoneroTool): string {
   if (tool.tool_id === "001") {
     return createSendTransactionToolLink(
       tool.payload.address,
