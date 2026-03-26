@@ -1,5 +1,5 @@
 export const TOOL_MAGIC_STRING = "monerochan";
-export function innerToolLinkParse(link: string): MoneroTool | null {
+export function parseToolLink(link: string): MoneroTool | null {
   const magic_str_index = link.lastIndexOf(TOOL_MAGIC_STRING);
   if (magic_str_index !== -1) {
     const link_start_index = magic_str_index + TOOL_MAGIC_STRING.length;
@@ -15,12 +15,51 @@ export function innerToolLinkParse(link: string): MoneroTool | null {
   }
   return null;
 }
-
-export function parseToolLink(
+export type ParsedMoneroToolInvocation = {
+  tool: MoneroTool;
+  destination_domain: string;
+  context_domain: string;
+  found_in: "link" | "linkText";
+  link: string;
+  linkText: string;
+  timestamp: number;
+};
+export function parseToolInvocation(
   link: string,
   linkText: string,
-): MoneroTool | null {
-  return innerToolLinkParse(link) || innerToolLinkParse(linkText);
+  context_location: Location,
+): ParsedMoneroToolInvocation | null {
+  const context_domain = getDomainWithTLD(context_location.hostname);
+  const link_parse = parseToolLink(link);
+  if (link_parse) {
+    const destination_domain = parseDestination(link);
+
+    return {
+      tool: link_parse,
+      destination_domain,
+      context_domain,
+      found_in: "link",
+      link,
+      linkText,
+      timestamp: Date.now(),
+    };
+  } else {
+    const linkText_parse = parseToolLink(linkText);
+    if (linkText_parse) {
+      const destination_domain = parseDestination(linkText);
+      return {
+        tool: linkText_parse,
+        destination_domain,
+        context_domain,
+        found_in: "linkText",
+        link,
+        linkText,
+        timestamp: Date.now(),
+      };
+    }
+  }
+
+  return null;
 }
 export type SendTransactionTool = {
   tool_id: "001";
@@ -99,4 +138,17 @@ export function createToolLink(tool: MoneroTool): string {
     return createCreateAndShareViewOnlyWalletToolLink(tool.payload.wallet_slot);
   }
   throw new Error("unknown tool");
+}
+
+export function getDomainWithTLD(hostname: string): string {
+  const parts = hostname.split(".");
+  // For localhost or single-part hostnames, return as-is
+  if (parts.length <= 1) return hostname;
+  // Take the last 2 parts (domain + tld).
+  return parts.slice(-2).join(".");
+}
+
+export function parseDestination(destination: string): string {
+  const url = new URL(destination);
+  return getDomainWithTLD(url.hostname);
 }
