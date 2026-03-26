@@ -23,6 +23,7 @@ export type ParsedMoneroToolInvocation = {
   link: string;
   linkText: string;
   timestamp: number;
+  context_href: string;
 };
 export function parseToolInvocation(
   link: string,
@@ -30,6 +31,7 @@ export function parseToolInvocation(
   context_location: Location,
 ): ParsedMoneroToolInvocation | null {
   const context_domain = getDomainWithTLD(context_location.hostname);
+  const context_href = context_location.href;
   const link_parse = parseToolLink(link);
   if (link_parse) {
     const destination_domain = parseDestination(link);
@@ -42,6 +44,7 @@ export function parseToolInvocation(
       link,
       linkText,
       timestamp: Date.now(),
+      context_href,
     };
   } else {
     const linkText_parse = parseToolLink(linkText);
@@ -55,6 +58,7 @@ export function parseToolInvocation(
         link,
         linkText,
         timestamp: Date.now(),
+        context_href,
       };
     }
   }
