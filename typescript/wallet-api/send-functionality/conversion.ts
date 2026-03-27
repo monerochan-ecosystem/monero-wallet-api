@@ -49,3 +49,25 @@ export function convertAmountBigInt(amount_double: string): bigint {
   }
   return amount;
 }
+
+export function convertAmountBigIntThrows(amount_double: string): bigint {
+  // accept both dot and comma
+  amount_double = amount_double.replaceAll(",", ".");
+  const last_char = amount_double.at(-1);
+  if (last_char === ".") amount_double = amount_double.slice(0, -1);
+  // trailing . or , should be removed
+  const beforeDot = amount_double.split(".")[0];
+  let afterDot = amount_double.split(".")[1];
+  if (!afterDot) afterDot = "000000000000";
+  afterDot = afterDot?.padEnd(12, "0").slice(0, 12);
+  let bigIntString = afterDot;
+  if (beforeDot?.length && !beforeDot.startsWith("0"))
+    bigIntString = beforeDot + afterDot;
+
+  let amount = BigInt("0");
+  amount = BigInt(bigIntString);
+
+  // in case the input is not a valid number, throws,
+
+  return amount;
+}

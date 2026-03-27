@@ -1,3 +1,5 @@
+import { convertAmountBigIntThrows } from "../send-functionality/conversion";
+
 export const TOOL_MAGIC_STRING = "monerochan";
 export function parseToolLink(link: string): MoneroTool | null {
   const magic_str_index = link.lastIndexOf(TOOL_MAGIC_STRING);
@@ -78,6 +80,11 @@ export function parseSendTransactionToolArgs(
 ): SendTransactionTool | null {
   const address = args[1];
   const amount = args[3];
+  try {
+    convertAmountBigIntThrows(amount);
+  } catch (e) {
+    return null;
+  }
   if (address && amount) {
     return {
       tool_id: "001",
@@ -93,6 +100,7 @@ export function createSendTransactionToolLink(
   address: string,
   amount: string,
 ): string {
+  convertAmountBigIntThrows(amount);
   return `${TOOL_MAGIC_STRING}001_amount_${amount}_address_${address}`;
 }
 export function make001ToolLink(address: string, amount: string): string {
