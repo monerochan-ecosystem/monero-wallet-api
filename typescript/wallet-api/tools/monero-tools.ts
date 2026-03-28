@@ -78,8 +78,8 @@ export type SendTransactionToolPayload = {
 export function parseSendTransactionToolArgs(
   args: string[],
 ): SendTransactionTool | null {
-  const address = args[1];
-  const amount = args[3];
+  const amount = args[1];
+  const address = args[3];
   try {
     convertAmountBigIntThrows(amount);
   } catch (e) {
