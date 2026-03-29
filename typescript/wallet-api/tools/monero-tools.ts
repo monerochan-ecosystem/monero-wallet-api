@@ -27,6 +27,7 @@ export type ParsedMoneroToolInvocation = {
   timestamp: number;
   invocation_id: string;
   context_href: string;
+  valid: "valid" | "invalid" | "unverified";
 };
 export function parseToolInvocation(
   link: string,
@@ -49,6 +50,7 @@ export function parseToolInvocation(
       timestamp: Date.now(),
       invocation_id: crypto.randomUUID(),
       context_href,
+      valid: "unverified",
     };
   } else {
     const linkText_parse = parseToolLink(linkText);
@@ -64,6 +66,7 @@ export function parseToolInvocation(
         timestamp: Date.now(),
         invocation_id: crypto.randomUUID(),
         context_href,
+        valid: "unverified",
       };
     }
   }
@@ -166,4 +169,44 @@ export function getDomainWithTLD(hostname: string): string {
 export function parseDestination(destination: string): string {
   const url = new URL(destination);
   return getDomainWithTLD(url.hostname);
+}
+
+// this validity check should happen in the contentscript when the link is clicked,
+// not in the background script
+// -> tor circuit is separated & compartmentalized
+export async function checkToolInvocationValidity(
+  invo: ParsedMoneroToolInvocation,
+): Promise<boolean> {
+  // send 001 fetch from destination domain to check if the address is valid
+  if (invo.tool.tool_id == "001") {
+    const checkUrl = `${invo.destination_domain}/monerochan001?address=${
+      invo.tool.payload.address
+    }`;
+    try {
+      const result = (await (await fetch(checkUrl)).json()) as unknown;
+      if (
+        result &&
+        typeof result === "object" &&
+        "valid_address" in result &&
+        result.valid_address === true
+      ) {
+        return true;
+      } else {
+        return false;
+      }
+    } catch {
+      return false;
+    }
+  }
+
+  // create view only wallet 002 make sure context + destination domain is the same
+  if (invo.tool.tool_id == "002") {
+    if (invo.context_domain == invo.destination_domain) {
+      return true;
+    } else {
+      return false;
+    }
+  }
+
+  return false;
 }
