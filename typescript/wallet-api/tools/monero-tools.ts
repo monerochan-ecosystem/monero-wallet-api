@@ -17,6 +17,7 @@ export function parseToolLink(link: string): MoneroTool | null {
   }
   return null;
 }
+export type ToolInvocationValidity = "valid" | "invalid" | "unverified";
 export type ParsedMoneroToolInvocation = {
   tool: MoneroTool;
   destination_domain: string;
@@ -27,7 +28,7 @@ export type ParsedMoneroToolInvocation = {
   timestamp: number;
   invocation_id: string;
   context_href: string;
-  valid: "valid" | "invalid" | "unverified";
+  valid: ToolInvocationValidity;
 };
 export function parseToolInvocation(
   link: string,
@@ -170,19 +171,22 @@ export function parseDestination(destination: string): string {
   const url = new URL(destination);
   return getDomainWithTLD(url.hostname);
 }
-
+export const OPEN_DOMAINS = ["monerochan.city"];
 // this validity check should happen in the contentscript when the link is clicked,
 // not in the background script
 // -> tor circuit is separated & compartmentalized
 export async function checkToolInvocationValidity(
   invo: ParsedMoneroToolInvocation,
-): Promise<boolean> {
+): Promise<ToolInvocationValidity> {
   // send 001 fetch from destination domain to check if the address is valid
   if (invo.tool.tool_id == "001") {
     const checkUrl = `${invo.destination_domain}/monerochan001?address=${
       invo.tool.payload.address
     }`;
     try {
+      if (invo.destination_domain === OPEN_DOMAINS[0]) {
+        return "unverified";
+      }
       const result = (await (await fetch(checkUrl)).json()) as unknown;
       if (
         result &&
@@ -190,23 +194,23 @@ export async function checkToolInvocationValidity(
         "valid_address" in result &&
         result.valid_address === true
       ) {
-        return true;
+        return "valid";
       } else {
-        return false;
+        return "invalid";
       }
     } catch {
-      return false;
+      return "invalid";
     }
   }
 
   // create view only wallet 002 make sure context + destination domain is the same
   if (invo.tool.tool_id == "002") {
     if (invo.context_domain == invo.destination_domain) {
-      return true;
+      return "valid";
     } else {
-      return false;
+      return "invalid";
     }
   }
 
-  return false;
+  return "unverified";
 }
