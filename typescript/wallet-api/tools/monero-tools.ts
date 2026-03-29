@@ -25,6 +25,7 @@ export type ParsedMoneroToolInvocation = {
   link: string;
   linkText: string;
   timestamp: number;
+  invocation_id: string;
   context_href: string;
 };
 export function parseToolInvocation(
@@ -46,6 +47,7 @@ export function parseToolInvocation(
       link,
       linkText,
       timestamp: Date.now(),
+      invocation_id: crypto.randomUUID(),
       context_href,
     };
   } else {
@@ -60,6 +62,7 @@ export function parseToolInvocation(
         link,
         linkText,
         timestamp: Date.now(),
+        invocation_id: crypto.randomUUID(),
         context_href,
       };
     }
