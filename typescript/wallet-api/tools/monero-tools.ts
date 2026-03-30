@@ -214,3 +214,7 @@ export async function checkToolInvocationValidity(
 
   return "unverified";
 }
+
+export const ADDRESS_VALID_RESPONSE = {
+  valid_address: true,
+};
