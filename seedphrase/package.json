@@ -1,12 +1,27 @@
 {
-  "name": "seedphrase",
-  "module": "index.ts",
+  "name": "@spirobel/seedphrase",
+  "version": "0.1.0",
+  "license": "MIT",
+  "module": "dist/api.js",
   "type": "module",
-  "private": true,
+  "main": "dist/api.js",
+  "types": "dist/api.d.ts",
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "publish": "bun run build && npm publish",
+    "build": "tsc",
+    "clean": "rm -rf ./dist"
+  },
+  "files": ["dist"],
   "devDependencies": {
     "@types/bun": "latest"
   },
   "peerDependencies": {
     "typescript": "^5"
+  },
+  "dependencies": {
+    "@scure/bip39": "2.0.1"
   }
 }

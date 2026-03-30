@@ -1,31 +1,33 @@
 import { type KeyImage } from "./computeKeyImage";
-import type { ConnectionStatus } from "../connectionStatus";
 import type { ReorgInfo } from "./reorg";
 import type {
   BlockInfo,
+  FeeEstimateResponse,
   GetBlockHeadersRange,
   GetBlockHeadersRangeParams,
   Output,
+  SendRawTransactionResult,
+  ViewPair,
 } from "../../api";
-import type { WasmProcessor } from "../../wasm-processing/wasmProcessor";
 import { atomicWrite } from "../../io/atomicWrite";
+import type { Payment } from "../../send-functionality/inputSelection";
 
-export async function initScanCache<
-  T extends WasmProcessor & HasGetBlockHeadersRangeMethod & HasPrimaryAddress
->(
-  processor: T,
+export async function initScanCache(
+  viewpair: ViewPair,
   start_height: number,
-  pathPrefix?: string
+  scan_settings_path?: string,
+  pathPrefix?: string,
 ): Promise<CacheRange> {
   const initialCache = await readCacheFileDefaultLocation(
-    processor.primary_address,
-    pathPrefix
+    viewpair.primary_address,
+    pathPrefix,
   );
   let cache: ScanCache = {
+    daemon_height: 0,
     outputs: {},
     own_key_images: {},
     scanned_ranges: [],
-    primary_address: processor.primary_address,
+    primary_address: viewpair.primary_address,
   };
   if (initialCache) cache = initialCache;
   let current_height = start_height;
@@ -37,7 +39,7 @@ export async function initScanCache<
 
   if (!start_block_hash) {
     const blockHeaderResponse = (
-      await processor.getBlockHeadersRange({
+      await viewpair.getBlockHeadersRange({
         start_height,
         end_height: start_height,
       })
@@ -60,40 +62,77 @@ export async function initScanCache<
 
   if (current_range == null || !current_range?.block_hashes.length)
     throw new Error("current_range was malformed. block_hashes is empty");
+
+  await viewpair.addSubaddressesToScanCache(cache, scan_settings_path);
+
   // write to cache
-  await atomicWrite(
-    cacheFileDefaultLocation(cache.primary_address, pathPrefix),
-    JSON.stringify(cache, null, 2)
-  );
+  await writeCacheToFile(cache, pathPrefix);
+
   return current_range;
 }
 export async function readCacheFile(
-  cacheFilePath: string
+  cacheFilePath: string,
 ): Promise<ScanCache | undefined> {
   const jsonString = await Bun.file(cacheFilePath)
     .text()
     .catch(() => undefined);
-  return jsonString ? (JSON.parse(jsonString) as ScanCache) : undefined;
+  return jsonString
+    ? (JSON.parse(jsonString, (key, value) => {
+        if (key === "amount") return BigInt(value);
+        return value;
+      }) as ScanCache)
+    : undefined;
 }
 export function cacheFileDefaultLocation(
   primary_address: string,
-  pathPrefix?: string
+  pathPrefix?: string,
 ) {
   return `${pathPrefix ?? ""}${primary_address}_cache.json`;
 }
 export async function readCacheFileDefaultLocation(
   primary_address: string,
-  pathPrefix?: string
+  pathPrefix?: string,
 ): Promise<ScanCache | undefined> {
   return await readCacheFile(
-    cacheFileDefaultLocation(primary_address, pathPrefix)
+    cacheFileDefaultLocation(primary_address, pathPrefix),
+  );
+}
+export type WriteCacheFileParams = {
+  primary_address: string;
+  pathPrefix?: string;
+  writeCallback: (cache: ScanCache) => void | Promise<void>;
+};
+export async function writeCacheFileDefaultLocationThrows(
+  params: WriteCacheFileParams,
+) {
+  const cache = await readCacheFileDefaultLocation(
+    params.primary_address,
+    params.pathPrefix,
+  );
+  if (!cache)
+    throw new Error(
+      `cache not found for primary address: ${params.primary_address}, and path prefix: ${params.pathPrefix}`,
+    );
+  await params.writeCallback(cache);
+  // write to cache
+  await writeCacheToFile(cache, params.pathPrefix);
+}
+export async function writeCacheToFile(cache: ScanCache, pathPrefix?: string) {
+  // write to cache
+  return await atomicWrite(
+    cacheFileDefaultLocation(cache.primary_address, pathPrefix),
+    JSON.stringify(
+      cache,
+      (key, value) => (typeof value === "bigint" ? value.toString() : value),
+      2,
+    ),
   );
 }
 export function lastRange(ranges: CacheRange[]): CacheRange | undefined {
   if (!ranges.length) return undefined;
   return ranges.reduce(
     (maxRange, current) => (current.end > maxRange.end ? current : maxRange),
-    ranges[0]
+    ranges[0],
   );
 }
 
@@ -120,7 +159,7 @@ export function mergeRanges(ranges: CacheRange[]): CacheRange[] {
 // find the cache range that contains the given height, if not found return null
 export const findRange = (
   ranges: CacheRange[],
-  value: number
+  value: number,
 ): CacheRange | null =>
   ranges.find((r) => value >= r.start && value <= r.end) ?? null;
 export type CacheRange = {
@@ -132,15 +171,39 @@ export type CacheRange = {
 export type GlobalOutputId = string; // output.index_on_blockchain.toString()
 export type OutputsCache = Record<GlobalOutputId, Output>; // { "123": Output, "456": Output } keyed by index_on_blockchain.toString()
 export type OwnKeyImages = Record<KeyImage, GlobalOutputId>;
+export type Subaddress = {
+  minor: number;
+  address: string;
+  created_at_height: number;
+  created_at_timestamp: number;
+  not_yet_included?: boolean;
+  received_amount?: bigint;
+  pending_amount?: bigint;
+};
 export type ScanCache = {
   outputs: OutputsCache;
   own_key_images: OwnKeyImages;
   scanned_ranges: CacheRange[]; // list of block height ranges that have been scanned [0].start, [length-1].end <-- last scanned height
   primary_address: string;
+  tx_logs?: TxLog[];
+  pending_spent_utxos?: Record<GlobalOutputId, number>; // { "123": txlog index } mapping of utxo global index to txlog entry in tx_logs array
+  subaddresses?: Subaddress[];
   reorg_info?: ReorgInfo;
+  daemon_height: number;
+};
+export type TxLog = {
+  inputs_index: string[];
+  payments: Payment[];
+  node_url: string;
+  height: number;
+  timestamp: number;
+  feeEstimate?: FeeEstimateResponse;
+  sendResult?: SendRawTransactionResult;
+  error?: string;
 };
 
 export type ChangeReason =
+  | "spent"
   | "added"
   | "ownspend"
   | "reorged"
@@ -154,10 +217,9 @@ export type ChangedOutput = {
 export type CacheChangedCallbackParameters = {
   newCache: ScanCache;
   changed_outputs: ChangedOutput[];
-  connection_status: ConnectionStatus;
 };
 export type CacheChangedCallbackSync<R = void> = (
-  params: CacheChangedCallbackParameters
+  params: CacheChangedCallbackParameters,
 ) => R;
 
 export type CacheChangedCallbackAsync = CacheChangedCallbackSync<Promise<void>>;
@@ -168,19 +230,6 @@ export type CacheChangedCallbackAsync = CacheChangedCallbackSync<Promise<void>>;
  * @param params.newCache - The updated scan cache.
  * @param params.changed_outputs - Contains output and change_reason. {@link ChangedOutput}
  *
- * @param params.connection_status - Connection status information.
- * @param params.connection_status.status_updates - Array of connection status messages:
- * - { message: "node_url_changed"; old_node_url: string; new_node_url: string }
- * - { message: "connection_error"; error: {} }
- * - { message: "connection_ok" }
- * - undefined
- *
- * @param params.connection_status.last_packet - Information about the last packet:
- * `{ connection_status: "OK" | "partial read" | "connection failed"; bytes_read: number; node_url: string; timestamp: string }`.
- *
- * @remarks
- * - `scanned_ranges` is expected to change on every invocation,
- *   except when there was a connection error, then only `connection_status` changes.
  */
 
 export type CacheChangedCallback =
@@ -188,7 +237,7 @@ export type CacheChangedCallback =
   | CacheChangedCallbackAsync; // accept async callbacks
 export interface HasGetBlockHeadersRangeMethod {
   getBlockHeadersRange: (
-    params: GetBlockHeadersRangeParams
+    params: GetBlockHeadersRangeParams,
   ) => Promise<GetBlockHeadersRange>;
 }
 
@@ -214,7 +263,7 @@ export function handleScanError(error: unknown) {
   } else {
     console.log(
       error,
-      "\n, scanWithCache in scanning-syncing/scanWithCache.ts`"
+      "\n, scanWithCache in scanning-syncing/scanWithCache.ts`",
     );
     throw error;
   }

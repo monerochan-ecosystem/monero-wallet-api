@@ -4,7 +4,7 @@
 // (but you really shouldnt, use a seedphrase instead)
 
 import { atomicWrite } from "../io/atomicWrite";
-import { makeSpendKey, makeViewKey } from "./keypairs";
+import { makeSpendKey, makeSpendKeyFromSeed, makeViewKey } from "./keypairs";
 
 export const stagenet_pk_path = ".env";
 export const testnet_pk_path = ".env.local";
@@ -18,19 +18,19 @@ export async function writeStagenetSpendViewKeysToDotEnv(spend_key?: string) {
   await writeEnvLineToDotEnvRefresh(
     `vk${primary_address}`,
     view_pair.view_key,
-    stagenet_pk_path
+    stagenet_pk_path,
   );
   await writeEnvLineToDotEnvRefresh(
     `sk${primary_address}`,
     spend_key,
-    stagenet_pk_path
+    stagenet_pk_path,
   );
 
   return primary_address;
 }
 // writes "vkPRIMARY_KEY=<view_key> \n skPRIMARY_KEY=<spend_key>" to .env.local for regtest
 export async function writeRegtestSpendViewKeysToDotEnvTestLocal(
-  spend_key?: string
+  spend_key?: string,
 ) {
   spend_key = spend_key || (await makeSpendKey());
   let view_pair = await makeViewKey(spend_key);
@@ -38,12 +38,12 @@ export async function writeRegtestSpendViewKeysToDotEnvTestLocal(
   await writeEnvLineToDotEnvRefresh(
     `vk${primary_address}`,
     view_pair.view_key,
-    regtest_pk_path
+    regtest_pk_path,
   );
   await writeEnvLineToDotEnvRefresh(
     `sk${primary_address}`,
     spend_key,
-    regtest_pk_path
+    regtest_pk_path,
   );
 
   return primary_address;
@@ -51,7 +51,7 @@ export async function writeRegtestSpendViewKeysToDotEnvTestLocal(
 
 // writes "vkPRIMARY_KEY=<view_key> \n skPRIMARY_KEY=<spend_key>" to .env.local for testnet
 export async function writeTestnetSpendViewKeysToDotEnvLocal(
-  spend_key?: string
+  spend_key?: string,
 ) {
   spend_key = spend_key || (await makeSpendKey());
   let view_pair = await makeViewKey(spend_key);
@@ -59,13 +59,25 @@ export async function writeTestnetSpendViewKeysToDotEnvLocal(
   await writeEnvLineToDotEnvRefresh(
     `vk${primary_address}`,
     view_pair.view_key,
-    testnet_pk_path
+    testnet_pk_path,
   );
   await writeEnvLineToDotEnvRefresh(
     `sk${primary_address}`,
     spend_key,
-    testnet_pk_path
+    testnet_pk_path,
   );
+
+  return primary_address;
+}
+
+// writes "vkPRIMARY_KEY=<view_key> \n skPRIMARY_KEY=<spend_key>" to .env
+// use seedphrase package to get wallet secret from seed + passphrase: getWalletSecret function
+export async function writeWalletSecretsToDotEnv(wallet_secret: Uint8Array) {
+  let spend_key = await makeSpendKeyFromSeed(wallet_secret.toHex());
+  let view_pair = await makeViewKey(spend_key);
+  let primary_address = view_pair.mainnet_primary;
+  await writeEnvLineToDotEnvRefresh(`vk${primary_address}`, view_pair.view_key);
+  await writeEnvLineToDotEnvRefresh(`sk${primary_address}`, spend_key);
 
   return primary_address;
 }
@@ -74,7 +86,7 @@ export async function writeTestnetSpendViewKeysToDotEnvLocal(
 export async function writeEnvLineToDotEnvRefresh(
   key: string,
   value: string,
-  path: string = ".env"
+  path: string = ".env",
 ) {
   await writeEnvLineToDotEnv(key, value, path);
   Bun.env[key.trim()] = value.trim();
@@ -85,7 +97,7 @@ export async function writeEnvLineToDotEnvRefresh(
 export async function writeEnvLineToDotEnv(
   key: string,
   value: string,
-  path: string = ".env"
+  path: string = ".env",
 ) {
   // this file should be treated as ephemeral
   // private spendkeys + viewkeys are deterministically derived from seedphrase and password

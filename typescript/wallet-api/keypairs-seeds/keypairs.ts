@@ -83,6 +83,33 @@ export async function makeSpendKey(): Promise<SpendKey> {
   }
   return result as SpendKey;
 }
+export async function makeSpendKeyFromSeed(
+  wallet_secret: string,
+): Promise<SpendKey> {
+  if (wallet_secret.length !== 128) {
+    throw new Error(
+      `Invalid wallet secret length: ${wallet_secret.length}.
+       Expected 128 hex characters (64 bytes).`,
+    );
+  }
+  const wasmProcessor = await WasmProcessor.init();
+  wasmProcessor.writeToWasmMemory = (ptr, len) => {
+    wasmProcessor.writeString(ptr, len, wallet_secret);
+  };
+  let result: SpendKey | undefined = undefined;
+  wasmProcessor.readFromWasmMemory = (ptr, len) => {
+    result = String(wasmProcessor.readString(ptr, len));
+  };
+  //@ts-ignore
+  wasmProcessor.tinywasi.instance.exports.make_spendkey_from_seed(
+    wallet_secret.length,
+  );
+  if (!result) {
+    throw new Error("Failed to obtain spend_key from seed.");
+  }
+  return result as SpendKey;
+}
+
 export type ViewPairJson = {
   view_key: string;
   mainnet_primary: string;
@@ -91,8 +118,14 @@ export type ViewPairJson = {
 };
 
 export async function makeViewKey(
-  spend_private_key: string
+  spend_private_key: string,
 ): Promise<ViewPairJson> {
+  if (spend_private_key.length !== 64) {
+    throw new Error(
+      `Invalid spendkey length: ${spend_private_key.length}.
+       Expected 64 hex characters (32 bytes).`,
+    );
+  }
   const wasmProcessor = await WasmProcessor.init();
   wasmProcessor.writeToWasmMemory = (ptr, len) => {
     wasmProcessor.writeString(ptr, len, spend_private_key);
@@ -103,13 +136,14 @@ export async function makeViewKey(
   };
   //@ts-ignore
   wasmProcessor.tinywasi.instance.exports.make_viewkey(
-    spend_private_key.length
+    spend_private_key.length,
   );
   if (!result) {
     throw new Error("Failed to obtain view key from spend key.");
   }
   return result as ViewPairJson;
 }
+
 /**
  *
  * unlike crypto-ops.c sc_reduce32, this is not unrolled
@@ -139,7 +173,7 @@ function sc_reduce32(input: Uint8Array): Uint8Array {
 function bytesToBigInt(bytes: Uint8Array): bigint {
   return bytes.reduce(
     (acc, byte, i) => acc + (BigInt(byte) << BigInt(i * 8)),
-    0n
+    0n,
   );
 }
 /**
@@ -161,7 +195,7 @@ function bytesToBigInt(bytes: Uint8Array): bigint {
  */
 function bigIntToBytes(value: bigint, length: number = 32): Uint8Array {
   return Uint8Array.from({ length }, (_, i) =>
-    Number((value >> BigInt(i * 8)) & 0xffn)
+    Number((value >> BigInt(i * 8)) & 0xffn),
   );
 }
 /**
@@ -173,7 +207,7 @@ function bigIntToBytes(value: bigint, length: number = 32): Uint8Array {
  */
 function testBigIntUint8Conversion(
   originalBigInt: bigint,
-  length: number = 32
+  length: number = 32,
 ): boolean {
   const bytes = bigIntToBytes(originalBigInt, length);
   const reconstructedBigInt = bytesToBigInt(bytes);

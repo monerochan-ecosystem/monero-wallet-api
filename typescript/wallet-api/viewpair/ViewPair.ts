@@ -13,16 +13,21 @@ import {
   MAINNET_GENESIS_BLOCK_HASH,
   STAGENET_GENESIS_BLOCK_HASH,
 } from "../node-interaction/binaryEndpoints";
-import { handleScanError } from "../scanning-syncing/scanresult/scanCache";
+import {
+  handleScanError,
+  lastRange,
+  writeCacheFileDefaultLocationThrows,
+  type ScanCache,
+} from "../scanning-syncing/scanresult/scanCache";
 import {
   makeTransaction,
   type MakeTransactionParams,
   type UnsignedTransaction,
 } from "../send-functionality/transactionBuilding";
 import { WasmProcessor } from "../wasm-processing/wasmProcessor";
-import type { ConnectionStatus } from "../scanning-syncing/connectionStatus";
 import { LOCAL_NODE_DEFAULT_URL } from "../node-interaction/nodeUrl";
 import {
+  atomicWrite,
   get_block_headers_range,
   get_info,
   type GetBlockHeadersRangeParams,
@@ -39,10 +44,17 @@ import {
   type CacheChangedCallback,
 } from "../scanning-syncing/scanresult/scanCache";
 import {
+  cullTooLargeScanHeight,
   openNonHaltedWallets,
+  readWalletFromScanSettings,
   walletSettingsPlusKeys,
 } from "../scanning-syncing/scanSettings";
 import { sleep } from "../io/sleep";
+import {
+  readWriteConnectionStatusFile,
+  writeConnectionStatusFile,
+  type ConnectionStatus,
+} from "../scanning-syncing/connectionStatus";
 export type NETWORKS = "mainnet" | "stagenet" | "testnet";
 /**
  * This class is useful to interact with Moneros DaemonRpc binary requests in a convenient way.
@@ -66,29 +78,18 @@ export class ViewPair extends WasmProcessor {
   protected constructor(
     public node_url: string,
     public primary_address: string,
-    public fallback_node_urls: string[] = [],
-    public connection_status: ConnectionStatus = {
-      status_updates: [],
-      last_packet: {
-        status: "no_connection_yet",
-        bytes_read: 0,
-        node_url: "",
-        timestamp: new Date().toISOString(),
-      },
-    }
   ) {
     super();
   }
   public static async create(
     primary_address: string,
     secret_view_key: string,
+    subaddress_index = 0,
     node_url?: string,
-    fallback_node_urls?: string[]
   ): Promise<ViewPair> {
     const viewPair = new ViewPair(
       node_url || LOCAL_NODE_DEFAULT_URL,
       primary_address,
-      fallback_node_urls
     );
     const tinywasi = await viewPair.initWasmModule();
     viewPair.writeToWasmMemory = (ptr, len) => {
@@ -104,7 +105,8 @@ export class ViewPair extends WasmProcessor {
     //@ts-ignore
     tinywasi.instance.exports.init_viewpair(
       primary_address.length,
-      secret_view_key.length
+      secret_view_key.length,
+      subaddress_index,
     );
     if (!init_viewpair_result) {
       throw new Error("Failed to init viewpair");
@@ -129,13 +131,13 @@ export class ViewPair extends WasmProcessor {
   public async getBlocksBin(
     params: GetBlocksBinRequest,
     metaCallBack?: GetBlocksBinMetaCallback,
-    stopSync?: AbortSignal
+    stopSync?: AbortSignal,
   ) {
     return await getBlocksBinScan(
       this,
       await this.addGenesisHashToBlockIds(params),
       metaCallBack,
-      stopSync
+      stopSync,
     );
   }
   async addGenesisHashToBlockIds(params: GetBlocksBinRequest) {
@@ -172,12 +174,12 @@ export class ViewPair extends WasmProcessor {
    */
   public async getBlocksBinExecuteRequest(
     params: GetBlocksBinRequest,
-    stopSync?: AbortSignal
+    stopSync?: AbortSignal,
   ) {
     return await getBlocksBinExecuteRequest(
       this,
       await this.addGenesisHashToBlockIds(params),
-      stopSync
+      stopSync,
     );
   }
   /**
@@ -191,12 +193,12 @@ export class ViewPair extends WasmProcessor {
    */
   public getBlocksBinScanResponse(
     getBlocksBinResponseBuffer: Uint8Array,
-    metaCallBack?: GetBlocksBinMetaCallback
+    metaCallBack?: GetBlocksBinMetaCallback,
   ) {
     return getBlocksBinScanResponse(
       this,
       getBlocksBinResponseBuffer,
-      metaCallBack
+      metaCallBack,
     );
   }
   /**
@@ -206,58 +208,85 @@ export class ViewPair extends WasmProcessor {
     cacheChanged: CacheChangedCallback = (params) => console.log(params),
     stopSync?: AbortSignal,
     scan_settings_path?: string,
-    pathPrefix?: string
+    pathPrefix?: string,
   ) {
     const processor = this;
     const nonHaltedWallets = await openNonHaltedWallets(scan_settings_path);
     const masterWalletSettings = nonHaltedWallets[0];
     if (masterWalletSettings.primary_address !== this.primary_address)
       throw new Error(
-        "master wallet should be the first of the non halted wallets"
+        "master wallet should be the first of the non halted wallets",
       );
+    let masterStartHeight = await cullTooLargeScanHeight(
+      processor.node_url,
+      scan_settings_path,
+    );
+
     let current_range = await initScanCache(
       processor,
-      masterWalletSettings.start_height,
-      pathPrefix
+      masterStartHeight,
+      scan_settings_path,
+      pathPrefix,
     );
     const blockGenerator = (async function* () {
       while (true) {
         if (stopSync?.aborted) return;
         const firstResponse = await processor.getBlocksBinExecuteRequest(
           { block_ids: current_range.block_hashes.map((b) => b.block_hash) },
-          stopSync
+          stopSync,
         );
+        await readWriteConnectionStatusFile((cs) => {
+          if (cs?.last_packet.status === "catastrophic_reorg") return;
+          const connectionStatus: ConnectionStatus = {
+            last_packet: {
+              status: "OK",
+              bytes_read: firstResponse.length,
+              node_url: processor.node_url,
+              timestamp: new Date().toISOString(),
+            },
+          };
+          return connectionStatus;
+        });
 
         yield firstResponse;
       }
     })();
 
-    const masterWithKeys = walletSettingsPlusKeys(masterWalletSettings);
+    const masterWithKeys = await walletSettingsPlusKeys(masterWalletSettings);
     const slaveViewPairs: SlaveViewPair[] = [];
     if (nonHaltedWallets.length > 1) {
       for (const slaveWallet of nonHaltedWallets.slice(1)) {
-        const slaveWithKeys = walletSettingsPlusKeys(slaveWallet);
+        const slaveWithKeys = await walletSettingsPlusKeys(slaveWallet);
         const viewpair = await ViewPair.create(
           slaveWallet.primary_address,
           slaveWithKeys.secret_view_key,
-          masterWalletSettings.node_url
+          slaveWallet.subaddress_index,
+          masterWalletSettings.node_url,
         );
         slaveViewPairs.push({
           viewpair,
           current_range: await initScanCache(
             viewpair,
-            masterWalletSettings.start_height,
-            pathPrefix
+            masterStartHeight,
+            scan_settings_path,
+            pathPrefix,
           ),
           secret_spend_key: slaveWithKeys.secret_spend_key,
         });
       }
     }
-
+    const catastrophic_reorg_cb = async () => {
+      writeConnectionStatusFile(
+        "catastrophic_reorg",
+        processor.node_url,
+        undefined,
+        scan_settings_path,
+      );
+    };
     try {
       for await (const firstResponse of blockGenerator) {
         if (!firstResponse) continue;
-
+        await this.writeSubaddressesToScanCache(scan_settings_path, pathPrefix);
         const result = await processor.getBlocksBinScanResponse(firstResponse);
         const oldMasterCurrentRange = structuredClone(current_range);
 
@@ -265,27 +294,27 @@ export class ViewPair extends WasmProcessor {
           current_range,
           result,
           cacheChanged,
-          connection_status: processor.connection_status,
           secret_spend_key: masterWithKeys.secret_spend_key,
           pathPrefix,
+          catastrophic_reorg_cb,
         });
         if (slaveViewPairs.length > 0) {
           if (result && "block_infos" in result)
             await writeGetblocksBinBuffer(
               firstResponse,
               result.block_infos,
-              pathPrefix
+              pathPrefix,
             ); // feed the slaves
           for (const slave of slaveViewPairs) {
             let blocksBinItems = await readGetblocksBinBuffer(
               slave.current_range.end,
-              pathPrefix
+              pathPrefix,
             );
             let use_master_current_range = false;
             if (!blocksBinItems.length) {
               blocksBinItems = await readGetblocksBinBuffer(
                 current_range.end, // we use the new current range end to find the blocks
-                pathPrefix
+                pathPrefix,
               );
               slave.current_range = structuredClone(oldMasterCurrentRange); // but we use the old master current range to scan with slaves
               use_master_current_range = true;
@@ -295,20 +324,24 @@ export class ViewPair extends WasmProcessor {
                 await Bun.file(
                   `${pathPrefix ?? ""}getblocksbinbuffer/${
                     blocksBinItem.filename
-                  }`
-                ).arrayBuffer()
+                  }`,
+                ).arrayBuffer(),
               );
-              const slaveResult = await slave.viewpair.getBlocksBinScanResponse(
-                blocksbin
+              await slave.viewpair.writeSubaddressesToScanCache(
+                scan_settings_path,
+                pathPrefix,
               );
+
+              const slaveResult =
+                await slave.viewpair.getBlocksBinScanResponse(blocksbin);
               slave.current_range = await processScanResult({
                 current_range: slave.current_range,
                 result: slaveResult,
                 cacheChanged,
-                connection_status: processor.connection_status,
                 secret_spend_key: slave.secret_spend_key,
                 pathPrefix,
                 use_master_current_range,
+                catastrophic_reorg_cb,
               });
             }
           } // scan the slaves
@@ -330,16 +363,15 @@ export class ViewPair extends WasmProcessor {
 
       const cache = await readCacheFileDefaultLocation(
         processor.primary_address,
-        pathPrefix
+        pathPrefix,
       );
       if (!cache)
         throw new Error(
-          `${error} in scan() + cache not found for primary address: ${processor.primary_address} and path prefix: ${pathPrefix}`
+          `${error} in scan() + cache not found for primary address: ${processor.primary_address} and path prefix: ${pathPrefix}`,
         );
       await cacheChanged({
         newCache: cache,
         changed_outputs: [],
-        connection_status: processor.connection_status,
       });
     }
   }
@@ -356,6 +388,91 @@ export class ViewPair extends WasmProcessor {
     };
     //@ts-ignore
     this.tinywasi.instance.exports.make_integrated_address(BigInt(paymentId));
+    return address;
+  }
+  /**
+   * This method makes a Subaddress for the Address of the Viewpair it was opened with.
+   * The network (mainnet, stagenet, testnet) is the same as the one of the Viewpairaddress.
+   * if there is an active scan going on, call this on ScanCacheOpened, so the new subaddress will be scanned
+   *
+   * @param minor address index, we always set major (also called account index) to 0
+   * @returns Adressstring
+   */
+  public makeSubaddress(minor: number) {
+    return this.makeSubaddressRaw(0, minor);
+  }
+  private async writeSubaddressesToScanCache(
+    scan_settings_path?: string,
+    pathPrefix?: string,
+  ) {
+    await writeCacheFileDefaultLocationThrows({
+      primary_address: this.primary_address,
+      pathPrefix: pathPrefix,
+      writeCallback: async (cache) => {
+        await this.addSubaddressesToScanCache(cache, scan_settings_path);
+      },
+    });
+  }
+  public async addSubaddressesToScanCache(
+    cache: ScanCache,
+    scan_settings_path?: string,
+  ) {
+    const walletSettings = await readWalletFromScanSettings(
+      this.primary_address,
+      scan_settings_path,
+    );
+    if (!walletSettings)
+      throw new Error(
+        `wallet not found in settings. did you call openwallet with the right params?
+          Either wrong file name supplied to params.scan_settings_path: ${scan_settings_path}
+          Or wrong primary_address supplied params.primary_address: ${this.primary_address}`,
+      );
+    const last_subaddress_index = walletSettings.subaddress_index || 1;
+    if (!cache.subaddresses) cache.subaddresses = [];
+    const highestMinor = Math.max(
+      ...cache.subaddresses.map((sub) => sub.minor),
+      0,
+    );
+    let minor = highestMinor + 1;
+    while (minor <= last_subaddress_index) {
+      const subaddress = this.makeSubaddress(minor);
+
+      const created_at_height = lastRange(cache.scanned_ranges)?.end || 0;
+      const created_at_timestamp = new Date().getTime();
+      cache.subaddresses.push({
+        minor,
+        address: subaddress,
+        created_at_height,
+        created_at_timestamp,
+      });
+      minor++;
+    }
+  }
+  /**
+   * This method makes a Subaddress for the Address of the Viewpair it was opened with.
+   * The network (mainnet, stagenet, testnet) is the same as the one of the Viewpairaddress.
+   *
+   * @param major account index should be set to 0 in most cases
+   * @param minor address index starting at 1
+   * @returns Adressstring
+   */
+  private makeSubaddressRaw(major: number, minor: number) {
+    if (
+      typeof major !== "number" ||
+      typeof minor !== "number" ||
+      major < 0 ||
+      minor < 1
+    )
+      throw new Error(
+        `subaddress major and minor must be positive numbers, minor index must be above 1.
+          makeSubaddressRaw arguments: major: ${major}, minor: ${minor}`,
+      );
+    let address = "";
+    this.readFromWasmMemory = (ptr, len) => {
+      address = this.readString(ptr, len);
+    };
+    //@ts-ignore
+    this.tinywasi.instance.exports.make_subaddress(major, minor);
     return address;
   }
   /**

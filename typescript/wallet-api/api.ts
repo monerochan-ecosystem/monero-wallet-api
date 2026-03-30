@@ -25,7 +25,12 @@ export {
   readScanSettings,
 } from "./scanning-syncing/scanSettings";
 
-export { signTransaction } from "./send-functionality/transactionBuilding";
+export {
+  signTransaction,
+  parseAddress,
+  type ParsedAddress,
+  type ParseAddressError,
+} from "./send-functionality/transactionBuilding";
 export { computeKeyImage } from "./scanning-syncing/scanresult/computeKeyImage";
 export {
   scanWallets,
@@ -37,3 +42,13 @@ export {
 export { spendable } from "./scanning-syncing/scanresult/scanResult";
 
 export { openWallets, openWallet } from "./scanning-syncing/openWallet";
+export * from "./scanning-syncing/connectionStatus";
+export * from "./scanning-syncing/scanSettings";
+export * from "./scanning-syncing/scanresult/scanResult";
+export * from "./scanning-syncing/scanresult/scanStats";
+export * from "./scanning-syncing/scanresult/scanCache";
+export * from "./keypairs-seeds/writeKeypairs";
+export * from "./keypairs-seeds/keypairs";
+export * from "./send-functionality/conversion";
+export * from "./send-functionality/inputSelection";
+export * from "./tools/monero-tools";

@@ -10,38 +10,41 @@ export async function scanWallets(
   cacheChanged: CacheChangedCallback = (params) => console.log(params),
   stopSync?: AbortSignal,
   scan_settings_path?: string,
-  pathPrefix?: string
+  pathPrefix?: string,
 ) {
   const nonHaltedWallets = await openNonHaltedWallets(scan_settings_path);
   const masterWalletSettings = nonHaltedWallets[0];
   if (!masterWalletSettings) return;
-  const masterWithKeys = walletSettingsPlusKeys(masterWalletSettings);
+  const masterWithKeys = await walletSettingsPlusKeys(masterWalletSettings);
   const masterViewPair = await ViewPair.create(
     masterWalletSettings.primary_address,
     masterWithKeys.secret_view_key,
-    masterWalletSettings.node_url
+    masterWalletSettings.subaddress_index,
+    masterWalletSettings.node_url,
   );
   await masterViewPair.scan(
     cacheChanged,
     stopSync,
     scan_settings_path,
-    pathPrefix
+    pathPrefix,
   );
 }
 export function createWebworker(
   handle_result?: (result: CacheChangedCallbackParameters) => void,
   scan_settings_path?: string,
-  pathPrefix?: string
+  pathPrefix?: string,
+  handle_error?: (error: unknown) => void,
 ) {
   const worker_script = makeWebworkerScript(scan_settings_path, pathPrefix);
   return startWebworker(
     worker_script,
-    handle_result as (result: unknown) => void
+    handle_result as (result: unknown) => void,
+    handle_error,
   );
 }
 export function makeWebworkerScript(
   scan_settings_path?: string,
-  pathPrefix?: string
+  pathPrefix?: string,
 ) {
   const settingsPathLine = scan_settings_path
     ? `const scan_settings_path = '${scan_settings_path}';`
@@ -58,7 +61,8 @@ export function makeWebworkerScript(
 
 export function startWebworker(
   worker_script: string,
-  handle_result?: (result: unknown) => void
+  handle_result?: (result: unknown) => void,
+  handle_error?: (error: unknown) => void,
 ) {
   const blob = new Blob([WW_ERROR_FORWARDING_SNIPPET + worker_script], {
     type: "text/javascript",
@@ -71,7 +75,7 @@ export function startWebworker(
         if (handle_result) handle_result(event.data.payload);
         break;
       case "ERROR":
-        console.error("Worker error:", event.data.payload);
+        if (handle_error) handle_error(event.data.payload);
         break;
     }
   };
@@ -81,7 +85,7 @@ export function startWebworker(
 
 // Autoforward ALL errors with error type (global handlers)
 export const WW_ERROR_FORWARDING_SNIPPET = `\n
-self.onerror = (e) => self.postMessage({ type: 'ERROR', payload: e.message });
+self.onerror = (e) => self.postMessage({ type: 'ERROR', payload: e });
 self.addEventListener('unhandledrejection', (e) => 
   self.postMessage({ type: 'ERROR', payload: e.reason })
 ); \n`;

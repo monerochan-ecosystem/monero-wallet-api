@@ -3,26 +3,24 @@ import { computeKeyImage, type KeyImage } from "./computeKeyImage";
 import {
   mergeRanges,
   findRange,
-  cacheFileDefaultLocation,
   readCacheFileDefaultLocation,
   lastRange,
+  writeCacheToFile,
 } from "./scanCache";
 import { type ErrorResponse } from "../../node-interaction/binaryEndpoints";
 import { handleReorg } from "./reorg";
-import type { ConnectionStatus } from "../connectionStatus";
 import type {
   CacheChangedCallback,
   CacheRange,
   ChangedOutput,
   ScanCache,
 } from "./scanCache";
-import { atomicWrite } from "../../io/atomicWrite";
 
 export type ProcessScanResultParams = {
   current_range: CacheRange;
   result: ScanResult | ErrorResponse | undefined;
   cacheChanged: CacheChangedCallback;
-  connection_status: ConnectionStatus;
+  catastrophic_reorg_cb: () => void;
   secret_spend_key?: string;
   pathPrefix?: string;
   use_master_current_range?: boolean;
@@ -32,7 +30,6 @@ export async function processScanResult(params: ProcessScanResultParams) {
   const {
     result,
     cacheChanged,
-    connection_status,
     secret_spend_key,
     pathPrefix,
     use_master_current_range,
@@ -40,13 +37,14 @@ export async function processScanResult(params: ProcessScanResultParams) {
   if (!(result && "primary_address" in result)) return current_range;
   const cache = await readCacheFileDefaultLocation(
     result.primary_address,
-    pathPrefix
+    pathPrefix,
   );
   if (!cache)
     throw new Error(
-      `cache not found for primary address: ${result.primary_address} and path prefix: ${pathPrefix}`
+      `cache not found for primary address: ${result.primary_address} and path prefix: ${pathPrefix}`,
     );
-
+  if (result && "daemon_height" in result)
+    cache.daemon_height = result.daemon_height;
   if (use_master_current_range) {
     const last = lastRange(cache.scanned_ranges);
     if (last) {
@@ -56,34 +54,35 @@ export async function processScanResult(params: ProcessScanResultParams) {
       cache.scanned_ranges.push(current_range);
     }
   }
-  if (result && "new_height" in result) {
-    const [new_range, changed_outputs] = updateScanHeight(
-      current_range,
-      result,
-      cache
-    );
-    current_range = new_range;
+  try {
+    if (result && "new_height" in result) {
+      const [new_range, changed_outputs] = updateScanHeight(
+        current_range,
+        result,
+        cache,
+      );
+      current_range = new_range;
 
-    changed_outputs.push(
-      ...(await detectOutputs(result, cache, secret_spend_key))
-    );
+      changed_outputs.push(
+        ...(await detectOutputs(result, cache, secret_spend_key)),
+      );
 
-    if (secret_spend_key)
-      changed_outputs.push(...detectOwnspends(result, cache));
+      if (secret_spend_key)
+        changed_outputs.push(...detectOwnspends(result, cache));
 
-    // write to cache
-    await atomicWrite(
-      cacheFileDefaultLocation(cache.primary_address, pathPrefix),
-      JSON.stringify(cache, null, 2)
-    );
+      // write to cache
+      await writeCacheToFile(cache, params.pathPrefix);
 
-    await cacheChanged({
-      newCache: cache,
-      changed_outputs,
-      connection_status,
-    });
+      await cacheChanged({
+        newCache: cache,
+        changed_outputs,
+      });
+    }
+    return current_range;
+  } catch (e) {
+    params.catastrophic_reorg_cb();
+    throw e;
   }
-  return current_range;
 }
 export type OnchainKeyImage = {
   key_image_hex: KeyImage;
@@ -110,28 +109,28 @@ export type FastForward = number; // height to fast forward scan to
  */
 export type ScanResultCallback =
   | ((
-      result: ScanResult | ErrorResponse | EmptyScanResult
+      result: ScanResult | ErrorResponse | EmptyScanResult,
     ) => FastForward | void)
   | ((
-      result: ScanResult | ErrorResponse | EmptyScanResult
+      result: ScanResult | ErrorResponse | EmptyScanResult,
     ) => Promise<FastForward | void>); // accept async callbacks
 export function updateScanHeight(
   current_range: CacheRange,
   result: ScanResult,
-  cache: ScanCache
+  cache: ScanCache,
 ): [CacheRange, ChangedOutput[]] {
   let last_block_hash_of_result = result.block_infos.at(-1);
   let current_blockhash = current_range?.block_hashes.at(0);
   if (!current_blockhash)
     throw new Error(
-      "current_range passed to updateScanHeight was malformed. block_hashes is empty"
+      "current_range passed to updateScanHeight was malformed. block_hashes is empty",
     );
   if (!last_block_hash_of_result) return [current_range, []]; // block_infos empty, no change (we are at tip and there was no new block)
   // if last blockhash is undefined it means there was not reorg, we are at tip, block_infos is empty ( no new blocks )
 
   const oldRange = findRange(
     cache.scanned_ranges,
-    current_blockhash.block_height
+    current_blockhash.block_height,
   );
   if (!oldRange)
     throw new Error(
@@ -140,7 +139,7 @@ export function updateScanHeight(
        with the scanned ranges in the cache. This should not happen, as even if 
        we are starting from a new start_height that has been supplied to scanWithCache,
        it has been found as an existing range in the cache, or it has been
-       added as a new range before we started scannning.`
+       added as a new range before we started scannning.`,
     );
   // now we need to find the block_infos of old range in the new geblocksbin response result block_infos
   // if we cant find the new range, there was a reorg and we need to clean all outputs after that and log what happened
@@ -160,7 +159,7 @@ export function updateScanHeight(
     throw new Error(
       `current scan height was larger than block height of last block from latest scan result. 
        Most likely connected to faulty node / catastrophic reorg.
-       current height: ${current_blockhash.block_height}, new height: ${last_block_hash_of_result.block_height}`
+       current height: ${current_blockhash.block_height}, new height: ${last_block_hash_of_result.block_height}`,
     );
 
   // 1. add new scanned range
@@ -211,15 +210,13 @@ export function makeNewRange(newRange: CacheRange, cache: ScanCache) {
 export async function detectOutputs(
   result: ScanResult,
   cache: ScanCache,
-  spend_private_key?: string // if no spendkey is provided, this will be a view only sync. (no ownspend detected)
+  spend_private_key?: string, // if no spendkey is provided, this will be a view only sync. (no ownspend detected)
 ) {
   let changed_outputs: ChangedOutput[] = [];
   for (const output of result.outputs) {
-    // TODO: extract into own function detectOutput()
-
     // 0. prevent burning bug and avoid overwriting earlier found outputs
     const duplicate = Object.values(cache.outputs).find(
-      (ex) => ex.stealth_address === output.stealth_address && !ex.burned
+      (ex) => ex.stealth_address === output.stealth_address && !ex.burned,
       // we expect to find only one output that could be a duplicate.
       // we don't care about all the burned duplicates already inserted.
     );
@@ -265,7 +262,6 @@ export function detectOwnspends(result: ScanResult, cache: ScanCache) {
   let changed_outputs: ChangedOutput[] = [];
 
   for (const onchainKeyImage of result.all_key_images) {
-    // TODO: extract into own function detectOwnSpend()
     if (onchainKeyImage.key_image_hex in cache.own_key_images) {
       // this is one of ours
       const globalId = cache.own_key_images[onchainKeyImage.key_image_hex];
@@ -285,10 +281,69 @@ export function detectOwnspends(result: ScanResult, cache: ScanCache) {
   }
   return changed_outputs;
 }
-//TODO respect 10 blocks lock and 60 blocks for minertx
-export function spendable(output: Output) {
-  return (
-    !(typeof output.burned === "number") &&
-    !(typeof output.spent_in_tx_hash === "string")
-  );
+export function unlockedAtHeight(output: Output) {
+  if (output.is_miner_tx) {
+    return output.block_height + 60;
+  } else {
+    return output.block_height + 10;
+  }
+}
+export type PrePending = {
+  status: "prepending";
+};
+export type Pending = {
+  status: "pending";
+  unlock_height: number;
+};
+export type Spent = {
+  status: "spent";
+};
+export type Burnt = {
+  status: "burnt";
+};
+export type Reorged = {
+  status: "reorged";
+};
+export type Spendable = {
+  status: "spendable";
+};
+export type OutputStatus =
+  | PrePending
+  | Pending
+  | Spent
+  | Burnt
+  | Reorged
+  | Spendable;
+export function outputStatus(
+  output: Output,
+  cache: ScanCache,
+  current_height: number,
+): OutputStatus {
+  if (
+    // order matters, check this before "spent" check + "pending" check
+    cache.pending_spent_utxos &&
+    cache.pending_spent_utxos[output.index_on_blockchain.toString()]
+  ) {
+    return { status: "prepending" };
+  }
+  if (typeof output.burned === "number") {
+    return { status: "burnt" };
+  }
+  if (typeof output.spent_in_tx_hash === "string") {
+    return { status: "spent" };
+  }
+
+  const unlock_height = unlockedAtHeight(output);
+  if (unlock_height > current_height) {
+    return { status: "pending", unlock_height };
+  }
+  return { status: "spendable" };
+}
+export function spendable(
+  output: Output,
+  cache: ScanCache,
+  current_height: number,
+) {
+  const status = outputStatus(output, cache, current_height);
+  return status.status === "spendable";
 }

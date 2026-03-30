@@ -5,6 +5,16 @@
   "type": "module",
   "main": "dist/api.js",
   "types": "dist/api.d.ts",
+  "exports": {
+  ".": {
+    "types": "./dist/api.d.ts",
+    "import": "./dist/api.js"
+  },
+  "./tools": {
+    "types": "./dist/tools/monero-tools.d.ts",
+    "import": "./dist/tools/monero-tools.js"
+  }
+},
   "publishConfig": {
     "access": "public"
   },
@@ -13,31 +23,31 @@
     "inlinewasm": "bun build templates/wasm/wasmFile.ts --target=browser --outdir dist/wasm-processing",
     "sumwasm": "cat dist/wasm-processing/wasmFile.js | sha256sum > wasm_checksum.txt",
     "inlinesumwasm": "bun run inlinewasm && bun run sumwasm",
-    "safewasm":"cp wallet-api/wasm-processing/wasmFile.ts wallet-api/wasm-processing/wasmFile.ts.backup",
-    "restorewasm":"mv wallet-api/wasm-processing/wasmFile.ts.backup wallet-api/wasm-processing/wasmFile.ts",
+    "safewasm": "cp wallet-api/wasm-processing/wasmFile.ts wallet-api/wasm-processing/wasmFile.ts.backup",
+    "restorewasm": "mv wallet-api/wasm-processing/wasmFile.ts.backup wallet-api/wasm-processing/wasmFile.ts",
     "inlineworker": "bun build templates/workers/worker.ts --target=browser --outdir dist/scanning-syncing/worker-entrypoints",
     "sumworker": "cat dist/scanning-syncing/worker-entrypoints/worker.js | sha256sum > worker_checksum.txt",
     "inlinesumworker": "bun run inlinesumwasm && bun run safewasm && bun run copydevwasm && bun run inlineworker && bun run sumworker && bun run restorewasm",
     "inlinesum": "bun run inlinesumworker",
-    "safeworker":"cp wallet-api/scanning-syncing/worker-entrypoints/worker.ts wallet-api/scanning-syncing/worker-entrypoints/worker.ts.backup",
-    "restoreworker":"mv wallet-api/scanning-syncing/worker-entrypoints/worker.ts.backup wallet-api/scanning-syncing/worker-entrypoints/worker.ts",
-    "copydevworker":"cp dist/scanning-syncing/worker-entrypoints/worker.js wallet-api/scanning-syncing/worker-entrypoints/worker.ts",
-    "copydevwasm":"cp dist/wasm-processing/wasmFile.js wallet-api/wasm-processing/wasmFile.ts",
-    "copydev":"bun run safewasm && bun run safeworker && bun run copydevworker && bun run copydevwasm",
-    "restoredev":"bun run restorewasm && bun run restoreworker",
-    "refreshdev":"bun run restoredev && bun run inlinesum && bun run copydev",
+    "safeworker": "cp wallet-api/scanning-syncing/worker-entrypoints/worker.ts wallet-api/scanning-syncing/worker-entrypoints/worker.ts.backup",
+    "restoreworker": "mv wallet-api/scanning-syncing/worker-entrypoints/worker.ts.backup wallet-api/scanning-syncing/worker-entrypoints/worker.ts",
+    "copydevworker": "cp dist/scanning-syncing/worker-entrypoints/worker.js wallet-api/scanning-syncing/worker-entrypoints/worker.ts",
+    "copydevwasm": "cp dist/wasm-processing/wasmFile.js wallet-api/wasm-processing/wasmFile.ts",
+    "copydev": "bun run safewasm && bun run safeworker && bun run copydevworker && bun run copydevwasm",
+    "restoredev": "bun run restorewasm && bun run restoreworker",
+    "refreshdev": "bun run restoredev && bun run inlinesum && bun run copydev",
     "build": "tsc",
     "clean": "rm -rf ./dist"
   },
   "files": ["dist"],
-  "version": "0.2.0",
+  "version": "0.3.0",
   "devDependencies": {
     "@types/bun": "latest"
   },
   "peerDependencies": {
-    "typescript": "^5.0.0"
+    "typescript": "5.9.3"
   },
   "dependencies": {
-    "zod": "3.24.1"
+    "zod": "4.3.6"
   }
 }

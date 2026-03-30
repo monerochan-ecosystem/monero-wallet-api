@@ -7,7 +7,7 @@ export function makeInput<T extends WasmProcessor>(
   processor: T,
   outputToBeSpent: Output,
   candidates: number[],
-  get_outs_Response: Uint8Array
+  get_outs_Response: Uint8Array,
 ): Input {
   const makeInputArgs = JSON.stringify({
     serialized_input: outputToBeSpent.serialized,
@@ -26,11 +26,11 @@ export function makeInput<T extends WasmProcessor>(
   //@ts-ignore
   processor.tinywasi.instance.exports.make_input(
     makeInputArgs.length,
-    get_outs_Response.length
+    get_outs_Response.length,
   );
   if (!result) {
     throw new Error(
-      "Failed to make Input (combine output with sampled and verified unlocked decoys)"
+      "Failed to make Input (combine output with sampled and verified unlocked decoys)",
     );
   }
   return result["input"] as Input;
@@ -42,7 +42,7 @@ export function sampleDecoys<T extends WasmProcessor>(
   processor: T,
   outputToBeSpentIndex: number,
   distribution: number[],
-  candidatesLength: number // how many decoy candidates to sample
+  candidatesLength: number, // how many decoy candidates to sample
 ) {
   const sampleDecoyArgs = JSON.stringify({
     output_being_spent_index: outputToBeSpentIndex,
@@ -97,7 +97,7 @@ export type SendError = {
  */
 export function makeTransaction<T extends WasmProcessor>(
   processor: T,
-  params: MakeTransactionParams
+  params: MakeTransactionParams,
 ): UnsignedTransaction {
   const jsonParams = JSON.stringify(params);
   processor.writeToWasmMemory = (ptr, len) => {
@@ -121,7 +121,7 @@ export function makeTransaction<T extends WasmProcessor>(
 
 export async function signTransaction(
   tx: UnsignedTransaction,
-  sender_spend_key: string
+  sender_spend_key: string,
 ): Promise<SignedTransaction> {
   const wasmProcessor = await WasmProcessor.init();
   wasmProcessor.writeToWasmMemory = (ptr, len) => {
@@ -137,10 +137,44 @@ export async function signTransaction(
   //@ts-ignore
   wasmProcessor.tinywasi.instance.exports.sign_transaction(
     tx.length,
-    sender_spend_key.length
+    sender_spend_key.length,
   );
   if (!result) {
     throw new Error("Failed to sign transaction");
   }
   return result["signed_transaction"];
+}
+export type ParsedAddress = {
+  address: string;
+  kind: "primary" | "subaddress" | "integrated" | "featured";
+  network: "mainnet" | "stagenet" | "testnet";
+  payment_id?: string; // u64
+};
+export type ParseAddressError = {
+  error: string;
+};
+export async function parseAddress(
+  address: string,
+): Promise<ParsedAddress | ParseAddressError> {
+  const wasmProcessor = await WasmProcessor.init();
+  wasmProcessor.writeToWasmMemory = (ptr, len) => {
+    wasmProcessor.writeString(ptr, len, address);
+  };
+  let result: ParsedAddress | null = null;
+  wasmProcessor.readFromWasmMemory = (ptr, len) => {
+    result = JSON.parse(wasmProcessor.readString(ptr, len));
+  };
+  let error: ParseAddressError | null = null;
+  wasmProcessor.readErrorFromWasmMemory = (ptr, len) => {
+    error = JSON.parse(wasmProcessor.readString(ptr, len));
+  };
+  //@ts-ignore
+  wasmProcessor.tinywasi.instance.exports.parse_address(address.length);
+  if (!result) {
+    if (!error) {
+      throw new Error("Failed to parse address");
+    }
+    return error;
+  }
+  return result;
 }

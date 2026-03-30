@@ -13,7 +13,7 @@ export interface Bun {
       | ArrayBuffer
       | SharedArrayBuffer
       | TypedArray
-      | Response
+      | Response,
   ): Promise<number>;
 }
 
@@ -31,8 +31,8 @@ export interface BunFile {
 
 export interface FileSink {
   write(
-    chunk: string | ArrayBufferView | ArrayBuffer | SharedArrayBuffer
-  ): number;
+    chunk: string | ArrayBufferView | ArrayBuffer | SharedArrayBuffer,
+  ): number | Promise<number>;
   flush(): number | Promise<number>;
   end(error?: Error): number | Promise<number>;
   start(options?: { highWaterMark?: number }): void;

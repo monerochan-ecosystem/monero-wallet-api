@@ -11,29 +11,23 @@ use cuprate_fixed_bytes::ByteArrayVec;
 
 use curve25519_dalek::scalar::Scalar;
 use hex::FromHex;
-use monero_wallet::address::Network;
+use monero_wallet::address::{Network, SubaddressIndex};
 use serde::Deserialize;
 use serde_json::json;
 
 use monero_wallet::{Scanner, ViewPair};
+use core::panic;
 use std::cell::RefCell;
 use your_program::{input, input_string, output, output_string, output_error_string};
 use zeroize::Zeroizing;
 
-thread_local! {
-    static GLOBAL_STATE: RefCell<GlobalState> = RefCell::new(GlobalState {
-        viewpair: None,
-        network: None,
-        primary_address: None,
-        scanner: None,
-    });
-}
+use crate::transaction_building::transaction::address_to_json;
 
-struct GlobalState {
-  viewpair: Option<ViewPair>,
-  network: Option<Network>,
-  primary_address: Option<String>,
-  scanner: Option<Scanner>,
+thread_local! {
+  static GLOBAL_VIEWPAIR: RefCell<ViewPair> = panic!("GLOBAL_VIEWPAIR is not initialized, call init_viewpair first");
+  static GLOBAL_SCANNER: RefCell<Scanner> = panic!("GLOBAL_SCANNER is not initialized, call init_viewpair first");
+  static GLOBAL_NETWORK: RefCell<Network> = panic!("GLOBAL_NETWORK is not initialized, call init_viewpair first");
+  static GLOBAL_PRIMARY_ADDRESS: RefCell<String> = panic!("GLOBAL_PRIMARY_ADDRESS is not initialized, call init_viewpair first");
 }
 
 mod your_program {
@@ -86,6 +80,17 @@ pub extern "C" fn make_spendkey() {
   output_string(hex::encode(keypairs::make_spendkey().to_bytes()).as_str());
 }
 #[no_mangle]
+pub extern "C" fn make_spendkey_from_seed(seed_string_len: usize) {
+  let seed_string = input_string(seed_string_len);
+  output_string(
+    hex::encode(
+      keypairs::make_spendkey_from_seed(<[u8; 64]>::from_hex(seed_string.as_str()).unwrap())
+        .to_bytes(),
+    )
+    .as_str(),
+  );
+}
+#[no_mangle]
 pub extern "C" fn make_viewkey(spend_key_string_len: usize) {
   let spend_key_string = input_string(spend_key_string_len);
   output_string(&convert_to_json(
@@ -97,59 +102,64 @@ pub extern "C" fn make_viewkey(spend_key_string_len: usize) {
 pub extern "C" fn init_viewpair(
   primary_address_string_len: usize,
   secret_view_key_string_len: usize,
+  last_subaddress_index: u32,
 ) {
   let primary_address = input_string(primary_address_string_len);
   let secret_view_key = input_string(secret_view_key_string_len);
   let viewpair =
     init_viewpair_from_viewpk_primary(primary_address.as_str(), secret_view_key.as_str());
-  GLOBAL_STATE.with(|state| {
-    let mut global_state = state.borrow_mut();
-    global_state.viewpair = Some(viewpair.clone());
-    global_state.network = Some(
-      monero_wallet::address::MoneroAddress::from_str_with_unchecked_network(
-        primary_address.as_str(),
-      )
-      .map_err(|e| {
-        eprintln!(
-          "There is an issue with the primary address that you provided: {}",
-          primary_address
-        );
-        eprintln!("{}", e);
-      })
-      .unwrap()
-      .network(),
-    );
-    match global_state.network {
-      Some(Network::Mainnet) => output_string(&json!({"network": "mainnet"}).to_string()),
-      Some(Network::Stagenet) => output_string(&json!({"network": "stagenet"}).to_string()),
-      _ => output_string(&json!({"network": "testnet"}).to_string()),
-    }
-    global_state.primary_address = Some(primary_address.clone());
-    global_state.scanner = Some(Scanner::new(viewpair));
-  });
+  let address = if let Some(val) =
+    monero_wallet::address::MoneroAddress::from_str_with_unchecked_network(primary_address.as_str())
+      .ok()
+  {
+    val
+  } else {
+    let error_json = json!({
+        "error": "primary-address-not-valid"
+    })
+    .to_string();
+    output_error_string(&error_json);
+    return;
+  };
+  match address.network() {
+    Network::Mainnet => output_string(&json!({"network": "mainnet"}).to_string()),
+    Network::Stagenet => output_string(&json!({"network": "stagenet"}).to_string()),
+    Network::Testnet => output_string(&json!({"network": "testnet"}).to_string()),
+  }
+
+  let mut scanner = Scanner::new(viewpair.clone());
+  let mut minor = 1;
+  while minor <= last_subaddress_index {
+    // we set minor to 1 so this will never return None
+    let subaddress = SubaddressIndex::new(0, minor).unwrap();
+    scanner.register_subaddress(subaddress);
+    minor += 1;
+  }
+
+  GLOBAL_SCANNER.set(scanner);
+  GLOBAL_NETWORK.set(address.network());
+  GLOBAL_VIEWPAIR.set(viewpair);
+  GLOBAL_PRIMARY_ADDRESS.set(primary_address);
 }
 #[no_mangle]
 pub extern "C" fn make_integrated_address(payment_id: u64) {
-  GLOBAL_STATE.with(|state| {
-        let global_state = state.borrow();
-        match (&global_state.viewpair, &global_state.network) {
-            (Some(viewpair), Some(network)) => {
-                let bytes_back: [u8; 8] = payment_id.to_le_bytes();
-                output_string(
-                    &viewpair
-                        .legacy_integrated_address(*network, bytes_back)
-                        .to_string(),
-                );
-            }
-            _ => {
-                let error_json = json!({
-                    "error": "the scanner / viewpair was not initialized. integrated address did not get created."
-                })
-                .to_string();
-                output_string(&error_json);
-            }
-        }
-    });
+  let viewpair = GLOBAL_VIEWPAIR.with_borrow(|viewpair| viewpair.clone());
+  let network = GLOBAL_NETWORK.with_borrow(|network| *network);
+
+  let bytes_back: [u8; 8] = payment_id.to_le_bytes();
+  output_string(&viewpair.legacy_integrated_address(network, bytes_back).to_string());
+}
+#[no_mangle]
+pub extern "C" fn make_subaddress(major: u32, minor: u32) {
+  let viewpair = GLOBAL_VIEWPAIR.with_borrow(|viewpair| viewpair.clone());
+  let network = GLOBAL_NETWORK.with_borrow(|network| *network);
+  GLOBAL_SCANNER.with_borrow_mut(|scanner| {
+    let subaddress_index = SubaddressIndex::new(major, minor).expect("Invalid indices");
+    let subaddress = viewpair.subaddress(network, subaddress_index);
+    scanner.register_subaddress(subaddress_index.clone());
+
+    output_string(&subaddress.to_string());
+  });
 }
 #[no_mangle]
 pub extern "C" fn sample_decoys(sample_json_str_len: usize) {
@@ -191,31 +201,36 @@ pub extern "C" fn make_input(output_json_len: usize, getouts_response_len: usize
     }
   }
 }
+#[no_mangle]
+pub extern "C" fn parse_address(address_string_len: usize) {
+  let address_string = input_string(address_string_len);
+  match transaction_building::transaction::parse_address(&address_string) {
+    Ok(address) => {
+      let address_json = address_to_json(&address);
+      output_string(&address_json.to_string());
+    }
+    Err(e) => {
+      output_error_string(json!({"error":e.to_string()}).to_string().as_str());
+      return;
+    }
+  }
+}
 
 #[no_mangle]
 pub extern "C" fn make_transaction(json_params_len: usize) {
   let json_params = input_string(json_params_len);
-  GLOBAL_STATE.with(|state| {
-    let global_state = state.borrow();
-    match &global_state.viewpair {
-      Some(viewpair) => {
-        match transaction_building::transaction::make_transaction(&json_params, viewpair.clone()) {
-          Ok(signable_tx) => {
-            let tx_json = json!({ "signable_transaction": hex::encode(signable_tx.serialize()) });
-            output_string(&tx_json.to_string());
-          }
-          Err(e) => {
-            output_error_string(&e);
-            return;
-          }
-        }
-      }
-      None => {
-        println!("The viewpair was not initialized. Transaction did not get created.");
-        return;
-      }
+  let viewpair = GLOBAL_VIEWPAIR.with_borrow(|viewpair| viewpair.clone());
+
+  match transaction_building::transaction::make_transaction(&json_params, viewpair.clone()) {
+    Ok(signable_tx) => {
+      let tx_json = json!({ "signable_transaction": hex::encode(signable_tx.serialize()) });
+      output_string(&tx_json.to_string());
     }
-  });
+    Err(e) => {
+      output_error_string(&e);
+      return;
+    }
+  }
 }
 
 #[no_mangle]
@@ -347,31 +362,15 @@ pub extern "C" fn scan_blocks_with_get_blocks_bin(response_len: usize) {
   let response = input(response_len);
 
   match from_bytes(&mut response.as_slice()) {
-    Ok(blocks_response) => {
-      GLOBAL_STATE.with(|state| {
-        let global_state = state.borrow();
-        match &global_state.scanner {
-          None => {
-            let error_json = json!({
-                "error": "the scanner / viewpair was not initialized. Blocks didn't get scanned."
-            })
-            .to_string();
-            output_string(&error_json);
-          }
-          Some(scanner) => {
-            output_string(&convert_to_json(&get_blocks_bin_response_meta(
-              &blocks_response,
-              global_state.primary_address.as_deref().unwrap_or("error-address-not-set"),
-            )));
-            output_string(&scan_blocks(
-              scanner.clone(),
-              global_state.primary_address.as_deref().unwrap_or("error-address-not-set"),
-              blocks_response,
-            ));
-          }
-        }
-      });
-    }
+    Ok(blocks_response) => GLOBAL_SCANNER.with_borrow(|scanner| {
+      let primary_address =
+        GLOBAL_PRIMARY_ADDRESS.with_borrow(|primary_address| primary_address.clone());
+      output_string(&convert_to_json(&get_blocks_bin_response_meta(
+        &blocks_response,
+        &primary_address,
+      )));
+      output_string(&scan_blocks(scanner.clone(), &primary_address, blocks_response));
+    }),
     Err(error) => {
       let error_message = format!("Error parsing getBlocksBin response: {}", error);
       let error_json = json!({
