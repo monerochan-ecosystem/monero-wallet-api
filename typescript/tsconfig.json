@@ -5,6 +5,7 @@
     "lib": ["ESNext", "DOM"],
     "target": "ESNext",
     "module": "ESNext",
+    "rootDir": "./wallet-api",
     "outDir": "./dist",
     "moduleDetection": "force",
     "jsx": "react-jsx",
