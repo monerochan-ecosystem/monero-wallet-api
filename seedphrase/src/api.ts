@@ -40,6 +40,7 @@ export function getWalletSecret(
   { identity, domain, wallet_type, wallet_slot }: WalletRoute,
   seedphrase: string,
   password: string = "",
+  coin_name: string = "monero",
 ): Uint8Array {
   if (!identity || !domain)
     throw new Error(
@@ -62,7 +63,7 @@ export function getWalletSecret(
 
   return deriveSecretKey(
     seedphrase,
-    `${identity}/${domain}/${wallet_type}/${wallet_slot}/${password}-monero`,
+    `${identity}/${domain}/${wallet_type}/${wallet_slot}/${password}-${coin_name}`,
   );
 }
 
