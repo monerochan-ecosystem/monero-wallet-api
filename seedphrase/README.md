@@ -1,15 +1,27 @@
 # seedphrase
 
-To install dependencies:
+This package collects functions to generate wallet secrets from a bip39 seedphrase + wallet route + seedphrase offset passphrase.
 
-```bash
-bun install
+The purpose is to help users keep their online identities compartmentalized.
+
+## Usage
+
+Most commonly used functions:
+
+```ts
+import {
+  generateSeedphrase,
+  getWalletSecret,
+  validateSeedphrase,
+  WALLET_DEFAULT_ROUTE,
+  walletRouteToString,
+} from "@spirobel/seedphrase";
 ```
 
-To run:
+For a full usage example see the onboarding dialogue implemented in the [monero browser wallet](https://github.com/monerochan-ecosystem/monerochan-city-wallet)
+
+To install:
 
 ```bash
-bun run index.ts
+bun install @spirobel/seedphrase
 ```
-
-This project was created using `bun init` in bun v1.2.13. [Bun](https://bun.sh) is a fast all-in-one JavaScript runtime.
