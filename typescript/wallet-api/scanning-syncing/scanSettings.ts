@@ -245,11 +245,6 @@ export async function walletSettingsPlusKeys(
     );
   if (!secret_spend_key)
     secret_spend_key = Bun.env[`sk${wallet_settings.primary_address}`];
-  if (!secret_spend_key)
-    throw (
-      "no secret_spend_key provided and not found in env for address: " +
-      wallet_settings.primary_address
-    );
 
   return {
     ...wallet_settings,
