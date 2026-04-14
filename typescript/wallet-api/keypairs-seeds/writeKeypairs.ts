@@ -81,6 +81,12 @@ export async function writeWalletSecretsToDotEnv(wallet_secret: Uint8Array) {
 
   return primary_address;
 }
+export async function writeViewKeyToDotEnv(
+  primary_address: string,
+  view_key: string,
+) {
+  return await writeEnvLineToDotEnvRefresh(`vk${primary_address}`, view_key);
+}
 // this should be used in a web backend that does (non custodial) scanning
 // to add new view / spend keys, received from the users without a restart.
 export async function writeEnvLineToDotEnvRefresh(
