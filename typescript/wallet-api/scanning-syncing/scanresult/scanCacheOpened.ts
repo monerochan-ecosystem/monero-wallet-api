@@ -107,6 +107,8 @@ export class ScanCacheOpened {
         walletSettings.node_url,
       ),
       walletSettings.wallet_route,
+      walletSettings.wallet_name,
+      walletSettings.wallet_index,
       params.no_worker || false,
       params.masterCacheChanged || null,
       walletSettings.start_height,
@@ -711,6 +713,8 @@ export class ScanCacheOpened {
   private constructor(
     public readonly view_pair: ViewPair,
     public readonly wallet_route: string | undefined,
+    public readonly wallet_name: string | undefined,
+    public readonly wallet_index: number | undefined,
     public readonly no_worker: boolean,
     public readonly masterCacheChanged: CacheChangedCallback | null,
     private _start_height: number | null,
