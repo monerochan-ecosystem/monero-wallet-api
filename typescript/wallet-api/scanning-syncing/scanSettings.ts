@@ -82,11 +82,15 @@ export type WriteScanSettingsFileParams = {
 export async function writeScanSettingsFileDefaultLocationThrows(
   params: WriteScanSettingsFileParams,
 ) {
-  const settings = await openScanSettingsFile(params.settingsStorePath);
-  if (!settings)
-    throw new Error(
-      `scan settings not found for path: ${params.settingsStorePath ?? SCAN_SETTINGS_STORE_NAME_DEFAULT}`,
-    );
+  let settings = await openScanSettingsFile(params.settingsStorePath);
+  if (!settings) {
+    // Create empty ScanSettings object with default values
+    settings = {
+      node_url: LOCAL_NODE_DEFAULT_URL,
+      wallets: [],
+      start_height: null,
+    };
+  }
   await params.writeCallback(settings);
   // write to settings file
   await writeScanSettings(settings, params.settingsStorePath);
