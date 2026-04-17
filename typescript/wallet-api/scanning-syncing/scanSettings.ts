@@ -79,7 +79,7 @@ export type WriteScanSettingsFileParams = {
   settingsStorePath?: string;
   writeCallback: (settings: ScanSettings) => void | Promise<void>;
 };
-export async function writeScanSettingsFileDefaultLocationThrows(
+export async function writeScanSettingsFileDefaultLocation(
   params: WriteScanSettingsFileParams,
 ) {
   let settings = await openScanSettingsFile(params.settingsStorePath);
