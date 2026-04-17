@@ -75,6 +75,22 @@ export async function writeScanSettings(
     JSON.stringify(scan_settings, null, 2),
   );
 }
+export type WriteScanSettingsFileParams = {
+  settingsStorePath?: string;
+  writeCallback: (settings: ScanSettings) => void | Promise<void>;
+};
+export async function writeScanSettingsFileDefaultLocationThrows(
+  params: WriteScanSettingsFileParams,
+) {
+  const settings = await openScanSettingsFile(params.settingsStorePath);
+  if (!settings)
+    throw new Error(
+      `scan settings not found for path: ${params.settingsStorePath ?? SCAN_SETTINGS_STORE_NAME_DEFAULT}`,
+    );
+  await params.writeCallback(settings);
+  // write to settings file
+  await writeScanSettings(settings, params.settingsStorePath);
+}
 export async function writeStartHeightToScanSettings(
   start_height: number | null,
   settingsStorePath: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
