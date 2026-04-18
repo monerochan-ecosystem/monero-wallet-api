@@ -210,80 +210,80 @@ export class ViewPair extends WasmProcessor {
     scan_settings_path?: string,
     pathPrefix?: string,
   ) {
-    const processor = this;
-    const nonHaltedWallets = await openNonHaltedWallets(scan_settings_path);
-    const masterWalletSettings = nonHaltedWallets[0];
-    if (masterWalletSettings.primary_address !== this.primary_address)
-      throw new Error(
-        "master wallet should be the first of the non halted wallets",
-      );
-    let masterStartHeight = await cullTooLargeScanHeight(
-      processor.node_url,
-      scan_settings_path,
-    );
-
-    let current_range = await initScanCache(
-      processor,
-      masterStartHeight,
-      scan_settings_path,
-      pathPrefix,
-    );
-    const blockGenerator = (async function* () {
-      while (true) {
-        if (stopSync?.aborted) return;
-        const firstResponse = await processor.getBlocksBinExecuteRequest(
-          { block_ids: current_range.block_hashes.map((b) => b.block_hash) },
-          stopSync,
+    try {
+      const processor = this;
+      const nonHaltedWallets = await openNonHaltedWallets(scan_settings_path);
+      const masterWalletSettings = nonHaltedWallets[0];
+      if (masterWalletSettings.primary_address !== this.primary_address)
+        throw new Error(
+          "master wallet should be the first of the non halted wallets",
         );
-        await readWriteConnectionStatusFile((cs) => {
-          if (cs?.last_packet.status === "catastrophic_reorg") return;
-          const connectionStatus: ConnectionStatus = {
-            last_packet: {
-              status: "OK",
-              bytes_read: firstResponse.length,
-              node_url: processor.node_url,
-              timestamp: new Date().toISOString(),
-            },
-          };
-          return connectionStatus;
-        });
-
-        yield firstResponse;
-      }
-    })();
-
-    const masterWithKeys = await walletSettingsPlusKeys(masterWalletSettings);
-    const slaveViewPairs: SlaveViewPair[] = [];
-    if (nonHaltedWallets.length > 1) {
-      for (const slaveWallet of nonHaltedWallets.slice(1)) {
-        const slaveWithKeys = await walletSettingsPlusKeys(slaveWallet);
-        const viewpair = await ViewPair.create(
-          slaveWallet.primary_address,
-          slaveWithKeys.secret_view_key,
-          slaveWallet.subaddress_index,
-          masterWalletSettings.node_url,
-        );
-        slaveViewPairs.push({
-          viewpair,
-          current_range: await initScanCache(
-            viewpair,
-            masterStartHeight,
-            scan_settings_path,
-            pathPrefix,
-          ),
-          secret_spend_key: slaveWithKeys.secret_spend_key,
-        });
-      }
-    }
-    const catastrophic_reorg_cb = async () => {
-      writeConnectionStatusFile(
-        "catastrophic_reorg",
+      let masterStartHeight = await cullTooLargeScanHeight(
         processor.node_url,
-        undefined,
         scan_settings_path,
       );
-    };
-    try {
+
+      let current_range = await initScanCache(
+        processor,
+        masterStartHeight,
+        scan_settings_path,
+        pathPrefix,
+      );
+      const blockGenerator = (async function* () {
+        while (true) {
+          if (stopSync?.aborted) return;
+          const firstResponse = await processor.getBlocksBinExecuteRequest(
+            { block_ids: current_range.block_hashes.map((b) => b.block_hash) },
+            stopSync,
+          );
+          await readWriteConnectionStatusFile((cs) => {
+            if (cs?.last_packet.status === "catastrophic_reorg") return;
+            const connectionStatus: ConnectionStatus = {
+              last_packet: {
+                status: "OK",
+                bytes_read: firstResponse.length,
+                node_url: processor.node_url,
+                timestamp: new Date().toISOString(),
+              },
+            };
+            return connectionStatus;
+          });
+
+          yield firstResponse;
+        }
+      })();
+
+      const masterWithKeys = await walletSettingsPlusKeys(masterWalletSettings);
+      const slaveViewPairs: SlaveViewPair[] = [];
+      if (nonHaltedWallets.length > 1) {
+        for (const slaveWallet of nonHaltedWallets.slice(1)) {
+          const slaveWithKeys = await walletSettingsPlusKeys(slaveWallet);
+          const viewpair = await ViewPair.create(
+            slaveWallet.primary_address,
+            slaveWithKeys.secret_view_key,
+            slaveWallet.subaddress_index,
+            masterWalletSettings.node_url,
+          );
+          slaveViewPairs.push({
+            viewpair,
+            current_range: await initScanCache(
+              viewpair,
+              masterStartHeight,
+              scan_settings_path,
+              pathPrefix,
+            ),
+            secret_spend_key: slaveWithKeys.secret_spend_key,
+          });
+        }
+      }
+      const catastrophic_reorg_cb = async () => {
+        writeConnectionStatusFile(
+          "catastrophic_reorg",
+          processor.node_url,
+          undefined,
+          scan_settings_path,
+        );
+      };
       for await (const firstResponse of blockGenerator) {
         if (!firstResponse) continue;
         await this.writeSubaddressesToScanCache(scan_settings_path, pathPrefix);
@@ -360,7 +360,7 @@ export class ViewPair extends WasmProcessor {
       }
     } catch (error) {
       handleScanError(error);
-
+      const processor = this;
       const cache = await readCacheFileDefaultLocation(
         processor.primary_address,
         pathPrefix,
@@ -373,6 +373,7 @@ export class ViewPair extends WasmProcessor {
         newCache: cache,
         changed_outputs: [],
       });
+      throw error;
     }
   }
   /**
