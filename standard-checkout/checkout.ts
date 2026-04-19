@@ -1,13 +1,18 @@
 import { html } from "@spirobel/mininext";
-import { openWallets } from "@spirobel/monero-wallet-api";
+import {
+  openWallets,
+  make001ToolLink,
+  ADDRESS_VALID_RESPONSE,
+} from "@spirobel/monero-wallet-api";
 import QRCode from "qrcode";
 import {
   createCheckoutSession,
   updateCheckoutSessionAddress,
   getCheckoutSessionBySessionId,
 } from "./db.js";
+import type { BunRequest } from "bun";
 
-const AMOUNT = 0.1337;
+const AMOUNT = "0.1337";
 
 // ─── Skeleton ───────────────────────────────────────────────────────────────
 
@@ -30,6 +35,11 @@ export function makeRoutes() {
     ...skeleton.static_routes,
     "/newsession": { GET: newSessionRoute },
     "/paymentstatus": { GET: paymentStatusRoute },
+    "/monerochan001/:address": {
+      GET: (req: BunRequest<"/monerochan001/:address">) => {
+        return Response.json(ADDRESS_VALID_RESPONSE);
+      },
+    },
     "/": { GET: checkoutRoute },
   };
 }
@@ -146,7 +156,7 @@ async function checkoutRoute(req: Request) {
 
   const displayAmount = sessionRow.amount;
   const address = sessionRow.address;
-
+  const toollink = make001ToolLink(address, AMOUNT);
   const addressQrCode = await QRCode.toDataURL(address);
   const paymentUri = `monero:${address}?tx_amount=${displayAmount}`;
   const paymentUriQrCode = await QRCode.toDataURL(paymentUri);
@@ -163,6 +173,11 @@ async function checkoutRoute(req: Request) {
             <h3>Copy Wallet Address</h3>
             <p>Send exactly ${displayAmount} XMR to this address:</p>
             <div class="wallet-address">${address}</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-content" style="text-align: center;">
+            <a href="${toollink}" class="pay-button">pay with browser wallet</a>
           </div>
         </div>
 
@@ -273,8 +288,8 @@ const checkoutStyles = html`<style>
   .step {
     display: flex;
     gap: 1rem;
-    margin-bottom: 1.5rem;
-    padding: 1.5rem;
+    margin-bottom: 12px;
+    padding: 19px;
     background: rgba(20, 20, 20, 0.5);
     border-radius: 12px;
     border: 1px solid rgba(124, 58, 237, 0.1);
@@ -333,6 +348,47 @@ const checkoutStyles = html`<style>
     border: 1px solid rgba(124, 58, 237, 0.1);
   }
   .wallet-address::selection {
+    background: rgba(124, 58, 237, 0.4);
+  }
+
+  .pay-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 14px 31px;
+    font-size: 1rem;
+    font-weight: 600;
+    font-family: inherit;
+    color: #fff;
+    background: linear-gradient(135deg, var(--accent) 0%, #6d28d9 100%);
+    border: none;
+    border-radius: 12px;
+    cursor: pointer;
+    text-decoration: none;
+    text-align: center;
+    transition: all 0.25s ease;
+    box-shadow:
+      0 4px 15px rgba(124, 58, 237, 0.35),
+      inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  }
+
+  .pay-button:hover {
+    background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+    transform: translateY(-2px);
+    box-shadow:
+      0 6px 25px rgba(124, 58, 237, 0.5),
+      inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  }
+
+  .pay-button:active {
+    transform: translateY(0);
+    box-shadow:
+      0 2px 10px rgba(124, 58, 237, 0.3),
+      inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+
+  .wallet-address::selection {
     background: rgba(124, 58, 237, 0.6);
     color: #ffffff;
   }
@@ -364,8 +420,8 @@ const checkoutStyles = html`<style>
   }
 
   .qr-code {
-    width: 200px;
-    height: 200px;
+    width: 140px;
+    height: 140px;
     background: white;
     border-radius: 12px;
     margin: 1rem auto;
