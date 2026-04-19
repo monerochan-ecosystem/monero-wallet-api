@@ -219,4 +219,8 @@ export async function checkToolInvocationValidity(
 
 export const ADDRESS_VALID_RESPONSE = {
   valid_address: true,
-};
+} as const;
+
+export const ADDRESS_INVALID_RESPONSE = {
+  valid_address: false,
+} as const;
