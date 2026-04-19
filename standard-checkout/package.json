@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@spirobel/mininext": "0.8.4",
-    "@spirobel/monero-wallet-api": "0.3.5",
+    "@spirobel/monero-wallet-api": "0.3.7",
     "qrcode": "^1.5.4"
   }
 }
