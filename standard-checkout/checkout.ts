@@ -11,7 +11,9 @@ import {
   updateCheckoutSessionAddress,
   getCheckoutSessionBySessionId,
   getCheckoutSessionByAddress,
-} from "./db.js";
+  getCheckoutSessionByPrimaryId,
+  markAsPaid,
+} from "./db";
 import type { BunRequest } from "bun";
 
 const AMOUNT = "0.1337";
@@ -57,6 +59,12 @@ Bun.serve({ port: 3004, routes: makeRoutes() });
 let retryScheduled = false;
 
 const wallets = await openWallets({
+  notifyMasterChanged: async (params) => {
+    // sync payments on cache change
+    if (params?.changed_outputs?.length > 0) {
+      await syncPaymentStatus();
+    }
+  },
   workerError: async (err) => {
     console.log(
       "scan worker error, typically loss of network connection, retry in 1 second",
@@ -73,6 +81,21 @@ const wallets = await openWallets({
   no_stats: true,
 });
 const mainwallet = wallets?.wallets[0];
+async function syncPaymentStatus() {
+  if (!mainwallet) return;
+  for (const tx of mainwallet.transactions) {
+    const firstInput = tx.outputs[0];
+    if (!firstInput) continue;
+    const payment_id = firstInput.payment_id;
+    if (!payment_id) continue;
+    const checkout_session_row =
+      await getCheckoutSessionByPrimaryId(payment_id);
+    if (!checkout_session_row[0]) continue;
+    if (!checkout_session_row[0].paid_status) await markAsPaid(payment_id);
+  }
+}
+// sync payments on startup
+await syncPaymentStatus();
 
 // ─── Route Handlers ─────────────────────────────────────────────────────────
 
