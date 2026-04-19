@@ -100,7 +100,7 @@ export async function writeStartHeightToScanSettings(
   settingsStorePath: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
 ) {
   const scanSettings = (await openScanSettingsFile(settingsStorePath)) || {
-    node_url: "",
+    node_url: LOCAL_NODE_DEFAULT_URL,
     wallets: [],
     start_height: null,
   };
@@ -117,7 +117,7 @@ export async function writeDaemonHeightAsStartHeightToScanSettings(
   const getInfo = await get_info(node_url);
 
   const scanSettings = (await openScanSettingsFile(settingsStorePath)) || {
-    node_url: "",
+    node_url: LOCAL_NODE_DEFAULT_URL,
     wallets: [],
     start_height: null,
   };
@@ -132,7 +132,7 @@ export async function cullTooLargeScanHeight(
   const getInfo = await get_info(node_url);
 
   const scanSettings = (await openScanSettingsFile(settingsStorePath)) || {
-    node_url: "",
+    node_url: LOCAL_NODE_DEFAULT_URL,
     wallets: [],
     start_height: null,
   };
@@ -151,7 +151,7 @@ export async function writeNodeUrlToScanSettings(
   settingsStorePath: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
 ) {
   const scanSettings = (await openScanSettingsFile(settingsStorePath)) || {
-    node_url: "",
+    node_url: LOCAL_NODE_DEFAULT_URL,
     wallets: [],
     start_height: null,
   };

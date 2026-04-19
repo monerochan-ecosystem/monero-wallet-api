@@ -1,9 +1,14 @@
-import { ViewPair } from "../api";
+import { get_info, ViewPair } from "../api";
+import { LOCAL_NODE_DEFAULT_URL } from "../node-interaction/nodeUrl";
 import {
   type CacheChangedCallback,
   type CacheChangedCallbackParameters,
 } from "./scanresult/scanCache";
-import { openNonHaltedWallets, walletSettingsPlusKeys } from "./scanSettings";
+import {
+  openNonHaltedWallets,
+  readNodeUrlFromScanSettings,
+  walletSettingsPlusKeys,
+} from "./scanSettings";
 import { workerMainCode } from "./worker-entrypoints/worker";
 
 export async function scanWallets(
@@ -29,18 +34,28 @@ export async function scanWallets(
     pathPrefix,
   );
 }
-export function createWebworker(
+export async function createWebworker(
   handle_result?: (result: CacheChangedCallbackParameters) => void,
   scan_settings_path?: string,
   pathPrefix?: string,
   handle_error?: (error: unknown) => void,
 ) {
-  const worker_script = makeWebworkerScript(scan_settings_path, pathPrefix);
-  return startWebworker(
-    worker_script,
-    handle_result as (result: unknown) => void,
-    handle_error,
-  );
+  try {
+    const node_url =
+      (await readNodeUrlFromScanSettings(scan_settings_path)) ||
+      LOCAL_NODE_DEFAULT_URL;
+    // check if the node connection works before starting the sync worker
+    const getInfo = await get_info(node_url);
+
+    const worker_script = makeWebworkerScript(scan_settings_path, pathPrefix);
+    return startWebworker(
+      worker_script,
+      handle_result as (result: unknown) => void,
+      handle_error,
+    );
+  } catch (error) {
+    handle_error?.(error);
+  }
 }
 export function makeWebworkerScript(
   scan_settings_path?: string,

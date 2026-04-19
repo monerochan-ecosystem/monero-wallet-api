@@ -600,7 +600,7 @@ export class ScanCacheOpened {
     // if worker does not exist yet, start it (if we are not slave / no_worker)
 
     if (!this.worker && !this.no_worker) {
-      this.worker = createWebworker(
+      this.worker = await createWebworker(
         async (params) => await this.feed(params),
         this.scan_settings_path,
         this.pathPrefix,
