@@ -57,7 +57,9 @@ export async function readStatsFile(
           key === "amount" ||
           key === "pending_amount" ||
           key === "total_amount" ||
-          key === "total_pending_amount"
+          key === "total_pending_amount" ||
+          key === "primary_address_received_amount" ||
+          key === "primary_address_pending_amount"
         )
           return BigInt(value);
         return value;
