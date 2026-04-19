@@ -3,12 +3,14 @@ import {
   openWallets,
   make001ToolLink,
   ADDRESS_VALID_RESPONSE,
+  ADDRESS_INVALID_RESPONSE,
 } from "@spirobel/monero-wallet-api";
 import QRCode from "qrcode";
 import {
   createCheckoutSession,
   updateCheckoutSessionAddress,
   getCheckoutSessionBySessionId,
+  getCheckoutSessionByAddress,
 } from "./db.js";
 import type { BunRequest } from "bun";
 
@@ -36,7 +38,11 @@ export function makeRoutes() {
     "/newsession": { GET: newSessionRoute },
     "/paymentstatus": { GET: paymentStatusRoute },
     "/monerochan001/:address": {
-      GET: (req: BunRequest<"/monerochan001/:address">) => {
+      GET: async (req: BunRequest<"/monerochan001/:address">) => {
+        const sessionRow = await getCheckoutSessionByAddress(
+          req.params.address,
+        );
+        if (!sessionRow[0]?.id) return Response.json(ADDRESS_INVALID_RESPONSE);
         return Response.json(ADDRESS_VALID_RESPONSE);
       },
     },
