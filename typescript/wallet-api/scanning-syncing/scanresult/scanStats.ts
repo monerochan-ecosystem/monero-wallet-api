@@ -57,7 +57,9 @@ export async function readStatsFile(
           key === "amount" ||
           key === "pending_amount" ||
           key === "total_amount" ||
-          key === "total_pending_amount"
+          key === "total_pending_amount" ||
+          key === "primary_address_received_amount" ||
+          key === "primary_address_pending_amount"
         )
           return BigInt(value);
         return value;
@@ -368,6 +370,8 @@ export function resetStats(stats: ScanStats) {
   stats.height = 0;
   stats.total_spendable_amount = 0n;
   stats.total_pending_amount = 0n;
+  stats.primary_address_received_amount = 0n;
+  stats.primary_address_pending_amount = 0n;
   stats.found_transactions = {};
   stats.ordered_transactions = [];
   stats.subaddresses = {};

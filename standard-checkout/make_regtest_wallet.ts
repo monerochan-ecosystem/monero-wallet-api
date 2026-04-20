@@ -1,0 +1,26 @@
+#!/usr/bin/env bun
+import {
+  writeRegtestSpendViewKeysToDotEnvTestLocal,
+  writeWalletToScanSettings,
+} from "@spirobel/monero-wallet-api";
+
+// adds a wallet entry to RegtestScanSettings.json
+
+// will make new spend keys if no Bun.env["sk"] is present
+
+// writes "vkPRIMARY_KEY=<view_key> \n skPRIMARY_KEY=<spend_key>" to .env.local for regtest
+
+// optional first arg is the path to custom location for settings file: scripts/regtest_gen.ts  mysettings.json
+const height = 0; //(await get_info(LOCAL_NODE_DEFAULT_URL)).height; // regtest starts at 0
+
+const primary_address = await writeRegtestSpendViewKeysToDotEnvTestLocal(
+  Bun.env["sk"],
+);
+
+await writeWalletToScanSettings({
+  primary_address,
+  start_height: height,
+  scan_settings_path: Bun.argv[2] || "RegtestScanSettings.json",
+});
+
+console.log("mine on regtest to:\n", primary_address);

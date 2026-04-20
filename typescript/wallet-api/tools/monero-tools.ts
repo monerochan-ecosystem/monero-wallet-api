@@ -180,7 +180,9 @@ export async function checkToolInvocationValidity(
 ): Promise<ToolInvocationValidity> {
   // send 001 fetch from destination domain to check if the address is valid
   if (invo.tool.tool_id == "001") {
-    const checkUrl = `${invo.destination_domain}/monerochan001/${
+    const link = invo[invo.found_in];
+    const invo_link = new URL(link);
+    const checkUrl = `${invo_link.origin}/monerochan001/${
       invo.tool.payload.address
     }`;
     try {
@@ -217,4 +219,8 @@ export async function checkToolInvocationValidity(
 
 export const ADDRESS_VALID_RESPONSE = {
   valid_address: true,
-};
+} as const;
+
+export const ADDRESS_INVALID_RESPONSE = {
+  valid_address: false,
+} as const;

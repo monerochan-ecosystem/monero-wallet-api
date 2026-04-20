@@ -10,6 +10,8 @@ export type ScanSetting = {
   subaddress_index?: number;
   halted?: boolean;
   wallet_route?: string;
+  wallet_name?: string;
+  wallet_index?: number;
 };
 export type WriteScanSettingParams = {
   primary_address: string;
@@ -19,6 +21,8 @@ export type WriteScanSettingParams = {
   scan_settings_path?: string; // write your settings to a different path
   node_url?: string;
   wallet_route?: string;
+  wallet_name?: string;
+  wallet_index?: number;
 };
 export type ScanSettingOpened = {
   primary_address: string;
@@ -29,6 +33,8 @@ export type ScanSettingOpened = {
   halted?: boolean;
   secret_spend_key?: string;
   wallet_route?: string;
+  wallet_name?: string;
+  wallet_index?: number;
 };
 export type ScanSettings = {
   wallets: ScanSetting[];
@@ -69,12 +75,32 @@ export async function writeScanSettings(
     JSON.stringify(scan_settings, null, 2),
   );
 }
+export type WriteScanSettingsFileParams = {
+  settingsStorePath?: string;
+  writeCallback: (settings: ScanSettings) => void | Promise<void>;
+};
+export async function writeScanSettingsFileDefaultLocation(
+  params: WriteScanSettingsFileParams,
+) {
+  let settings = await openScanSettingsFile(params.settingsStorePath);
+  if (!settings) {
+    // Create empty ScanSettings object with default values
+    settings = {
+      node_url: LOCAL_NODE_DEFAULT_URL,
+      wallets: [],
+      start_height: null,
+    };
+  }
+  await params.writeCallback(settings);
+  // write to settings file
+  await writeScanSettings(settings, params.settingsStorePath);
+}
 export async function writeStartHeightToScanSettings(
   start_height: number | null,
   settingsStorePath: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
 ) {
   const scanSettings = (await openScanSettingsFile(settingsStorePath)) || {
-    node_url: "",
+    node_url: LOCAL_NODE_DEFAULT_URL,
     wallets: [],
     start_height: null,
   };
@@ -91,7 +117,7 @@ export async function writeDaemonHeightAsStartHeightToScanSettings(
   const getInfo = await get_info(node_url);
 
   const scanSettings = (await openScanSettingsFile(settingsStorePath)) || {
-    node_url: "",
+    node_url: LOCAL_NODE_DEFAULT_URL,
     wallets: [],
     start_height: null,
   };
@@ -106,7 +132,7 @@ export async function cullTooLargeScanHeight(
   const getInfo = await get_info(node_url);
 
   const scanSettings = (await openScanSettingsFile(settingsStorePath)) || {
-    node_url: "",
+    node_url: LOCAL_NODE_DEFAULT_URL,
     wallets: [],
     start_height: null,
   };
@@ -125,7 +151,7 @@ export async function writeNodeUrlToScanSettings(
   settingsStorePath: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
 ) {
   const scanSettings = (await openScanSettingsFile(settingsStorePath)) || {
-    node_url: "",
+    node_url: LOCAL_NODE_DEFAULT_URL,
     wallets: [],
     start_height: null,
   };
@@ -245,11 +271,6 @@ export async function walletSettingsPlusKeys(
     );
   if (!secret_spend_key)
     secret_spend_key = Bun.env[`sk${wallet_settings.primary_address}`];
-  if (!secret_spend_key)
-    throw (
-      "no secret_spend_key provided and not found in env for address: " +
-      wallet_settings.primary_address
-    );
 
   return {
     ...wallet_settings,
@@ -280,6 +301,8 @@ export async function writeWalletToScanSettings(
             subaddress_index: params.subaddress_index || 1,
             halted: params.halted,
             wallet_route: params.wallet_route,
+            wallet_name: params.wallet_name,
+            wallet_index: params.wallet_index,
           },
         ],
         node_url: params.node_url,
@@ -304,6 +327,8 @@ export async function writeWalletToScanSettings(
       subaddress_index: params.subaddress_index || 1,
       halted: params.halted,
       wallet_route: params.wallet_route,
+      wallet_name: params.wallet_name,
+      wallet_index: params.wallet_index,
     });
   } else {
     // wallet already exists
@@ -313,6 +338,8 @@ export async function writeWalletToScanSettings(
         params.subaddress_index || wallet.subaddress_index || 1;
       wallet.halted = params.halted || wallet.halted;
       wallet.wallet_route = params.wallet_route || wallet.wallet_route;
+      wallet.wallet_name = params.wallet_name || wallet.wallet_name;
+      wallet.wallet_index = params.wallet_index || wallet.wallet_index;
     }
   }
 
