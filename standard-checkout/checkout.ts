@@ -186,7 +186,7 @@ async function checkoutRoute(req: Request) {
 
   const displayAmount = sessionRow.amount;
   const address = sessionRow.address;
-  const toollink = `/wallet_info#${make001ToolLink(address, AMOUNT)}`;
+  const toollink = `/wallet_info?checkoutId=${sessionId}#${make001ToolLink(address, AMOUNT)}`;
   const addressQrCode = await QRCode.toDataURL(address);
   const paymentUri = `monero:${address}?tx_amount=${displayAmount}`;
   const paymentUriQrCode = await QRCode.toDataURL(paymentUri);
@@ -573,7 +573,10 @@ const paymentStatusStyles = html`<style>
   }
 </style>`;
 
-async function walletInfoRoute() {
+async function walletInfoRoute(req: Request) {
+  const url = new URL(req.url);
+  const checkoutId = url.searchParams.get("checkoutId");
+  const backUrl = checkoutId ? `/?checkoutId=${checkoutId}` : "/";
   const content = html`
     <div class="wallet-not-detected">
       <h1>Monero Browser Wallet Not Installed</h1>
@@ -589,6 +592,9 @@ async function walletInfoRoute() {
         rel="noopener noreferrer"
       >
         Install Monero Browser Wallet
+      </a>
+      <a href="${backUrl}" class="back-btn" id="back-btn">
+        ← Back to Checkout
       </a>
       ${walletNotDetectedStyles}
     </div>
@@ -684,6 +690,23 @@ const walletNotDetectedStyles = html`<style>
     box-shadow:
       0 2px 10px rgba(124, 58, 237, 0.3),
       inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+
+  .back-btn {
+    display: block;
+    align-items: center;
+    gap: 6px;
+    margin-top: 1.5rem;
+    font-size: 0.9rem;
+    font-weight: 500;
+    font-family: inherit;
+    color: rgba(248, 250, 252, 0.5);
+    text-decoration: none;
+    transition: color 0.2s ease;
+  }
+
+  .back-btn:hover {
+    color: rgba(248, 250, 252, 0.85);
   }
 
   @media (max-width: 640px) {
