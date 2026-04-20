@@ -49,6 +49,7 @@ export function makeRoutes() {
       },
     },
     "/": { GET: checkoutRoute },
+    "/wallet_info": { GET: walletInfoRoute },
   };
 }
 
@@ -185,7 +186,7 @@ async function checkoutRoute(req: Request) {
 
   const displayAmount = sessionRow.amount;
   const address = sessionRow.address;
-  const toollink = make001ToolLink(address, AMOUNT);
+  const toollink = `/wallet_info#${make001ToolLink(address, AMOUNT)}`;
   const addressQrCode = await QRCode.toDataURL(address);
   const paymentUri = `monero:${address}?tx_amount=${displayAmount}`;
   const paymentUriQrCode = await QRCode.toDataURL(paymentUri);
@@ -569,5 +570,129 @@ const paymentStatusStyles = html`<style>
     font-family: "Inter", system-ui, sans-serif;
     color: var(--text);
     background: rgba(20, 20, 20, 0.8);
+  }
+</style>`;
+
+async function walletInfoRoute() {
+  const content = html`
+    <div class="wallet-not-detected">
+      <h1>Monero Browser Wallet Not Installed</h1>
+      <p>
+        You clicked a Monero payment link, but no browser wallet was found to
+        handle it. Please install a Monero browser wallet to pay with your
+        browser.
+      </p>
+      <a
+        href="https://monerochan.city"
+        class="install-btn"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        Install Monero Browser Wallet
+      </a>
+      ${walletNotDetectedStyles}
+    </div>
+  `;
+  return new Response(skeleton.fill(content));
+}
+
+const walletNotDetectedStyles = html`<style>
+  :root {
+    --primary: #5b21b6;
+    --accent: #7c3aed;
+    --text: #f8fafc;
+    --bg: #070707;
+    --success: #10b981;
+  }
+
+  body {
+    margin: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    background: var(--bg);
+    font-family: "Inter", system-ui, sans-serif;
+    color: var(--text);
+    padding: 1rem;
+    background-image: radial-gradient(
+      circle at 50% 50%,
+      rgba(124, 58, 237, 0.15) 0%,
+      transparent 50%
+    );
+  }
+
+  .wallet-not-detected {
+    max-width: 480px;
+    width: 100%;
+    text-align: center;
+    background: rgba(20, 20, 20, 0.8);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(124, 58, 237, 0.2);
+    border-radius: 20px;
+    padding: 3rem 2rem;
+  }
+
+  .wallet-not-detected h1 {
+    font-size: 1.75rem;
+    font-weight: 700;
+    margin: 0 0 1rem 0;
+    background: linear-gradient(135deg, #fff 0%, #a78bfa 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .wallet-not-detected p {
+    font-size: 1rem;
+    line-height: 1.7;
+    color: rgba(248, 250, 252, 0.8);
+    margin: 0 0 2rem 0;
+  }
+
+  .install-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 14px 32px;
+    font-size: 1rem;
+    font-weight: 600;
+    font-family: inherit;
+    color: #fff;
+    background: linear-gradient(135deg, var(--accent) 0%, #6d28d9 100%);
+    border: none;
+    border-radius: 12px;
+    cursor: pointer;
+    text-decoration: none;
+    text-align: center;
+    transition: all 0.25s ease;
+    box-shadow:
+      0 4px 15px rgba(124, 58, 237, 0.35),
+      inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  }
+
+  .install-btn:hover {
+    background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+    transform: translateY(-2px);
+    box-shadow:
+      0 6px 25px rgba(124, 58, 237, 0.5),
+      inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  }
+
+  .install-btn:active {
+    transform: translateY(0);
+    box-shadow:
+      0 2px 10px rgba(124, 58, 237, 0.3),
+      inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+
+  @media (max-width: 640px) {
+    .wallet-not-detected {
+      padding: 2rem 1.5rem;
+    }
+
+    .wallet-not-detected h1 {
+      font-size: 1.5rem;
+    }
   }
 </style>`;
