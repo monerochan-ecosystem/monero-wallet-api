@@ -77,3 +77,43 @@ export const WALLET_DEFAULT_ROUTE: WalletRoute = {
 export function walletRouteToString(route: WalletRoute): string {
   return `${route.identity}/${route.domain}/${route.wallet_type}/${route.wallet_slot}`;
 }
+
+export type WalletRouteResult =
+  | { ok: true; route: WalletRoute }
+  | { ok: false; error: string };
+
+export function walletRouteFromString(input: string): WalletRouteResult {
+  const parts = input.split("/");
+
+  if (parts.length < 1 || !parts[0]) {
+    return { ok: false, error: "missing identity" };
+  }
+  if (parts.length < 2 || !parts[1]) {
+    return { ok: false, error: "missing domain" };
+  }
+  if (parts.length < 3 || !parts[2]) {
+    return { ok: false, error: "missing wallet_type" };
+  }
+  if (parts.length < 4 || !parts[3]) {
+    return { ok: false, error: "missing wallet_slot" };
+  }
+
+  const [identity, domain, wallet_type, wallet_slot] = parts;
+
+  if (
+    wallet_type !== "single" &&
+    wallet_type !== "sa_multi" &&
+    wallet_type !== "pl_multi"
+  ) {
+    return { ok: false, error: `invalid wallet_type: "${wallet_type}"` };
+  }
+
+  if (Number.isNaN(parseInt(wallet_slot))) {
+    return { ok: false, error: `invalid wallet_slot: "${wallet_slot}"` };
+  }
+
+  return {
+    ok: true,
+    route: { identity, domain, wallet_type, wallet_slot },
+  };
+}
