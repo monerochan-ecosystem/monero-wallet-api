@@ -282,3 +282,12 @@ export async function shareViewKey002(
     };
   }
 }
+
+export async function potentialSuccessRedirect002(
+  payload: ShareViewkeyPayload,
+): Promise<void> {
+  const shareVKresult = await shareViewKey002(payload);
+  if (shareVKresult.ok && shareVKresult.successUrl) {
+    window.location.href = shareVKresult.successUrl;
+  }
+}
