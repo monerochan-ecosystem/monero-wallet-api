@@ -289,6 +289,7 @@ export async function potentialSuccessRedirect002(
   const shareVKresult = await shareViewKey002(payload);
   if (shareVKresult.ok && shareVKresult.successUrl) {
     window.location.href = shareVKresult.successUrl;
+    window.location.reload();
   }
 }
 
