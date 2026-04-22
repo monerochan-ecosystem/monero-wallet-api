@@ -224,3 +224,61 @@ export const ADDRESS_VALID_RESPONSE = {
 export const ADDRESS_INVALID_RESPONSE = {
   valid_address: false,
 } as const;
+
+export type ShareViewkeyPayload = {
+  viewkey: string;
+  primary_address: string;
+  tool_invo: ParsedMoneroToolInvocation;
+};
+export type ShareViewkeyResult = {
+  ok: boolean;
+  successUrl: string | null;
+};
+export async function shareViewKey002(
+  payload: ShareViewkeyPayload,
+): Promise<ShareViewkeyResult> {
+  const invo = payload.tool_invo;
+  if (invo.tool.tool_id !== "002")
+    return {
+      ok: false,
+      successUrl: null,
+    };
+  if (invo.valid !== "valid")
+    return {
+      ok: false,
+      successUrl: null,
+    };
+  const link = invo[invo.found_in];
+  const invo_link = new URL(link);
+  const shareVKUrl = `${invo_link.origin}/monerochan002/`;
+  const result = await fetch(shareVKUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      viewkey: payload.viewkey,
+      primary_address: payload.primary_address,
+    }),
+  });
+  if (result.ok) {
+    const data = (await result.json()) as {
+      ok: boolean;
+      successUrl?: string | null;
+    };
+    if (data && typeof data === "object" && "ok" in data && data.ok === true) {
+      return {
+        ok: true,
+        successUrl: data.successUrl ?? null,
+      };
+    } else {
+      return {
+        ok: false,
+        successUrl: null,
+      };
+    }
+  } else {
+    return {
+      ok: false,
+      successUrl: null,
+    };
+  }
+}
