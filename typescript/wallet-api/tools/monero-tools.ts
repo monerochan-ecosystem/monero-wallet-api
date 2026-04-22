@@ -291,3 +291,12 @@ export async function potentialSuccessRedirect002(
     window.location.href = shareVKresult.successUrl;
   }
 }
+
+export function constructPositive002Response(
+  successUrl?: string,
+): ShareViewkeyResult {
+  return {
+    ok: true,
+    successUrl: successUrl ?? null,
+  };
+}
