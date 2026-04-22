@@ -257,6 +257,7 @@ export async function shareViewKey002(
     body: JSON.stringify({
       viewkey: payload.viewkey,
       primary_address: payload.primary_address,
+      wallet_slot: invo.tool.payload.wallet_slot,
     }),
   });
   if (result.ok) {
@@ -282,7 +283,12 @@ export async function shareViewKey002(
     };
   }
 }
-
+export type ShareViewkey002Pruned = {
+  viewkey: string;
+  primary_address: string;
+  wallet_slot: string;
+};
+// client wallet side
 export async function potentialSuccessRedirect002(
   payload: ShareViewkeyPayload,
 ): Promise<void> {
@@ -293,11 +299,35 @@ export async function potentialSuccessRedirect002(
   }
 }
 
-export function constructPositive002Response(
+// backend response
+
+export async function handle002ShareRequest(
+  req: Request,
+  parsed_cb: (parsed_body: ShareViewkey002Pruned) => Promise<void>,
   successUrl?: string,
-): ShareViewkeyResult {
-  return {
-    ok: true,
-    successUrl: successUrl ?? null,
-  };
+): Promise<ShareViewkeyResult> {
+  try {
+    const json_body = await req.json();
+    const { viewkey, primary_address, wallet_slot } =
+      json_body as ShareViewkey002Pruned;
+    if (Number.isNaN(parseInt(wallet_slot))) {
+      return { ok: false, successUrl: null };
+    }
+
+    if (
+      typeof viewkey !== "string" ||
+      viewkey.trim().length === 0 ||
+      typeof primary_address !== "string" ||
+      primary_address.trim().length === 0
+    ) {
+      return { ok: false, successUrl: null };
+    }
+    await parsed_cb({ viewkey, primary_address, wallet_slot });
+    return {
+      ok: true,
+      successUrl: successUrl ?? null,
+    };
+  } catch {
+    return { ok: false, successUrl: null };
+  }
 }
