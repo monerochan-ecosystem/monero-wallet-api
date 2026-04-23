@@ -292,11 +292,13 @@ export type ShareViewkey002Pruned = {
 // client wallet side
 export async function potentialSuccessRedirect002(
   payload: ShareViewkeyPayload,
-): Promise<void> {
+): Promise<ShareViewkeyResult | undefined> {
   const shareVKresult = await shareViewKey002(payload);
   if (shareVKresult.ok && shareVKresult.successUrl) {
     window.location.href = shareVKresult.successUrl;
     window.location.reload();
+  } else {
+    return shareVKresult;
   }
 }
 
