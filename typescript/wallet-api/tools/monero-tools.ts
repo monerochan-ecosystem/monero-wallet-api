@@ -331,9 +331,6 @@ export async function handle002ShareRequest(
       if (foundSlot.primary_address !== primary_address) {
         return { ok: false, successUrl: null };
       }
-      if (foundSlot.secret_view_key !== viewkey) {
-        return { ok: false, successUrl: null };
-      }
     }
     await parsed_cb({ viewkey, primary_address, wallet_slot });
     return {
