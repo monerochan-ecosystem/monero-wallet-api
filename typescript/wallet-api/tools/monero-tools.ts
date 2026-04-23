@@ -1,3 +1,4 @@
+import type { ScanSettingOpened } from "../api";
 import { convertAmountBigIntThrows } from "../send-functionality/conversion";
 
 export const TOOL_MAGIC_STRING = "monerochan";
@@ -303,6 +304,7 @@ export async function potentialSuccessRedirect002(
 
 export async function handle002ShareRequest(
   req: Request,
+  wallets: ScanSettingOpened[],
   parsed_cb: (parsed_body: ShareViewkey002Pruned) => Promise<void>,
   successUrl?: string,
 ): Promise<ShareViewkeyResult> {
@@ -319,6 +321,17 @@ export async function handle002ShareRequest(
       typeof wallet_slot !== "number"
     ) {
       return { ok: false, successUrl: null };
+    }
+    const foundSlot = wallets.find(
+      (wallet) => wallet.wallet_slot === wallet_slot,
+    );
+    if (foundSlot) {
+      if (foundSlot.primary_address !== primary_address) {
+        return { ok: false, successUrl: null };
+      }
+      if (foundSlot.secret_view_key !== viewkey) {
+        return { ok: false, successUrl: null };
+      }
     }
     await parsed_cb({ viewkey, primary_address, wallet_slot });
     return {
