@@ -163,7 +163,20 @@ async function paymentStatusRoute(req: Request) {
           <path d="M20 6L9 17l-5-5" />
         </svg>
         <span>Payment received!</span>`
-    : "Waiting for payment...";
+    : html`<svg
+          width="24"
+          height="24"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          style="margin-right: 8px;"
+        >
+          <circle cx="12" cy="12" r="10" stroke-dasharray="4 4" />
+        </svg>
+        <span>
+          Waiting for payment... (${sessionRow.tx_confirmations}/${sessionRow.required_confirmations} confirmations)
+        </span>`;
 
   const content = html`
     <div class="payment-status ${statusClass}">
