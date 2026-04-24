@@ -4,6 +4,7 @@ import {
   make001ToolLink,
   ADDRESS_VALID_RESPONSE,
   ADDRESS_INVALID_RESPONSE,
+  convertAmountBigInt,
 } from "@spirobel/monero-wallet-api";
 import QRCode from "qrcode";
 import {
@@ -13,10 +14,12 @@ import {
   getCheckoutSessionByAddress,
   getCheckoutSessionByPrimaryId,
   markAsPaid,
+  updateTxConfirmations,
 } from "./db";
 import type { BunRequest } from "bun";
 
 const AMOUNT = "0.1337";
+const ACCEPT_AFTER_CONFIRMATIONS = 10;
 
 // ─── Skeleton ───────────────────────────────────────────────────────────────
 
@@ -62,9 +65,8 @@ let retryScheduled = false;
 const wallets = await openWallets({
   notifyMasterChanged: async (params) => {
     // sync payments on cache change
-    if (params?.changed_outputs?.length > 0) {
-      await syncPaymentStatus();
-    }
+    // sync in any case to update confirmations
+    await syncPaymentStatus();
   },
   workerError: async (err) => {
     console.log(
@@ -85,14 +87,23 @@ const mainwallet = wallets?.wallets[0];
 async function syncPaymentStatus() {
   if (!mainwallet) return;
   for (const tx of mainwallet.transactions) {
-    const firstInput = tx.outputs[0];
-    if (!firstInput) continue;
-    const payment_id = firstInput.payment_id;
-    if (!payment_id) continue;
-    const checkout_session_row =
-      await getCheckoutSessionByPrimaryId(payment_id);
+    const txConfirmations = tx.confirmations;
+    const checkout_session_row = await getCheckoutSessionByPrimaryId(
+      tx.payment_id,
+    );
     if (!checkout_session_row[0]) continue;
-    if (!checkout_session_row[0].paid_status) await markAsPaid(payment_id);
+
+    // update current confirmation count
+    await updateTxConfirmations(tx.payment_id, txConfirmations);
+
+    if (!checkout_session_row[0].paid_status) {
+      if (
+        txConfirmations >= checkout_session_row[0].required_confirmations &&
+        tx.amount >= convertAmountBigInt(checkout_session_row[0].amount)
+      ) {
+        await markAsPaid(tx.payment_id);
+      }
+    }
   }
 }
 // sync payments on startup
@@ -102,7 +113,9 @@ await syncPaymentStatus();
 
 async function newSessionRoute() {
   const secret = crypto.randomUUID();
-  const insertedRow = (await createCheckoutSession(AMOUNT, secret))[0];
+  const insertedRow = (
+    await createCheckoutSession(AMOUNT, secret, ACCEPT_AFTER_CONFIRMATIONS)
+  )[0];
 
   if (!mainwallet)
     return new Response(skeleton.fill(html`<h1>no merchant wallet found</h1>`));

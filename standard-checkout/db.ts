@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS checkout_session (
     session_id TEXT NOT NULL,
     address TEXT,
     paid_status INTEGER NOT NULL DEFAULT 0,
+    required_confirmations INTEGER NOT NULL DEFAULT 10,
+    tx_confirmations INTEGER NOT NULL DEFAULT 0,
     timestamp TEXT DEFAULT CURRENT_TIMESTAMP
   );
 `.execute();
@@ -23,6 +25,8 @@ export type CheckoutSessionRow = {
   session_id: string;
   address: string | null;
   paid_status: number;
+  required_confirmations: number;
+  tx_confirmations: number;
   timestamp: string;
 };
 
@@ -37,10 +41,11 @@ export function getCheckoutSessionByPrimaryId(
 export function createCheckoutSession(
   amount: string,
   session_id: string,
+  required_confirmations: number = 10,
 ): SQL.Query<CheckoutSessionRow[]> {
   return sql`
-    INSERT INTO checkout_session (amount, session_id, paid_status)
-    VALUES (${amount}, ${session_id}, 0)
+    INSERT INTO checkout_session (amount, session_id, paid_status, required_confirmations)
+    VALUES (${amount}, ${session_id}, 0, ${required_confirmations})
     RETURNING *
   `.execute();
 }
@@ -64,6 +69,17 @@ export function updateCheckoutSessionPaid(
     UPDATE checkout_session
     SET paid_status = ${paid_status}
     WHERE session_id = ${session_id}
+  `.execute();
+}
+
+export function updateTxConfirmations(
+  id: number,
+  tx_confirmations: number,
+): SQL.Query<CheckoutSessionRow[]> {
+  return sql`
+    UPDATE checkout_session
+    SET tx_confirmations = ${tx_confirmations}
+    WHERE id = ${id}
   `.execute();
 }
 
