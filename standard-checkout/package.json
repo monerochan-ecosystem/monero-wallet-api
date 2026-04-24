@@ -8,7 +8,7 @@
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "@types/qrcode": "^1.5.5"
+    "@types/qrcode": "1.5.5"
   },
   "peerDependencies": {
     "typescript": "^5.0.0"
@@ -16,6 +16,6 @@
   "dependencies": {
     "@spirobel/mininext": "0.8.4",
     "@spirobel/monero-wallet-api": "0.3.16",
-    "qrcode": "^1.5.4"
+    "qrcode": "1.5.4"
   }
 }
