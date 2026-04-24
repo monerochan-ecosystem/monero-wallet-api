@@ -15,6 +15,7 @@ import {
   getCheckoutSessionByPrimaryId,
   markAsPaid,
   updateTxConfirmations,
+  updateTxHash,
 } from "./db";
 import type { BunRequest } from "bun";
 
@@ -91,7 +92,17 @@ async function syncPaymentStatus() {
     const checkout_session_row = await getCheckoutSessionByPrimaryId(
       tx.payment_id,
     );
-    if (!checkout_session_row[0]) continue;
+    if (
+      !checkout_session_row[0] || // no cechkout session for this tx
+      checkout_session_row[0].paid_status === 1 || // already marked as paid
+      (checkout_session_row[0].tx_hash && // tx_hash already set and different
+        checkout_session_row[0].tx_hash !== tx.tx_hash) // tx_hash changed (only support 1 tx per session)
+    )
+      continue;
+
+    if (!checkout_session_row[0].tx_hash) {
+      await updateTxHash(tx.payment_id, tx.tx_hash);
+    }
 
     // update current confirmation count
     await updateTxConfirmations(tx.payment_id, txConfirmations);
@@ -175,7 +186,9 @@ async function paymentStatusRoute(req: Request) {
           <circle cx="12" cy="12" r="10" stroke-dasharray="4 4" />
         </svg>
         <span>
-          Waiting for payment... (${sessionRow.tx_confirmations}/${sessionRow.required_confirmations} confirmations)
+          Waiting for payment...
+          (${sessionRow.tx_confirmations}/${sessionRow.required_confirmations}
+          confirmations)
         </span>`;
 
   const content = html`

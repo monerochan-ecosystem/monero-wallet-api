@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS checkout_session (
     paid_status INTEGER NOT NULL DEFAULT 0,
     required_confirmations INTEGER NOT NULL DEFAULT 10,
     tx_confirmations INTEGER NOT NULL DEFAULT 0,
+    tx_hash TEXT,
     timestamp TEXT DEFAULT CURRENT_TIMESTAMP
   );
 `.execute();
@@ -27,6 +28,7 @@ export type CheckoutSessionRow = {
   paid_status: number;
   required_confirmations: number;
   tx_confirmations: number;
+  tx_hash: string | null;
   timestamp: string;
 };
 
@@ -79,6 +81,17 @@ export function updateTxConfirmations(
   return sql`
     UPDATE checkout_session
     SET tx_confirmations = ${tx_confirmations}
+    WHERE id = ${id}
+  `.execute();
+}
+
+export function updateTxHash(
+  id: number,
+  tx_hash: string,
+): SQL.Query<CheckoutSessionRow[]> {
+  return sql`
+    UPDATE checkout_session
+    SET tx_hash = ${tx_hash}
     WHERE id = ${id}
   `.execute();
 }
