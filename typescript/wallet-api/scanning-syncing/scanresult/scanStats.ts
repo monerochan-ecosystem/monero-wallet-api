@@ -131,6 +131,8 @@ export type FoundTransaction = {
   outputs: Output[];
   tx_hash: string;
   status: OutputStatus;
+  payment_id: number;
+  confirmations: number;
   txlog?: TxLog;
 };
 export type TxHash = string;
@@ -146,6 +148,12 @@ export type ScanStats = {
   found_transactions: Record<TxHash, FoundTransaction>;
   ordered_transactions: TxHash[];
 };
+export function confirmationsOfOutput(
+  output: Output,
+  daemon_height: number,
+): number {
+  return daemon_height - output.block_height;
+}
 export function processFoundTransactions(
   cache: ScanCache,
   stats: ScanStats,
@@ -153,9 +161,11 @@ export function processFoundTransactions(
 ) {
   stats.found_transactions = {};
   stats.ordered_transactions = [];
+  const daemon_height = cache.daemon_height;
+
   Object.entries(cache.outputs).forEach(([_, output]) => {
     const status = outputStatus(output, cache, current_height || 0);
-
+    const confirmations = confirmationsOfOutput(output, daemon_height);
     const in_ordered_transactions = stats.ordered_transactions.includes(
       output.tx_hash,
     );
@@ -176,6 +186,8 @@ export function processFoundTransactions(
         amount: output.amount,
         outputs: [output],
         tx_hash: output.tx_hash,
+        payment_id: output.payment_id,
+        confirmations,
       };
     }
     // handle spent case
@@ -198,6 +210,8 @@ export function processFoundTransactions(
           amount: -output.amount,
           outputs: [],
           tx_hash: output.spent_in_tx_hash,
+          payment_id: output.payment_id,
+          confirmations,
           txlog,
         };
       }
