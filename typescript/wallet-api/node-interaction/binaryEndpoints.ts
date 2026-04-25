@@ -350,13 +350,17 @@ export async function binaryFetchRequest(
     }
   } catch (readError) {
     console.error("Reader error:", readError, "Partial bytes:", totalBytes);
-    // Eat the error - continue to return partial data
+    throw readError;
   } finally {
     reader.releaseLock();
   }
 
   // Always return what we got (even if partial)
-  return Uint8Array.from(
-    chunks.reduce((acc: number[], chunk) => [...acc, ...chunk], []),
-  );
+  const result = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return result;
 }
