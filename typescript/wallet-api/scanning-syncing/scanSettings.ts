@@ -40,11 +40,13 @@ export type ScanSettings = {
   wallets: ScanSetting[];
   node_url: string;
   start_height: number | null;
+  merchant_confirmations?: number | null;
 };
 export type ScanSettingsOpened = {
   wallets: (ScanSettingOpened | undefined)[]; // ts should treat arrays like this by default. (value|undefined)[]
   node_url: string;
   start_height: number | null;
+  merchant_confirmations?: number | null;
 };
 /**
  * Writes scan settings to the default or specified storage file in json.
@@ -166,6 +168,57 @@ export async function readNodeUrlFromScanSettings(
 ) {
   const scanSettings = await openScanSettingsFile(settingsStorePath);
   return scanSettings?.node_url;
+}
+/**
+ * Writes the merchant confirmation threshold to scan settings.
+ *
+ * This setting only has effect when the wallet is run as part of a checkout system,
+ * that accepts payments.
+ * It determines after how many confirmations a transaction is accepted
+ * for a payment. The actual enforcement of this policy is left to the
+ * custom payment-system code that consumes this library.
+ *
+ * @param merchant_confirmations - Number of confirmations required before
+ *   accepting a payment, or `null` to leave it unset.
+ * @param settingsStorePath - Optional path for the settings file.
+ *   Defaults to `SCAN_SETTINGS_STORE_NAME_DEFAULT`.
+ * @returns A promise that resolves when the file is successfully written.
+ */
+export async function writeMerchantConfirmationsToScanSettings(
+  merchant_confirmations: number | null,
+  settingsStorePath: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
+) {
+  const scanSettings = (await openScanSettingsFile(settingsStorePath)) || {
+    node_url: LOCAL_NODE_DEFAULT_URL,
+    wallets: [],
+    start_height: null,
+  };
+  scanSettings.merchant_confirmations = merchant_confirmations;
+  return await atomicWrite(
+    settingsStorePath,
+    JSON.stringify(scanSettings, null, 2),
+  );
+}
+/**
+ * Reads the merchant confirmation threshold from scan settings.
+ *
+ * This setting only has effect when the wallet is run as part of a checkout system,
+ * that accepts payments.
+ *
+ * It determines after how many confirmations a transaction is accepted
+ * for a payment. The actual enforcement of this policy is left to the
+ * custom payment-system code that consumes this library.
+ *
+ * @param settingsStorePath - Optional path for the settings file.
+ *   Defaults to `SCAN_SETTINGS_STORE_NAME_DEFAULT`.
+ * @returns The configured number of confirmations, null, or `undefined`
+ *   if the setting has not been persisted yet.
+ */
+export async function readMerchantConfirmationsFromScanSettings(
+  settingsStorePath: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
+) {
+  const scanSettings = await openScanSettingsFile(settingsStorePath);
+  return scanSettings?.merchant_confirmations;
 }
 /**
  * Reads scan settings from the default or specified storage file.
