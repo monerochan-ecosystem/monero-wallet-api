@@ -1,56 +1,105 @@
-import { z } from "zod";
 import type { SignedTransaction } from "../send-functionality/transactionBuilding";
 
-export const GetInfoResponseSchema = z.object({
-  id: z.string(),
-  jsonrpc: z.literal("2.0"),
-  result: z.object({
-    adjusted_time: z.number(),
-    alt_blocks_count: z.number(),
-    block_size_limit: z.number(),
-    block_size_median: z.number(),
-    block_weight_limit: z.number(),
-    block_weight_median: z.number(),
-    bootstrap_daemon_address: z.string(),
-    busy_syncing: z.boolean(),
-    credits: z.number(),
-    cumulative_difficulty: z.number(),
-    cumulative_difficulty_top64: z.number(),
-    database_size: z.number(),
-    difficulty: z.number(),
-    difficulty_top64: z.number(),
-    free_space: z.number(),
-    grey_peerlist_size: z.number(),
-    height: z.number(),
-    height_without_bootstrap: z.number(),
-    incoming_connections_count: z.number(),
-    mainnet: z.boolean(),
-    nettype: z.string(),
-    offline: z.boolean(),
-    outgoing_connections_count: z.number(),
-    restricted: z.boolean(),
-    rpc_connections_count: z.number(),
-    stagenet: z.boolean(),
-    start_time: z.number(),
-    status: z.string(),
-    synchronized: z.boolean(),
-    target: z.number(),
-    target_height: z.number(),
-    testnet: z.boolean(),
-    top_block_hash: z.string(),
-    top_hash: z.string(),
-    tx_count: z.number(),
-    tx_pool_size: z.number(),
-    untrusted: z.boolean(),
-    update_available: z.boolean(),
-    version: z.string(),
-    was_bootstrap_ever_used: z.boolean(),
-    white_peerlist_size: z.number(),
-    wide_cumulative_difficulty: z.string(),
-    wide_difficulty: z.string(),
+type R<T> = { success: true; data: T } | { success: false; error: Error };
+type Infer<T> = T extends (x: unknown) => infer R ? R : never;
+
+function obj<T extends Record<string, any>>(s: {
+  [K in keyof T]: (x: unknown) => T[K];
+}) {
+  function p(d: unknown): T {
+    if (typeof d !== "object" || d === null) throw 0;
+    const r = {} as T;
+    for (const k in s) (r as any)[k] = s[k]((d as any)[k]);
+    return r;
+  }
+  p.safeParse = (d: unknown): R<T> => {
+    try {
+      return { success: true, data: p(d) };
+    } catch {
+      return { success: false, error: new Error() };
+    }
+  };
+  return p as ((x: unknown) => T) & { safeParse(x: unknown): R<T> };
+}
+const str = (x: unknown) => {
+  if (typeof x !== "string") throw 0;
+  return x;
+};
+const num = (x: unknown) => {
+  if (typeof x !== "number") throw 0;
+  return x;
+};
+const bool = (x: unknown) => {
+  if (typeof x !== "boolean") throw 0;
+  return x;
+};
+const lit =
+  <T extends string>(v: T) =>
+  (x: unknown) => {
+    if (x !== v) throw 0;
+    return v;
+  };
+const arr =
+  <T>(f: (x: unknown) => T) =>
+  (x: unknown) => {
+    if (!Array.isArray(x)) throw 0;
+    return x.map(f);
+  };
+const opt =
+  <T>(f: (x: unknown) => T) =>
+  (x: unknown) =>
+    x === undefined ? undefined : f(x);
+
+export const GetInfoResponseSchema = obj({
+  id: str,
+  jsonrpc: lit("2.0"),
+  result: obj({
+    adjusted_time: num,
+    alt_blocks_count: num,
+    block_size_limit: num,
+    block_size_median: num,
+    block_weight_limit: num,
+    block_weight_median: num,
+    bootstrap_daemon_address: str,
+    busy_syncing: bool,
+    credits: num,
+    cumulative_difficulty: num,
+    cumulative_difficulty_top64: num,
+    database_size: num,
+    difficulty: num,
+    difficulty_top64: num,
+    free_space: num,
+    grey_peerlist_size: num,
+    height: num,
+    height_without_bootstrap: num,
+    incoming_connections_count: num,
+    mainnet: bool,
+    nettype: str,
+    offline: bool,
+    outgoing_connections_count: num,
+    restricted: bool,
+    rpc_connections_count: num,
+    stagenet: bool,
+    start_time: num,
+    status: str,
+    synchronized: bool,
+    target: num,
+    target_height: num,
+    testnet: bool,
+    top_block_hash: str,
+    top_hash: str,
+    tx_count: num,
+    tx_pool_size: num,
+    untrusted: bool,
+    update_available: bool,
+    version: str,
+    was_bootstrap_ever_used: bool,
+    white_peerlist_size: num,
+    wide_cumulative_difficulty: str,
+    wide_difficulty: str,
   }),
 });
-export type GetInfoResponse = z.infer<typeof GetInfoResponseSchema>;
+export type GetInfoResponse = Infer<typeof GetInfoResponseSchema>;
 
 /**
  * Response schema for the get_output_distribution method.
@@ -65,22 +114,22 @@ export type GetInfoResponse = z.infer<typeof GetInfoResponseSchema>;
  *     - start_height:  unsigned int; Note that this is not necessarily equal to from_height, especially for amount=0 where start_height will be no less than the height of the v4 hardfork.
  *   - status: string; General RPC error code. "OK" means everything looks good.
  */
-export const GetOutputDistributionResponseSchema = z.object({
-  id: z.string(),
-  jsonrpc: z.literal("2.0"),
-  result: z.object({
-    distributions: z.array(
-      z.object({
-        amount: z.number(),
-        base: z.number(),
-        distribution: z.array(z.number()),
-        start_height: z.number(),
+export const GetOutputDistributionResponseSchema = obj({
+  id: str,
+  jsonrpc: lit("2.0"),
+  result: obj({
+    distributions: arr(
+      obj({
+        amount: num,
+        base: num,
+        distribution: arr(num),
+        start_height: num,
       }),
     ),
-    status: z.string(),
+    status: str,
   }),
 });
-export type GetOutputDistributionResponse = z.infer<
+export type GetOutputDistributionResponse = Infer<
   typeof GetOutputDistributionResponseSchema
 >;
 
@@ -208,20 +257,18 @@ export async function get_output_distribution(
  *   - fees: (Optional) Array of unsigned int; Fee estimates for priorities 1–4.
  *   - quantization_mask: unsigned int; Mask used for fee rounding.
  */
-export const GetFeeEstimateResponseSchema = z.object({
-  id: z.string(),
-  jsonrpc: z.literal("2.0"),
-  result: z.object({
-    status: z.string(),
-    fee: z.number(),
-    fees: z.array(z.number()).optional(),
-    quantization_mask: z.number(),
+export const GetFeeEstimateResponseSchema = obj({
+  id: str,
+  jsonrpc: lit("2.0"),
+  result: obj({
+    status: str,
+    fee: num,
+    fees: opt(arr(num)),
+    quantization_mask: num,
   }),
 });
 
-export type GetFeeEstimateResponse = z.infer<
-  typeof GetFeeEstimateResponseSchema
->;
+export type GetFeeEstimateResponse = Infer<typeof GetFeeEstimateResponseSchema>;
 
 export function parseGetFeeEstimateResponse(
   data: unknown,
@@ -285,21 +332,21 @@ export async function get_fee_estimate(
   return parsedResult.result;
 }
 
-export const SendRawTransactionResponseSchema = z.object({
-  double_spend: z.boolean(), // double_spend - boolean; Transaction is a double spend (true) or not (false).
-  fee_too_low: z.boolean(), // fee_too_low - boolean; Fee is too low (true) or OK (false).
-  invalid_input: z.boolean(), // invalid_input - boolean; Input is invalid (true) or valid (false).
-  invalid_output: z.boolean(), // invalid_output - boolean; Output is invalid (true) or valid (false).
-  low_mixin: z.boolean(), // low_mixin - boolean; Mixin count is too low (true) or OK (false).
-  not_rct: z.boolean().optional(), // not_rct - boolean; Transaction is a standard ring transaction (true) or a ring confidential transaction (false).
-  not_relayed: z.boolean(), // not_relayed - boolean; Transaction was not relayed (true) or relayed (false).
-  overspend: z.boolean(), // overspend - boolean; Transaction uses more money than available (true) or not (false).
-  reason: z.string(), // reason - string; Additional information. Currently empty or "Not relayed" if transaction was accepted but not relayed.
-  status: z.string(), // status - string; General RPC error code. "OK" means everything looks good. Any other value means that something went wrong.
-  too_big: z.boolean(), // too_big - boolean; Transaction size is too big (true) or OK (false).
-  untrusted: z.boolean(), // untrusted - boolean; States if the result is obtained using the bootstrap mode, and is therefore not trusted (true), or when the daemon is fully synced and thus handles the RPC locally (false)
+export const SendRawTransactionResponseSchema = obj({
+  double_spend: bool, // double_spend - boolean; Transaction is a double spend (true) or not (false).
+  fee_too_low: bool, // fee_too_low - boolean; Fee is too low (true) or OK (false).
+  invalid_input: bool, // invalid_input - boolean; Input is invalid (true) or valid (false).
+  invalid_output: bool, // invalid_output - boolean; Output is invalid (true) or valid (false).
+  low_mixin: bool, // low_mixin - boolean; Mixin count is too low (true) or OK (false).
+  not_rct: opt(bool), // not_rct - boolean; Transaction is a standard ring transaction (true) or a ring confidential transaction (false).
+  not_relayed: bool, // not_relayed - boolean; Transaction was not relayed (true) or relayed (false).
+  overspend: bool, // overspend - boolean; Transaction uses more money than available (true) or not (false).
+  reason: str, // reason - string; Additional information. Currently empty or "Not relayed" if transaction was accepted but not relayed.
+  status: str, // status - string; General RPC error code. "OK" means everything looks good. Any other value means that something went wrong.
+  too_big: bool, // too_big - boolean; Transaction size is too big (true) or OK (false).
+  untrusted: bool, // untrusted - boolean; States if the result is obtained using the bootstrap mode, and is therefore not trusted (true), or when the daemon is fully synced and thus handles the RPC locally (false)
 });
-export type SendRawTransactionResponse = z.infer<
+export type SendRawTransactionResponse = Infer<
   typeof SendRawTransactionResponseSchema
 >;
 
@@ -396,52 +443,52 @@ export async function send_raw_transaction(
  * - code: int; Error code.
  * - message: string; Error message.
  */
-export const GetBlockHeadersRangeResponseSchema = z.object({
-  id: z.string(),
-  jsonrpc: z.literal("2.0"),
-  result: z
-    .object({
-      credits: z.number(),
-      headers: z.array(
-        z.object({
-          block_size: z.number(),
-          block_weight: z.number(),
-          cumulative_difficulty: z.number(),
-          cumulative_difficulty_top64: z.number(),
-          depth: z.number(),
-          difficulty: z.number(),
-          difficulty_top64: z.number(),
-          hash: z.string(),
-          height: z.number(),
-          long_term_weight: z.number(),
-          major_version: z.number(),
-          miner_tx_hash: z.string(),
-          minor_version: z.number(),
-          nonce: z.number(),
-          num_txes: z.number(),
-          orphan_status: z.boolean(),
-          pow_hash: z.string(),
-          prev_hash: z.string(),
-          reward: z.number(),
-          timestamp: z.number(),
-          wide_cumulative_difficulty: z.string(),
-          wide_difficulty: z.string(),
+export const GetBlockHeadersRangeResponseSchema = obj({
+  id: str,
+  jsonrpc: lit("2.0"),
+  result: opt(
+    obj({
+      credits: num,
+      headers: arr(
+        obj({
+          block_size: num,
+          block_weight: num,
+          cumulative_difficulty: num,
+          cumulative_difficulty_top64: num,
+          depth: num,
+          difficulty: num,
+          difficulty_top64: num,
+          hash: str,
+          height: num,
+          long_term_weight: num,
+          major_version: num,
+          miner_tx_hash: str,
+          minor_version: num,
+          nonce: num,
+          num_txes: num,
+          orphan_status: bool,
+          pow_hash: str,
+          prev_hash: str,
+          reward: num,
+          timestamp: num,
+          wide_cumulative_difficulty: str,
+          wide_difficulty: str,
         }),
       ),
-      status: z.string(),
-      top_hash: z.string(),
-      untrusted: z.boolean(),
-    })
-    .optional(),
-  error: z
-    .object({
-      code: z.number(),
-      message: z.string(),
-    })
-    .optional(),
+      status: str,
+      top_hash: str,
+      untrusted: bool,
+    }),
+  ),
+  error: opt(
+    obj({
+      code: num,
+      message: str,
+    }),
+  ),
 });
 
-export type GetBlockHeadersRangeResponse = z.infer<
+export type GetBlockHeadersRangeResponse = Infer<
   typeof GetBlockHeadersRangeResponseSchema
 >;
 export type GetBlockHeadersRange = {

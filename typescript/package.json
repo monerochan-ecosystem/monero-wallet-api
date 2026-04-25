@@ -1,20 +1,26 @@
 {
   "name": "@spirobel/monero-wallet-api",
-  "license": "MIT",
-  "module": "dist/api.js",
-  "type": "module",
+  "version": "0.3.18",
   "main": "dist/api.js",
-  "types": "dist/api.d.ts",
-  "exports": {
-  ".": {
-    "types": "./dist/api.d.ts",
-    "import": "./dist/api.js"
+  "module": "dist/api.js",
+  "devDependencies": {
+    "@types/bun": "latest"
   },
-  "./tools": {
-    "types": "./dist/tools/monero-tools.d.ts",
-    "import": "./dist/tools/monero-tools.js"
-  }
-},
+  "peerDependencies": {
+    "typescript": "5.9.3"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/api.d.ts",
+      "import": "./dist/api.js"
+    },
+    "./tools": {
+      "types": "./dist/tools/monero-tools.d.ts",
+      "import": "./dist/tools/monero-tools.js"
+    }
+  },
+  "files": ["dist"],
+  "license": "MIT",
   "publishConfig": {
     "access": "public"
   },
@@ -39,15 +45,6 @@
     "build": "tsc",
     "clean": "rm -rf ./dist"
   },
-  "files": ["dist"],
-  "version": "0.3.18",
-  "devDependencies": {
-    "@types/bun": "latest"
-  },
-  "peerDependencies": {
-    "typescript": "5.9.3"
-  },
-  "dependencies": {
-    "zod": "4.3.6"
-  }
+  "type": "module",
+  "types": "dist/api.d.ts"
 }
