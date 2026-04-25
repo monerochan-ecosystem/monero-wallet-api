@@ -52,6 +52,7 @@ import {
   type ScanStats,
 } from "./scanStats";
 import {
+  updateSyncETA,
   readWriteConnectionStatusFile,
   type ConnectionStatus,
 } from "../connectionStatus";
@@ -609,6 +610,7 @@ export class ScanCacheOpened {
           readWriteConnectionStatusFile((cs) => {
             if (cs?.last_packet.status === "catastrophic_reorg") return;
             const connectionStatus: ConnectionStatus = {
+              ...cs,
               last_packet: {
                 status: "connection_failed",
                 bytes_read: 0,
@@ -696,6 +698,16 @@ export class ScanCacheOpened {
       lastRange(this._cache.scanned_ranges)?.end,
     );
 
+    const etaResult = await updateSyncETA(
+      this._cache.daemon_height,
+      this.current_height || 0,
+      this.last_eta_height,
+      this.last_eta_timestamp,
+      this.scan_settings_path,
+    );
+    this.last_eta_height = etaResult.last_height;
+    this.last_eta_timestamp = etaResult.last_timestamp;
+
     for (const listener of this.notifyListeners) {
       if (listener) listener(params);
     }
@@ -709,6 +721,8 @@ export class ScanCacheOpened {
     primary_address: "",
   };
   private worker?: Worker = undefined;
+  private last_eta_height: number | null = null;
+  private last_eta_timestamp: number | null = null;
 
   private constructor(
     public readonly view_pair: ViewPair,

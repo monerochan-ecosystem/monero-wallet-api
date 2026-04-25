@@ -239,6 +239,7 @@ export class ViewPair extends WasmProcessor {
           await readWriteConnectionStatusFile((cs) => {
             if (cs?.last_packet.status === "catastrophic_reorg") return;
             const connectionStatus: ConnectionStatus = {
+              ...cs,
               last_packet: {
                 status: "OK",
                 bytes_read: firstResponse.length,
@@ -278,9 +279,14 @@ export class ViewPair extends WasmProcessor {
       }
       const catastrophic_reorg_cb = async () => {
         writeConnectionStatusFile(
-          "catastrophic_reorg",
-          processor.node_url,
-          undefined,
+          {
+            last_packet: {
+              status: "catastrophic_reorg",
+              bytes_read: 0,
+              node_url: processor.node_url,
+              timestamp: new Date().toISOString(),
+            },
+          },
           scan_settings_path,
         );
       };
