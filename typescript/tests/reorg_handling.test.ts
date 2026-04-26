@@ -1,4 +1,4 @@
-import { test, expect, beforeAll } from "bun:test";
+import { test, expect, beforeAll, afterAll } from "bun:test";
 import { mkdir, readdir, rm } from "node:fs/promises";
 import {
   get_info,
@@ -6,6 +6,7 @@ import {
   openWallets,
   cacheFileDefaultLocation,
   readConnectionStatusDefaultLocation,
+  type ManyScanCachesOpened,
 } from "../dist/api";
 import {
   makeTestKeyPair,
@@ -235,7 +236,6 @@ beforeAll(
   { timeout: 600000 },
 );
 
-import { afterAll } from "bun:test";
 afterAll(async () => {
   await cleanupReorgDir();
 });
@@ -268,8 +268,6 @@ test(
     } finally {
       await stopNode(proc1);
     }
-
-    await Bun.sleep(1500);
 
     const proc2 = await startNode();
     try {
@@ -323,7 +321,7 @@ test(
     const address = kp[0].view_key.mainnet_primary;
 
     const proc = await startNode();
-    let wallets: any;
+    let wallets: ManyScanCachesOpened | undefined;
     try {
       await waitForNode();
 
@@ -338,40 +336,51 @@ test(
         SCAN_SETTINGS_PATH,
       );
 
+      let resolveReorg: () => void;
+      const reorgPromise = new Promise<void>((resolve) => {
+        resolveReorg = resolve;
+      });
+
+      let resolveSynced: () => void;
+      const syncedPromise = new Promise<void>((resolve) => {
+        resolveSynced = resolve;
+      });
+
       wallets = await openWallets({
         scan_settings_path: SCAN_SETTINGS_PATH,
         pathPrefix: `${REORG_DIR}/`,
         no_stats: true,
+        notifyMasterChanged: async (params) => {
+          if (params.newCache.reorg_info) {
+            resolveReorg();
+            return;
+          }
+          const last = params.newCache.scanned_ranges.at(-1);
+          if (last && last.end >= 5) {
+            resolveSynced();
+          }
+        },
       });
 
-      await generateBlocks(address, 10);
-      await Bun.sleep(15000);
+      await generateBlocks(address, 5);
+      await syncedPromise;
 
       await fetch(`${NODE_URL}/pop_blocks`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nblocks: 5 }),
+        body: JSON.stringify({ nblocks: 2 }),
       });
-      await generateBlocks(kp[1].view_key.mainnet_primary, 5);
+      await generateBlocks(kp[1].view_key.mainnet_primary, 3);
 
-      let hasReorg = false;
-      for (let i = 0; i < 30; i++) {
-        await Bun.sleep(1000);
-        const cachePath = cacheFileDefaultLocation(
-          address,
-          `${REORG_DIR}/`,
-        );
-        const cacheJson = JSON.parse(await Bun.file(cachePath).text());
-        if (cacheJson.reorg_info) {
-          hasReorg = true;
-          expect(cacheJson.reorg_info.split_height).toBeDefined();
-          expect(typeof cacheJson.reorg_info.split_height.block_height).toBe(
-            "number",
-          );
-          break;
-        }
-      }
-      expect(hasReorg).toBe(true);
+      await reorgPromise;
+
+      const cachePath = cacheFileDefaultLocation(address, `${REORG_DIR}/`);
+      const cacheJson = JSON.parse(await Bun.file(cachePath).text());
+      expect(cacheJson.reorg_info).toBeDefined();
+      expect(cacheJson.reorg_info.split_height).toBeDefined();
+      expect(typeof cacheJson.reorg_info.split_height.block_height).toBe(
+        "number",
+      );
 
       const connStatus = await readConnectionStatusDefaultLocation(
         SCAN_SETTINGS_PATH,
@@ -395,7 +404,7 @@ test(
     const address = kp[0].view_key.mainnet_primary;
 
     const proc1 = await startNode();
-    let wallets1: any;
+    let wallets1: ManyScanCachesOpened | undefined;
     try {
       await waitForNode();
 
@@ -410,32 +419,51 @@ test(
         SCAN_SETTINGS_PATH,
       );
 
+      let resolveSynced: () => void;
+      const syncedPromise = new Promise<void>((resolve) => {
+        resolveSynced = resolve;
+      });
+
       wallets1 = await openWallets({
         scan_settings_path: SCAN_SETTINGS_PATH,
         pathPrefix: `${REORG_DIR}/`,
         no_stats: true,
+        notifyMasterChanged: async (params) => {
+          const last = params.newCache.scanned_ranges.at(-1);
+          if (last && last.end >= 5) {
+            resolveSynced();
+          }
+        },
       });
 
-      await generateBlocks(address, 10);
-      await Bun.sleep(15000);
+      await generateBlocks(address, 5);
+      await syncedPromise;
     } finally {
       if (wallets1) wallets1.stopWorker();
       await stopNode(proc1);
     }
 
     const proc2 = await startNode();
-    let wallets2: any;
+    let wallets2: ManyScanCachesOpened | undefined;
     try {
       await waitForNode();
       await generateBlocks(address, 5);
+
+      let resolveError: () => void;
+      const errorPromise = new Promise<void>((resolve) => {
+        resolveError = resolve;
+      });
 
       wallets2 = await openWallets({
         scan_settings_path: SCAN_SETTINGS_PATH,
         pathPrefix: `${REORG_DIR}/`,
         no_stats: true,
+        workerError: () => {
+          resolveError();
+        },
       });
 
-      await Bun.sleep(5000);
+      await errorPromise;
 
       const connStatus = await readConnectionStatusDefaultLocation(
         SCAN_SETTINGS_PATH,
