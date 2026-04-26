@@ -4,10 +4,9 @@ import {
   get_info,
   writeScanSettings,
   openWallets,
-  scanWallets,
   cacheFileDefaultLocation,
   readConnectionStatusDefaultLocation,
-} from "../wallet-api/api";
+} from "../dist/api";
 import {
   makeTestKeyPair,
   type Keypair,
@@ -15,9 +14,10 @@ import {
 import type { ScanSettings } from "../wallet-api/scanning-syncing/scanSettings";
 
 const MONERONODE_DIR = "tests/moneronode";
+const REORG_DIR = `${MONERONODE_DIR}/reorg_test`;
 const MONEROD_PATH = `${MONERONODE_DIR}/monerod`;
 const KEYPAIRS_PATH = `${MONERONODE_DIR}/keypairs.json`;
-const SCAN_SETTINGS_PATH = `${MONERONODE_DIR}/ScanSettings.json`;
+const SCAN_SETTINGS_PATH = `${REORG_DIR}/ScanSettings.json`;
 const RPC_PORT = 18081;
 const NODE_URL = `http://127.0.0.1:${RPC_PORT}`;
 
@@ -221,6 +221,11 @@ async function killLeftoverMonerod(): Promise<void> {
   await p.exited;
 }
 
+async function cleanupReorgDir(): Promise<void> {
+  await rm(REORG_DIR, { force: true, recursive: true }).catch(() => {});
+  await mkdir(REORG_DIR, { recursive: true });
+}
+
 beforeAll(
   async () => {
     await killLeftoverMonerod();
@@ -229,6 +234,11 @@ beforeAll(
   },
   { timeout: 600000 },
 );
+
+import { afterAll } from "bun:test";
+afterAll(async () => {
+  await cleanupReorgDir();
+});
 
 test(
   "start monero regtest node and verify RPC responds",
@@ -306,106 +316,135 @@ test(
 );
 
 test(
-  "scan to populate cache, pop blocks, detect catastrophic reorg",
+  "pop blocks mid-session, reorg_info in cache, no catastrophic_reorg",
   async () => {
-    const keypairs = JSON.parse(
-      await Bun.file(KEYPAIRS_PATH).text(),
-    ) as Keypair[];
-    const address = keypairs[0].view_key.mainnet_primary;
+    await cleanupReorgDir();
+    const kp = JSON.parse(await Bun.file(KEYPAIRS_PATH).text()) as Keypair[];
+    const address = kp[0].view_key.mainnet_primary;
 
     const proc = await startNode();
+    let wallets: any;
     try {
       await waitForNode();
 
-      // open wallets
-      const opened = (await openWallets({
-        scan_settings_path: SCAN_SETTINGS_PATH,
-        pathPrefix: `${MONERONODE_DIR}/`,
-        no_worker: true,
-      }))!;
-      expect(opened.wallets.length).toBe(10);
-
-      // mine the first batch, then start scan while mining the rest
-      await generateBlocks(address, 10);
-
-      const abort = new AbortController();
-      let scanCaughtUp = false;
-      const scanPromise = scanWallets(
-        (params) => {
-          if (params.newCache.daemon_height >= 21) {
-            scanCaughtUp = true;
-            abort.abort();
-          }
+      await writeScanSettings(
+        {
+          wallets: kp.map((k) => ({
+            primary_address: k.view_key.mainnet_primary,
+          })),
+          node_url: NODE_URL,
+          start_height: null,
         },
-        abort.signal,
         SCAN_SETTINGS_PATH,
-        `${MONERONODE_DIR}/`,
       );
 
+      wallets = await openWallets({
+        scan_settings_path: SCAN_SETTINGS_PATH,
+        pathPrefix: `${REORG_DIR}/`,
+        no_stats: true,
+      });
+
       await generateBlocks(address, 10);
-      await scanPromise.catch(() => {});
-      expect(scanCaughtUp).toBe(true);
+      await Bun.sleep(15000);
 
-      // cache file now exists with scanned_ranges up to height 21
-      const cachePath = cacheFileDefaultLocation(address, `${MONERONODE_DIR}/`);
-      expect(await Bun.file(cachePath).exists()).toBe(true);
-
-      // pop 10 blocks, chain rewinds to height 11
-      const popResp = await fetch(`${NODE_URL}/pop_blocks`, {
+      await fetch(`${NODE_URL}/pop_blocks`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nblocks: 10 }),
+        body: JSON.stringify({ nblocks: 5 }),
       });
-      expect(popResp.ok).toBe(true);
-      expect((await get_info(NODE_URL)).height).toBe(11);
+      await generateBlocks(kp[1].view_key.mainnet_primary, 5);
 
-      // re-scan, the old cached hashes (up to 21) wont match the chain at 11,
-      // triggering handleReorg or catastrophic reorg
-      let reorgCache: any = null;
-      const abort2 = new AbortController();
-      const scanPromise2 = scanWallets(
-        (params) => {
-          reorgCache = params.newCache;
-          abort2.abort();
-        },
-        abort2.signal,
-        SCAN_SETTINGS_PATH,
-        `${MONERONODE_DIR}/`,
-      );
-      await scanPromise2.catch(() => {});
-      expect(reorgCache).not.toBeNull();
-
-      // after the reorg, evidence should be in the cache file or connection status file
-      const cacheAfter = await Bun.file(cachePath).text();
-      const cacheJson = JSON.parse(cacheAfter);
-      const connStatus =
-        await readConnectionStatusDefaultLocation(SCAN_SETTINGS_PATH);
-
-      // at least one of these must show the reorg
-      const cacheHasReorg = cacheJson.reorg_info !== undefined;
-      const connHasCatastrophic =
-        connStatus?.last_packet.status === "catastrophic_reorg";
-
-      if (!cacheHasReorg && !connHasCatastrophic) {
-        console.log("Cache file contents:", cacheAfter);
-        console.log("Connection status:", JSON.stringify(connStatus));
+      let hasReorg = false;
+      for (let i = 0; i < 30; i++) {
+        await Bun.sleep(1000);
+        const cachePath = cacheFileDefaultLocation(
+          address,
+          `${REORG_DIR}/`,
+        );
+        const cacheJson = JSON.parse(await Bun.file(cachePath).text());
+        if (cacheJson.reorg_info) {
+          hasReorg = true;
+          expect(cacheJson.reorg_info.split_height).toBeDefined();
+          expect(typeof cacheJson.reorg_info.split_height.block_height).toBe(
+            "number",
+          );
+          break;
+        }
       }
+      expect(hasReorg).toBe(true);
 
-      expect(cacheHasReorg || connHasCatastrophic).toBe(true);
+      const connStatus = await readConnectionStatusDefaultLocation(
+        SCAN_SETTINGS_PATH,
+      );
+      if (connStatus) {
+        expect(connStatus.last_packet.status).not.toBe("catastrophic_reorg");
+      }
     } finally {
+      if (wallets) wallets.stopWorker();
       await stopNode(proc);
     }
+  },
+  { timeout: 120000 },
+);
 
-    // clean up cache and status files
-    for (const kp of keypairs) {
-      const cachePath = cacheFileDefaultLocation(
-        kp.view_key.mainnet_primary,
-        `${MONERONODE_DIR}/`,
+test(
+  "reorg after restarting with a fresh chain shows catastrophic_reorg",
+  async () => {
+    await cleanupReorgDir();
+    const kp = JSON.parse(await Bun.file(KEYPAIRS_PATH).text()) as Keypair[];
+    const address = kp[0].view_key.mainnet_primary;
+
+    const proc1 = await startNode();
+    let wallets1: any;
+    try {
+      await waitForNode();
+
+      await writeScanSettings(
+        {
+          wallets: kp.map((k) => ({
+            primary_address: k.view_key.mainnet_primary,
+          })),
+          node_url: NODE_URL,
+          start_height: null,
+        },
+        SCAN_SETTINGS_PATH,
       );
-      await rm(cachePath, { force: true }).catch(() => {});
+
+      wallets1 = await openWallets({
+        scan_settings_path: SCAN_SETTINGS_PATH,
+        pathPrefix: `${REORG_DIR}/`,
+        no_stats: true,
+      });
+
+      await generateBlocks(address, 10);
+      await Bun.sleep(15000);
+    } finally {
+      if (wallets1) wallets1.stopWorker();
+      await stopNode(proc1);
     }
-    const connStatusPath = `ConnectionStatus-${SCAN_SETTINGS_PATH}`;
-    await rm(connStatusPath, { force: true }).catch(() => {});
+
+    const proc2 = await startNode();
+    let wallets2: any;
+    try {
+      await waitForNode();
+      await generateBlocks(address, 5);
+
+      wallets2 = await openWallets({
+        scan_settings_path: SCAN_SETTINGS_PATH,
+        pathPrefix: `${REORG_DIR}/`,
+        no_stats: true,
+      });
+
+      await Bun.sleep(5000);
+
+      const connStatus = await readConnectionStatusDefaultLocation(
+        SCAN_SETTINGS_PATH,
+      );
+      expect(connStatus?.last_packet.status).toBe("catastrophic_reorg");
+    } finally {
+      if (wallets2) wallets2.stopWorker();
+      await stopNode(proc2);
+    }
   },
   { timeout: 120000 },
 );
