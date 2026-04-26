@@ -1,5 +1,6 @@
 import { test } from "bun:test";
 import { NodeUrl } from "../wallet-api/node-interaction/nodeUrl";
+import type { GetBlocksResultMeta } from "../wallet-api/node-interaction/binaryEndpoints";
 import { mkdir } from "node:fs/promises";
 
 const NODE_URL = "https://xmr-01.tari.com";
@@ -43,9 +44,53 @@ async function setupFixtures() {
 }
 
 test(
-  "loadGetBlocksBinResponse",
+  "loadGetBlocksBinResponse three times with different heights",
   async () => {
     await setupFixtures();
+    const getBlocksBinResponse = new Uint8Array(
+      await Bun.file(FIXTURE_RESPONSE).arrayBuffer(),
+    );
+    const getBlocksBinResponsePlus40000 = new Uint8Array(
+      await Bun.file(FIXTURE_RESPONSE_PLUS_40000).arrayBuffer(),
+    );
+    const getBlocksBinResponsePlus50000 = new Uint8Array(
+      await Bun.file(FIXTURE_RESPONSE_PLUS_50000).arrayBuffer(),
+    );
+
+    const nodeUrl = await NodeUrl.create(NODE_URL);
+
+    const meta1 = await nodeUrl.loadGetBlocksBinResponse(getBlocksBinResponse);
+    const meta2 = await nodeUrl.loadGetBlocksBinResponse(
+      getBlocksBinResponsePlus40000,
+    );
+    const meta3 = await nodeUrl.loadGetBlocksBinResponse(
+      getBlocksBinResponsePlus50000,
+    );
+
+    if ("error" in meta1) throw new Error("meta1 has error: " + (meta1 as any).error);
+    if ("error" in meta2) throw new Error("meta2 has error: " + (meta2 as any).error);
+    if ("error" in meta3) throw new Error("meta3 has error: " + (meta3 as any).error);
+
+    if (
+      meta1.new_height === meta2.new_height ||
+      meta2.new_height === meta3.new_height ||
+      meta1.new_height === meta3.new_height
+    ) {
+      throw new Error(
+        "Expected different new_heights, got " +
+          JSON.stringify({
+            meta1: meta1.new_height,
+            meta2: meta2.new_height,
+            meta3: meta3.new_height,
+          }),
+      );
+    }
+
+    await mkdir(TEST_RESULTS_DIR, { recursive: true });
+    await Bun.write(
+      `${TEST_RESULTS_DIR}/nodeUrl.loadGetBlocksBinResponse.result.json`,
+      JSON.stringify({ meta1, meta2, meta3 }, null, 2),
+    );
   },
-  { timeout: 60000 },
+  { timeout: 120000 },
 );

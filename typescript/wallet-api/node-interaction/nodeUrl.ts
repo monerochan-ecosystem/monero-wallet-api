@@ -2,6 +2,8 @@ import {
   type Output,
   getBlocksBinExecuteRequest,
   type GetBlocksBinRequest,
+  loadGetBlocksBinResponse,
+  type GetBlocksResultMeta,
   getOutsBinJson,
   type GetOutsBinRequest,
   getOutsBinExecuteRequest,
@@ -53,6 +55,18 @@ export class NodeUrl extends WasmProcessor {
     stopSync?: AbortSignal,
   ) {
     return await getBlocksBinExecuteRequest(this, params, stopSync);
+  }
+  /**
+   * Loads a getBlocks.bin response into the WASM module.
+   * Unlike getBlocksBinExecuteRequest, this does not make a request, it parses an already fetched
+   * binary response and stores it in WASM memory. Subsequent calls overwrite the stored response.
+   * @param getBlocksBinResponseBuffer the raw binary response from the get_blocks.bin endpoint
+   * @returns metadata about the loaded blocks (new_height, daemon_height, status, block_infos)
+   */
+  public loadGetBlocksBinResponse(
+    getBlocksBinResponseBuffer: Uint8Array,
+  ): Promise<GetBlocksResultMeta> {
+    return loadGetBlocksBinResponse(this, getBlocksBinResponseBuffer);
   }
   /**
    * This request helps making requests to the get_outs.bin endpoint of the Monerod nodes.
