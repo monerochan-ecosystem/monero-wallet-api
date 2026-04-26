@@ -86,7 +86,11 @@ export async function updateSyncETA(
 export function connectionStatusFilePath(scan_settings_path?: string) {
   if (!scan_settings_path)
     scan_settings_path = SCAN_SETTINGS_STORE_NAME_DEFAULT;
-  return `${DEFAULT_CONNECTION_STATUS_PREFIX}${scan_settings_path}`;
+  const parts = scan_settings_path.split("/");
+  const basename = parts.pop()!;
+  const dir = parts.join("/");
+  const prefix = dir ? `${dir}/` : "";
+  return `${prefix}${DEFAULT_CONNECTION_STATUS_PREFIX}${basename}`;
 }
 
 export async function readConnectionStatusDefaultLocation(
