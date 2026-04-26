@@ -3,6 +3,8 @@ export type {
   ScanResult,
   ScanResultCallback,
 } from "./scanning-syncing/scanresult/scanResult";
+export type { ReorgInfo } from "../wallet-api/scanning-syncing/scanresult/reorg";
+
 export type {
   CacheChangedCallback,
   CacheChangedCallbackParameters,
