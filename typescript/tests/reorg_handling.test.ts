@@ -382,12 +382,10 @@ test(
         "number",
       );
 
-      const connStatus = await readConnectionStatusDefaultLocation(
-        SCAN_SETTINGS_PATH,
-      );
-      if (connStatus) {
-        expect(connStatus.last_packet.status).not.toBe("catastrophic_reorg");
-      }
+      const connStatus =
+        await readConnectionStatusDefaultLocation(SCAN_SETTINGS_PATH);
+      expect(connStatus).toBeDefined();
+      expect(connStatus!.last_packet.status).toBe("OK");
     } finally {
       if (wallets) wallets.stopWorker();
       await stopNode(proc);
@@ -465,9 +463,8 @@ test(
 
       await errorPromise;
 
-      const connStatus = await readConnectionStatusDefaultLocation(
-        SCAN_SETTINGS_PATH,
-      );
+      const connStatus =
+        await readConnectionStatusDefaultLocation(SCAN_SETTINGS_PATH);
       expect(connStatus?.last_packet.status).toBe("catastrophic_reorg");
     } finally {
       if (wallets2) wallets2.stopWorker();
