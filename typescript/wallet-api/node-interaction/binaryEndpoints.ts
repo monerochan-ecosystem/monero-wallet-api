@@ -219,39 +219,6 @@ export async function getBlocksBinScan<T extends WasmProcessor & HasNodeUrl>(
   );
 }
 
-export async function getBlocksBinJson<T extends WasmProcessor & HasNodeUrl>(
-  processor: T,
-  params: GetBlocksBinRequest,
-) {
-  const getBlocksRequestArray = getBlocksBinMakeRequest(processor, params);
-  const getBlocksBinResponseBuffer = await binaryFetchRequest(
-    processor.node_url + "/getblocks.bin",
-    getBlocksRequestArray, // written in build_getblocksbin_request call to readFromWasmMemory
-  );
-  processor.writeToWasmMemory = (ptr, len) => {
-    processor.writeArray(ptr, len, getBlocksBinResponseBuffer);
-  };
-  let resultMeta: GetBlocksResultMeta;
-  let result: GetBlocksBinResponse | ErrorResponse;
-  processor.readFromWasmMemory = (ptr, len) => {
-    resultMeta = JSON.parse(
-      processor.readString(ptr, len),
-    ) as GetBlocksResultMeta;
-    processor.readFromWasmMemory = (ptr, len) => {
-      result = JSON.parse(processor.readString(ptr, len)) as
-        | GetBlocksBinResponse
-        | ErrorResponse;
-      if (!("error" in result)) {
-        result.new_height = resultMeta.new_height;
-      }
-    };
-  };
-  //@ts-ignore
-  processor.tinywasi.instance.exports.convert_get_blocks_bin_response_to_json(
-    getBlocksBinResponseBuffer.length,
-  );
-  return result!; //result written in convert_get_blocks_bin_response_to_json
-}
 /**
  * throws error on failure to create request
  * @param processor wasmprocessor

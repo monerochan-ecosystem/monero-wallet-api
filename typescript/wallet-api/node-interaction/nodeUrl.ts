@@ -1,6 +1,4 @@
 import {
-  getBlocksBinJson,
-  type GetBlocksBinRequest,
   type Output,
   getOutsBinJson,
   type GetOutsBinRequest,
@@ -40,15 +38,6 @@ export class NodeUrl extends WasmProcessor {
     const nodeUrl = new NodeUrl(node_url || LOCAL_NODE_DEFAULT_URL);
     await nodeUrl.initWasmModule();
     return nodeUrl;
-  }
-  /**
-   * This request helps making requests to the get_blocks.bin endpoint of the Monerod nodes.
-   *  @link https://docs.getmonero.org/rpc-library/monerod-rpc/#get_blocksbin
-   * @param params params that will be turned into epee (moner lib that does binary serialization)
-   * @returns after the request is made it will return epee serialized objects that are then parsed into json.
-   */
-  public getBlocksBin(params: GetBlocksBinRequest) {
-    return getBlocksBinJson(this, params);
   }
   /**
    * This request helps making requests to the get_outs.bin endpoint of the Monerod nodes.

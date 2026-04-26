@@ -434,27 +434,6 @@ pub extern "C" fn get_blocks_bin_scan_one_block(block_index: u32) {
     }
   }
 }
-#[no_mangle]
-pub extern "C" fn convert_get_blocks_bin_response_to_json(response_len: usize) {
-  let response = input(response_len);
-
-  match from_bytes(&mut response.as_slice()) {
-    Ok(blocks_response) => {
-      output_string(&convert_to_json(&get_blocks_bin_response_meta(
-        &blocks_response,
-      )));
-      output_string(&convert_to_json(&blocks_response));
-    }
-    Err(error) => {
-      let error_message = format!("Error parsing getBlocksBin response: {}", error);
-      let error_json = json!({
-          "error": error_message
-      })
-      .to_string();
-      output_string(&error_json);
-    }
-  }
-}
 ///rust API
 pub fn init_viewpair_from_viewpk_primary(primary_address: &str, secret_view_key: &str) -> ViewPair {
   let view_key_bytes = <[u8; 32]>::from_hex(secret_view_key).unwrap();
