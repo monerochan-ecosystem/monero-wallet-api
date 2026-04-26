@@ -607,6 +607,7 @@ export class ScanCacheOpened {
         this.pathPrefix,
         (error) => {
           const workerErrCB = this.workerError;
+          this.stopWorker();
           readWriteConnectionStatusFile((cs) => {
             if (cs?.last_packet.status === "catastrophic_reorg") return;
             const connectionStatus: ConnectionStatus = {
@@ -619,7 +620,7 @@ export class ScanCacheOpened {
               },
             };
             return connectionStatus;
-          }).then(() => {
+          }, this.scan_settings_path).then(() => {
             if (workerErrCB) workerErrCB(error);
           });
         },

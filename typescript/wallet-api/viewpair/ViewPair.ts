@@ -275,19 +275,22 @@ export class ViewPair extends WasmProcessor {
             { block_ids: current_range.block_hashes.map((b) => b.block_hash) },
             stopSync,
           );
-          await readWriteConnectionStatusFile((cs) => {
-            if (cs?.last_packet.status === "catastrophic_reorg") return;
-            const connectionStatus: ConnectionStatus = {
-              ...cs,
-              last_packet: {
-                status: "OK",
-                bytes_read: firstResponse.length,
-                node_url: processor.node_url,
-                timestamp: new Date().toISOString(),
-              },
-            };
-            return connectionStatus;
-          });
+          await readWriteConnectionStatusFile(
+            (cs) => {
+              if (cs?.last_packet.status === "catastrophic_reorg") return;
+              const connectionStatus: ConnectionStatus = {
+                ...cs,
+                last_packet: {
+                  status: "OK",
+                  bytes_read: firstResponse.length,
+                  node_url: processor.node_url,
+                  timestamp: new Date().toISOString(),
+                },
+              };
+              return connectionStatus;
+            },
+            scan_settings_path,
+          );
 
           yield firstResponse;
         }
@@ -317,7 +320,7 @@ export class ViewPair extends WasmProcessor {
         }
       }
       const catastrophic_reorg_cb = async () => {
-        writeConnectionStatusFile(
+        await writeConnectionStatusFile(
           {
             last_packet: {
               status: "catastrophic_reorg",
