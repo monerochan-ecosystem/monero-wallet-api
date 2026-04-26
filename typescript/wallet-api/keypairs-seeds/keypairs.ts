@@ -69,6 +69,23 @@
 
 import { WasmProcessor } from "../wasm-processing/wasmProcessor";
 export type SpendKey = string;
+/**
+ *  use this function to generate a keypair for testing
+ * @returns spendkey and viewkey (contains primary address, for mainnet, testnet,stagenet)
+ */
+export async function makeTestKeyPair(): Promise<{
+  spend_key: SpendKey;
+  view_key: ViewPairJson;
+}> {
+  const spend_key = await makeSpendKey();
+  const view_key = await makeViewKey(spend_key);
+  return { spend_key, view_key };
+}
+/**
+ *  use this function to generate a spend key for testing
+ *  use the spend key to generate a view key with the makeViewKey function
+ * @returns SpendKey
+ */
 export async function makeSpendKey(): Promise<SpendKey> {
   const wasmProcessor = await WasmProcessor.init();
 
@@ -116,7 +133,13 @@ export type ViewPairJson = {
   stagenet_primary: string;
   testnet_primary: string;
 };
-
+/**
+ * spend private key is hashed with keccak to make the view private key
+ * this is according to the convention in the monero code base,
+ * read the comment at the top of the file for more details & link to source
+ * @param spend_private_key the spendkey the viewkey will be derived from
+ * @returns the viewkey that was derive from the spendkey
+ */
 export async function makeViewKey(
   spend_private_key: string,
 ): Promise<ViewPairJson> {
