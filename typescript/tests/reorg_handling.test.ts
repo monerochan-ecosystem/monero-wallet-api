@@ -1,7 +1,17 @@
 import { test, expect, beforeAll } from "bun:test";
 import { mkdir, readdir, rm } from "node:fs/promises";
-import { get_info, writeScanSettings } from "../wallet-api/api";
-import { makeTestKeyPair, type Keypair } from "../wallet-api/keypairs-seeds/keypairs";
+import {
+  get_info,
+  writeScanSettings,
+  openWallets,
+  scanWallets,
+  cacheFileDefaultLocation,
+  readConnectionStatusDefaultLocation,
+} from "../wallet-api/api";
+import {
+  makeTestKeyPair,
+  type Keypair,
+} from "../wallet-api/keypairs-seeds/keypairs";
 import type { ScanSettings } from "../wallet-api/scanning-syncing/scanSettings";
 
 const MONERONODE_DIR = "tests/moneronode";
@@ -18,7 +28,8 @@ async function setupMoneroNode(): Promise<void> {
 
   console.log("Downloading hashes.txt...");
   const hashesResp = await fetch("https://getmonero.org/downloads/hashes.txt");
-  if (!hashesResp.ok) throw new Error(`Failed to download hashes.txt: ${hashesResp.statusText}`);
+  if (!hashesResp.ok)
+    throw new Error(`Failed to download hashes.txt: ${hashesResp.statusText}`);
   const hashesText = await hashesResp.text();
   await Bun.write(`${MONERONODE_DIR}/hashes.txt`, hashesText);
 
@@ -28,9 +39,15 @@ async function setupMoneroNode(): Promise<void> {
     );
     if (gpgKeyResp.ok) {
       await Bun.write(`${MONERONODE_DIR}/binaryfate.asc`, gpgKeyResp);
-      const imp = Bun.spawn(["gpg", "--import", `${MONERONODE_DIR}/binaryfate.asc`], { stdout: "pipe", stderr: "pipe" });
+      const imp = Bun.spawn(
+        ["gpg", "--import", `${MONERONODE_DIR}/binaryfate.asc`],
+        { stdout: "pipe", stderr: "pipe" },
+      );
       await imp.exited;
-      const ver = Bun.spawn(["gpg", "--verify", `${MONERONODE_DIR}/hashes.txt`], { stdout: "pipe", stderr: "pipe" });
+      const ver = Bun.spawn(
+        ["gpg", "--verify", `${MONERONODE_DIR}/hashes.txt`],
+        { stdout: "pipe", stderr: "pipe" },
+      );
       await ver.exited;
     }
   } catch {
@@ -62,7 +79,9 @@ async function setupMoneroNode(): Promise<void> {
     if (total && Date.now() - lastLog > 2000) {
       lastLog = Date.now();
       const pct = ((downloaded / total) * 100).toFixed(1);
-      console.log(`  ${(downloaded / 1024 / 1024).toFixed(1)}MB / ${(total / 1024 / 1024).toFixed(1)}MB (${pct}%)`);
+      console.log(
+        `  ${(downloaded / 1024 / 1024).toFixed(1)}MB / ${(total / 1024 / 1024).toFixed(1)}MB (${pct}%)`,
+      );
     } else if (!total && Date.now() - lastLog > 5000) {
       lastLog = Date.now();
       console.log(`  ${(downloaded / 1024 / 1024).toFixed(1)}MB downloaded`);
@@ -78,13 +97,18 @@ async function setupMoneroNode(): Promise<void> {
   const hashLines = hashesText.split("\n").filter((l) => l.trim().length > 0);
   if (!hashLines.some((l) => l.startsWith(hashHex))) {
     await Bun.spawn(["rm", tarballPath]).exited;
-    throw new Error("SHA256 verification failed — downloaded binary may be tampered or corrupted");
+    throw new Error(
+      "sha256 verification failed, downloaded binary may be tampered or corrupted",
+    );
   }
 
   console.log("SHA256 verification passed. Extracting...");
   const extractDir = `${MONERONODE_DIR}/extracted`;
   await mkdir(extractDir, { recursive: true });
-  const tar = Bun.spawn(["tar", "-xf", tarballPath, "-C", extractDir], { stdout: "pipe", stderr: "pipe" });
+  const tar = Bun.spawn(["tar", "-xf", tarballPath, "-C", extractDir], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
   if ((await tar.exited) !== 0) {
     const err = await new Response(tar.stderr).text();
     throw new Error(`Extraction failed: ${err}`);
@@ -92,8 +116,10 @@ async function setupMoneroNode(): Promise<void> {
 
   const entries = await readdir(extractDir);
   const subdir = entries.find((e) => e.startsWith("monero-"));
-  if (!subdir) throw new Error("Unexpected tarball structure: no monero- directory found");
-  await Bun.spawn(["mv", `${extractDir}/${subdir}/monerod`, MONEROD_PATH]).exited;
+  if (!subdir)
+    throw new Error("Unexpected tarball structure: no monero- directory found");
+  await Bun.spawn(["mv", `${extractDir}/${subdir}/monerod`, MONEROD_PATH])
+    .exited;
 
   await Bun.spawn(["rm", "-rf", extractDir]).exited;
   await Bun.spawn(["rm", tarballPath]).exited;
@@ -119,16 +145,17 @@ async function waitForNode(timeoutMs = 30000): Promise<void> {
 }
 
 async function startNode(): Promise<Bun.Subprocess> {
-  await mkdir(`${MONERONODE_DIR}/data`, { recursive: true });
   return Bun.spawn(
     [
       MONEROD_PATH,
       "--regtest",
       "--offline",
-      "--fixed-difficulty", "1",
-      "--rpc-bind-ip", "127.0.0.1",
-      "--rpc-bind-port", String(RPC_PORT),
-      "--data-dir", `${MONERONODE_DIR}/data`,
+      "--fixed-difficulty",
+      "1",
+      "--rpc-bind-ip",
+      "127.0.0.1",
+      "--rpc-bind-port",
+      String(RPC_PORT),
       "--non-interactive",
     ],
     { stdin: "pipe", stdout: "pipe", stderr: "pipe" },
@@ -150,7 +177,9 @@ async function setupKeypairFixtures(): Promise<void> {
     await Bun.write(KEYPAIRS_PATH, JSON.stringify(keypairs, null, 2));
   }
 
-  const keypairs = JSON.parse(await Bun.file(KEYPAIRS_PATH).text()) as Keypair[];
+  const keypairs = JSON.parse(
+    await Bun.file(KEYPAIRS_PATH).text(),
+  ) as Keypair[];
   for (const kp of keypairs) {
     Bun.env[`sk${kp.view_key.mainnet_primary}`] = kp.spend_key;
     Bun.env[`vk${kp.view_key.mainnet_primary}`] = kp.view_key.view_key;
@@ -161,7 +190,7 @@ async function setupKeypairFixtures(): Promise<void> {
       primary_address: kp.view_key.mainnet_primary,
     })),
     node_url: NODE_URL,
-    start_height: null,
+    start_height: 0,
   };
   await writeScanSettings(scanSettings, SCAN_SETTINGS_PATH);
 }
@@ -177,76 +206,206 @@ async function generateBlocks(address: string, count: number): Promise<void> {
       params: { amount_of_blocks: count, wallet_address: address },
     }),
   });
-  if (!resp.ok) throw new Error(`generateblocks RPC failed: ${resp.statusText}`);
+  if (!resp.ok)
+    throw new Error(`generateblocks RPC failed: ${resp.statusText}`);
   const result = await resp.json();
-  if (result.error) throw new Error(`generateblocks error: ${JSON.stringify(result.error)}`);
+  if (result.error)
+    throw new Error(`generateblocks error: ${JSON.stringify(result.error)}`);
 }
 
-beforeAll(async () => {
-  await setupMoneroNode();
-  await setupKeypairFixtures();
-}, { timeout: 600000 });
+async function killLeftoverMonerod(): Promise<void> {
+  const p = Bun.spawn(["pkill", "-9", "monerod"], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  await p.exited;
+}
 
-test("start monero regtest node and verify RPC responds", async () => {
-  const proc = await startNode();
-  try {
-    await waitForNode();
-    const info = await get_info(NODE_URL);
-    expect(info.height).toBe(1);
-    expect(info.status).toBe("OK");
-  } finally {
-    await stopNode(proc);
-  }
-}, { timeout: 60000 });
+beforeAll(
+  async () => {
+    await killLeftoverMonerod();
+    await setupMoneroNode();
+    await setupKeypairFixtures();
+  },
+  { timeout: 600000 },
+);
 
-test("stop and restart monero regtest node", async () => {
-  const proc1 = await startNode();
-  try {
-    await waitForNode();
-    const info1 = await get_info(NODE_URL);
-    expect(info1.height).toBe(1);
-    expect(info1.status).toBe("OK");
-  } finally {
-    await stopNode(proc1);
-  }
+test(
+  "start monero regtest node and verify RPC responds",
+  async () => {
+    const proc = await startNode();
+    try {
+      await waitForNode();
+      const info = await get_info(NODE_URL);
+      expect(info.height).toBe(1);
+      expect(info.status).toBe("OK");
+    } finally {
+      await stopNode(proc);
+    }
+  },
+  { timeout: 60000 },
+);
 
-  await Bun.sleep(1500);
+test(
+  "stop and restart monero regtest node",
+  async () => {
+    const proc1 = await startNode();
+    try {
+      await waitForNode();
+      const info1 = await get_info(NODE_URL);
+      expect(info1.height).toBe(1);
+      expect(info1.status).toBe("OK");
+    } finally {
+      await stopNode(proc1);
+    }
 
-  const proc2 = await startNode();
-  try {
-    await waitForNode();
-    const info2 = await get_info(NODE_URL);
-    expect(info2.height).toBe(1);
-    expect(info2.status).toBe("OK");
-  } finally {
-    await stopNode(proc2);
-  }
-}, { timeout: 60000 });
+    await Bun.sleep(1500);
 
-test("mine 1000 blocks then restart with fresh chain", async () => {
-  const keypairs = JSON.parse(await Bun.file(KEYPAIRS_PATH).text()) as Keypair[];
-  const address = keypairs[0].view_key.mainnet_primary;
+    const proc2 = await startNode();
+    try {
+      await waitForNode();
+      const info2 = await get_info(NODE_URL);
+      expect(info2.height).toBe(1);
+      expect(info2.status).toBe("OK");
+    } finally {
+      await stopNode(proc2);
+    }
+  },
+  { timeout: 60000 },
+);
 
-  const proc = await startNode();
-  try {
-    await waitForNode();
-    await generateBlocks(address, 1000);
-    const info = await get_info(NODE_URL);
-    expect(info.height).toBe(1001);
-    expect(info.status).toBe("OK");
-  } finally {
-    await stopNode(proc);
-  }
+test(
+  "mine 1000 blocks then restart with fresh chain",
+  async () => {
+    const keypairs = JSON.parse(
+      await Bun.file(KEYPAIRS_PATH).text(),
+    ) as Keypair[];
+    const address = keypairs[0].view_key.mainnet_primary;
 
-  await rm(`${MONERONODE_DIR}/data`, { recursive: true, force: true });
+    const proc = await startNode();
+    try {
+      await waitForNode();
+      await generateBlocks(address, 1000);
+      const info = await get_info(NODE_URL);
+      expect(info.height).toBe(1001);
+      expect(info.status).toBe("OK");
+    } finally {
+      await stopNode(proc);
+    }
+    const proc2 = await startNode();
+    try {
+      await waitForNode();
+      const info2 = await get_info(NODE_URL);
+      expect(info2.height).toBe(1);
+      expect(info2.status).toBe("OK");
+    } finally {
+      await stopNode(proc2);
+    }
+  },
+  { timeout: 120000 },
+);
 
-  const proc2 = await startNode();
-  try {
-    await waitForNode();
-    const info2 = await get_info(NODE_URL);
-    expect(info2.height).toBe(1);
-    expect(info2.status).toBe("OK");
-  } finally {
-    await stopNode(proc2);
-  }
-}, { timeout: 120000 });
+test(
+  "scan to populate cache, pop blocks, detect catastrophic reorg",
+  async () => {
+    const keypairs = JSON.parse(
+      await Bun.file(KEYPAIRS_PATH).text(),
+    ) as Keypair[];
+    const address = keypairs[0].view_key.mainnet_primary;
+
+    const proc = await startNode();
+    try {
+      await waitForNode();
+
+      // open wallets
+      const opened = (await openWallets({
+        scan_settings_path: SCAN_SETTINGS_PATH,
+        pathPrefix: `${MONERONODE_DIR}/`,
+        no_worker: true,
+      }))!;
+      expect(opened.wallets.length).toBe(10);
+
+      // mine the first batch, then start scan while mining the rest
+      await generateBlocks(address, 10);
+
+      const abort = new AbortController();
+      let scanCaughtUp = false;
+      const scanPromise = scanWallets(
+        (params) => {
+          if (params.newCache.daemon_height >= 21) {
+            scanCaughtUp = true;
+            abort.abort();
+          }
+        },
+        abort.signal,
+        SCAN_SETTINGS_PATH,
+        `${MONERONODE_DIR}/`,
+      );
+
+      await generateBlocks(address, 10);
+      await scanPromise.catch(() => {});
+      expect(scanCaughtUp).toBe(true);
+
+      // cache file now exists with scanned_ranges up to height 21
+      const cachePath = cacheFileDefaultLocation(address, `${MONERONODE_DIR}/`);
+      expect(await Bun.file(cachePath).exists()).toBe(true);
+
+      // pop 10 blocks, chain rewinds to height 11
+      const popResp = await fetch(`${NODE_URL}/pop_blocks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nblocks: 10 }),
+      });
+      expect(popResp.ok).toBe(true);
+      expect((await get_info(NODE_URL)).height).toBe(11);
+
+      // re-scan, the old cached hashes (up to 21) wont match the chain at 11,
+      // triggering handleReorg or catastrophic reorg
+      let reorgCache: any = null;
+      const abort2 = new AbortController();
+      const scanPromise2 = scanWallets(
+        (params) => {
+          reorgCache = params.newCache;
+          abort2.abort();
+        },
+        abort2.signal,
+        SCAN_SETTINGS_PATH,
+        `${MONERONODE_DIR}/`,
+      );
+      await scanPromise2.catch(() => {});
+      expect(reorgCache).not.toBeNull();
+
+      // after the reorg, evidence should be in the cache file or connection status file
+      const cacheAfter = await Bun.file(cachePath).text();
+      const cacheJson = JSON.parse(cacheAfter);
+      const connStatus =
+        await readConnectionStatusDefaultLocation(SCAN_SETTINGS_PATH);
+
+      // at least one of these must show the reorg
+      const cacheHasReorg = cacheJson.reorg_info !== undefined;
+      const connHasCatastrophic =
+        connStatus?.last_packet.status === "catastrophic_reorg";
+
+      if (!cacheHasReorg && !connHasCatastrophic) {
+        console.log("Cache file contents:", cacheAfter);
+        console.log("Connection status:", JSON.stringify(connStatus));
+      }
+
+      expect(cacheHasReorg || connHasCatastrophic).toBe(true);
+    } finally {
+      await stopNode(proc);
+    }
+
+    // clean up cache and status files
+    for (const kp of keypairs) {
+      const cachePath = cacheFileDefaultLocation(
+        kp.view_key.mainnet_primary,
+        `${MONERONODE_DIR}/`,
+      );
+      await rm(cachePath, { force: true }).catch(() => {});
+    }
+    const connStatusPath = `ConnectionStatus-${SCAN_SETTINGS_PATH}`;
+    await rm(connStatusPath, { force: true }).catch(() => {});
+  },
+  { timeout: 120000 },
+);
