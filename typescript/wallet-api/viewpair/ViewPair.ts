@@ -196,8 +196,7 @@ export class ViewPair extends WasmProcessor {
     getBlocksBinResponseBuffer: Uint8Array,
     metaCallBack?: GetBlocksBinMetaCallback,
   ) {
-    const meta = await loadGetBlocksBinResponse(
-      this,
+    const meta = await this.loadGetBlocksBinResponse(
       getBlocksBinResponseBuffer,
     );
     if ("error" in meta) return meta as any;
