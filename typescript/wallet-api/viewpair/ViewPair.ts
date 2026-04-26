@@ -7,7 +7,6 @@ export { NodeUrl } from "../node-interaction/nodeUrl";
 import {
   getBlocksBinScan,
   getBlocksBinExecuteRequest,
-  getBlocksBinScanResponse,
   getBlocksBinScanOneBlock,
   loadGetBlocksBinResponse,
   type GetBlocksBinMetaCallback,
@@ -193,15 +192,35 @@ export class ViewPair extends WasmProcessor {
    * @param metaCallBack contains meta information about the getBlocksbin call (new sync height = start_height param + number of blocks)
    * @returns It returns {@link ScanResult} (outputs that belong to viewpair)
    */
-  public getBlocksBinScanResponse(
+  public async getBlocksBinScanResponse(
     getBlocksBinResponseBuffer: Uint8Array,
     metaCallBack?: GetBlocksBinMetaCallback,
   ) {
-    return getBlocksBinScanResponse(
+    const meta = await loadGetBlocksBinResponse(
       this,
       getBlocksBinResponseBuffer,
-      metaCallBack,
     );
+    if ("error" in meta) return meta as any;
+    if (metaCallBack) metaCallBack(meta);
+
+    const result: ScanResult = {
+      outputs: [],
+      all_key_images: [],
+      new_height: meta.new_height,
+      primary_address: meta.primary_address,
+      block_infos: meta.block_infos,
+      daemon_height: meta.daemon_height,
+    };
+
+    for (let i = 0; i < meta.block_infos.length; i++) {
+      const blockResult = await getBlocksBinScanOneBlock(this, i);
+      if ("error" in blockResult) return blockResult as any;
+      result.outputs.push(...blockResult.outputs);
+      result.all_key_images.push(...blockResult.all_key_images);
+      await sleep(10);
+    }
+
+    return result;
   }
   /**
    * Loads a getBlocks.bin response into the WASM module without scanning for outputs.
