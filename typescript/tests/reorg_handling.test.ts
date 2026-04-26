@@ -1,11 +1,13 @@
 import { test, expect, beforeAll } from "bun:test";
 import { mkdir, readdir, rm } from "node:fs/promises";
-import { get_info } from "../wallet-api/api";
+import { get_info, writeScanSettings } from "../wallet-api/api";
 import { makeTestKeyPair, type Keypair } from "../wallet-api/keypairs-seeds/keypairs";
+import type { ScanSettings } from "../wallet-api/scanning-syncing/scanSettings";
 
 const MONERONODE_DIR = "tests/moneronode";
 const MONEROD_PATH = `${MONERONODE_DIR}/monerod`;
-const KEYPAIR_PATH = `${MONERONODE_DIR}/keypair.json`;
+const KEYPAIRS_PATH = `${MONERONODE_DIR}/keypairs.json`;
+const SCAN_SETTINGS_PATH = `${MONERONODE_DIR}/ScanSettings.json`;
 const RPC_PORT = 18081;
 const NODE_URL = `http://127.0.0.1:${RPC_PORT}`;
 
@@ -138,13 +140,30 @@ async function stopNode(proc: Bun.Subprocess): Promise<void> {
   await proc.exited;
 }
 
-async function setupKeypairFixture(): Promise<Keypair> {
-  if (await Bun.file(KEYPAIR_PATH).exists()) {
-    return JSON.parse(await Bun.file(KEYPAIR_PATH).text()) as Keypair;
+async function setupKeypairFixtures(): Promise<void> {
+  if (!(await Bun.file(KEYPAIRS_PATH).exists())) {
+    const keypairs: Keypair[] = [];
+    for (let i = 0; i < 10; i++) {
+      console.log(`Generating keypair ${i + 1}/10...`);
+      keypairs.push(await makeTestKeyPair());
+    }
+    await Bun.write(KEYPAIRS_PATH, JSON.stringify(keypairs, null, 2));
   }
-  const keypair = await makeTestKeyPair();
-  await Bun.write(KEYPAIR_PATH, JSON.stringify(keypair));
-  return keypair;
+
+  const keypairs = JSON.parse(await Bun.file(KEYPAIRS_PATH).text()) as Keypair[];
+  for (const kp of keypairs) {
+    Bun.env[`sk${kp.view_key.mainnet_primary}`] = kp.spend_key;
+    Bun.env[`vk${kp.view_key.mainnet_primary}`] = kp.view_key.view_key;
+  }
+
+  const scanSettings: ScanSettings = {
+    wallets: keypairs.map((kp) => ({
+      primary_address: kp.view_key.mainnet_primary,
+    })),
+    node_url: NODE_URL,
+    start_height: null,
+  };
+  await writeScanSettings(scanSettings, SCAN_SETTINGS_PATH);
 }
 
 async function generateBlocks(address: string, count: number): Promise<void> {
@@ -165,7 +184,7 @@ async function generateBlocks(address: string, count: number): Promise<void> {
 
 beforeAll(async () => {
   await setupMoneroNode();
-  await setupKeypairFixture();
+  await setupKeypairFixtures();
 }, { timeout: 600000 });
 
 test("start monero regtest node and verify RPC responds", async () => {
@@ -205,8 +224,8 @@ test("stop and restart monero regtest node", async () => {
 }, { timeout: 60000 });
 
 test("mine 1000 blocks then restart with fresh chain", async () => {
-  const keypair = JSON.parse(await Bun.file(KEYPAIR_PATH).text()) as Keypair;
-  const address = keypair.view_key.mainnet_primary;
+  const keypairs = JSON.parse(await Bun.file(KEYPAIRS_PATH).text()) as Keypair[];
+  const address = keypairs[0].view_key.mainnet_primary;
 
   const proc = await startNode();
   try {
