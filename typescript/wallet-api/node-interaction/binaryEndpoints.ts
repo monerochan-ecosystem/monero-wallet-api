@@ -69,10 +69,6 @@ export type GetBlocksResultMeta = {
   new_height: number;
   daemon_height: number;
   status: Status;
-  primary_address:
-    | "parsing-monerod-response-without-wallet"
-    | "error-address-not-set"
-    | string;
   block_infos: BlockInfo[];
 };
 export type BlockInfo = {
@@ -194,7 +190,6 @@ export async function getBlocksBinScanResponse<T extends WasmProcessor>(
       }) as ScanResult | ErrorResponse;
       if (!("error" in result)) {
         result.new_height = resultMeta.new_height;
-        result.primary_address = resultMeta.primary_address;
         result.block_infos = resultMeta.block_infos;
         result.daemon_height = resultMeta.daemon_height;
       }
