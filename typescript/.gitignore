@@ -176,3 +176,6 @@ dist
 
 # Test fixtures for view_pair_getblocks_bin_scan
 tests/fixtures/view_pair_getblocks_bin_scan/
+
+# Test result outputs
+tests/testresults/
