@@ -1,12 +1,13 @@
 import { test, expect, beforeAll, afterAll } from "bun:test";
 import { mkdir, readdir, rm } from "node:fs/promises";
 import {
-  get_info,
   writeScanSettings,
   openWallets,
   cacheFileDefaultLocation,
   readConnectionStatusDefaultLocation,
   type ManyScanCachesOpened,
+  type ScanCache,
+  type ReorgInfo,
 } from "../dist/api";
 import {
   makeTestKeyPair,
@@ -70,7 +71,8 @@ async function setupMoneroNode(): Promise<void> {
   const total = contentLength ? Number(contentLength) : 0;
   let downloaded = 0;
   let lastLog = 0;
-  const reader = binResp.body!.getReader();
+  if (!binResp.body) throw new Error("download response has no body");
+  const reader = binResp.body.getReader();
   const writer = Bun.file(tarballPath).writer();
   while (true) {
     const { done, value } = await reader.read();
@@ -314,7 +316,7 @@ afterAll(async () => {
 // );
 
 test(
-  "pop blocks mid-session, reorg_info in cache, no catastrophic_reorg",
+  "pop blocks mid-session, cache stays intact with reorged outputs and reorg_info",
   async () => {
     await cleanupReorgDir();
     const kp = JSON.parse(await Bun.file(KEYPAIRS_PATH).text()) as Keypair[];
@@ -375,8 +377,11 @@ test(
       await reorgPromise;
 
       const cachePath = cacheFileDefaultLocation(address, `${REORG_DIR}/`);
-      const cacheJson = JSON.parse(await Bun.file(cachePath).text());
+      const cacheJson = JSON.parse(
+        await Bun.file(cachePath).text(),
+      ) as ScanCache;
       expect(cacheJson.reorg_info).toBeDefined();
+      if (!cacheJson.reorg_info) throw new Error("reorg_info missing");
       expect(cacheJson.reorg_info.split_height).toBeDefined();
       expect(typeof cacheJson.reorg_info.split_height.block_height).toBe(
         "number",
@@ -385,13 +390,140 @@ test(
       const connStatus =
         await readConnectionStatusDefaultLocation(SCAN_SETTINGS_PATH);
       expect(connStatus).toBeDefined();
-      expect(connStatus!.last_packet.status).toBe("OK");
+      if (!connStatus) throw new Error("connection status missing");
+      expect(connStatus.last_packet.status).toBe("OK");
     } finally {
       if (wallets) wallets.stopWorker();
       await stopNode(proc);
     }
   },
   { timeout: 120000 },
+);
+
+test(
+  "reorg after tx between wallets shows removed outputs and reverted spends",
+  async () => {
+    await cleanupReorgDir();
+    const kp = JSON.parse(await Bun.file(KEYPAIRS_PATH).text()) as Keypair[];
+    const address0 = kp[0].view_key.mainnet_primary;
+    const address1 = kp[1].view_key.mainnet_primary;
+
+    const proc = await startNode();
+    let wallets: ManyScanCachesOpened | undefined;
+    try {
+      await waitForNode();
+
+      await writeScanSettings(
+        {
+          wallets: [
+            { primary_address: address0 },
+            { primary_address: address1 },
+          ],
+          node_url: NODE_URL,
+          start_height: 0,
+        },
+        SCAN_SETTINGS_PATH,
+      );
+
+      let syncedCalled = false;
+      let resolveSynced: () => void;
+      const syncedPromise = new Promise<void>((resolve) => {
+        resolveSynced = resolve;
+      });
+
+      let resolvePostTxSync: () => void;
+      const postTxSyncPromise = new Promise<void>((resolve) => {
+        resolvePostTxSync = resolve;
+      });
+
+      let resolveReorg: () => void;
+      const reorgPromise = new Promise<void>((resolve) => {
+        resolveReorg = resolve;
+      });
+      let capturedReorgInfo: ReorgInfo | undefined;
+
+      wallets = await openWallets({
+        scan_settings_path: SCAN_SETTINGS_PATH,
+        pathPrefix: `${REORG_DIR}/`,
+        no_stats: true,
+        notifyMasterChanged: async (params) => {
+          const last = params.newCache.scanned_ranges.at(-1);
+          if (last && last.end >= 3000 && !syncedCalled) {
+            syncedCalled = true;
+            resolveSynced();
+            return;
+          }
+          if (last && last.end >= 3005) {
+            resolvePostTxSync();
+            return;
+          }
+          if (params.newCache.reorg_info) {
+            capturedReorgInfo =
+              capturedReorgInfo || structuredClone(params.newCache.reorg_info);
+            resolveReorg();
+            return;
+          }
+        },
+      });
+
+      await generateBlocks(address0, 3000);
+      await syncedPromise;
+
+      if (!wallets) throw new Error("wallets not opened");
+      const unsignedTx = await wallets.wallets[0].makeStandardTransaction(
+        address1,
+        "100000000000",
+      );
+      const signedTx = await wallets.wallets[0].signTransaction(unsignedTx);
+      const sendResult = await wallets.wallets[0].sendTransaction(signedTx);
+      expect(sendResult.status).toBe("OK");
+
+      await generateBlocks(address0, 5);
+      await postTxSyncPromise;
+
+      await fetch(`${NODE_URL}/pop_blocks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nblocks: 10 }),
+      });
+      await fetch(`${NODE_URL}/flush_txpool`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      await generateBlocks(address1, 10);
+
+      await reorgPromise;
+
+      if (!capturedReorgInfo) throw new Error("reorg was not detected");
+      expect(capturedReorgInfo.reverted_spends.length).toBeGreaterThan(0);
+
+      // wait for slave wallet to be fed and cache written
+      let cache1: ScanCache | undefined;
+      for (let i = 0; i < 50; i++) {
+        cache1 = JSON.parse(
+          await Bun.file(
+            cacheFileDefaultLocation(address1, `${REORG_DIR}/`),
+          ).text(),
+        ) as ScanCache;
+        if (cache1.reorg_info) break;
+        await Bun.sleep(100);
+      }
+      if (!cache1) throw new Error("slave cache was not written");
+      if (!cache1.reorg_info)
+        throw new Error("reorg_info missing on slave cache");
+      expect(cache1.reorg_info.removed_outputs.length).toBeGreaterThan(0);
+
+      const connStatus =
+        await readConnectionStatusDefaultLocation(SCAN_SETTINGS_PATH);
+      expect(connStatus).toBeDefined();
+      if (!connStatus) throw new Error("connection status missing");
+      expect(connStatus.last_packet.status).toBe("OK");
+    } finally {
+      if (wallets) wallets.stopWorker();
+      await stopNode(proc);
+    }
+  },
+  { timeout: 300000 },
 );
 
 test(
