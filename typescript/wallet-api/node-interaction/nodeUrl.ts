@@ -1,5 +1,7 @@
 import {
   type Output,
+  getBlocksBinExecuteRequest,
+  type GetBlocksBinRequest,
   getOutsBinJson,
   type GetOutsBinRequest,
   getOutsBinExecuteRequest,
@@ -38,6 +40,19 @@ export class NodeUrl extends WasmProcessor {
     const nodeUrl = new NodeUrl(node_url || LOCAL_NODE_DEFAULT_URL);
     await nodeUrl.initWasmModule();
     return nodeUrl;
+  }
+  /**
+   * Executes a get_blocks.bin request and returns the raw binary response buffer.
+   * @link https://docs.getmonero.org/rpc-library/monerod-rpc/#get_blocksbin
+   * @param params params for the get_blocks.bin request
+   * @param stopSync optional AbortSignal
+   * @returns the raw binary response buffer
+   */
+  public async getBlocksBinExecuteRequest(
+    params: GetBlocksBinRequest,
+    stopSync?: AbortSignal,
+  ) {
+    return await getBlocksBinExecuteRequest(this, params, stopSync);
   }
   /**
    * This request helps making requests to the get_outs.bin endpoint of the Monerod nodes.
