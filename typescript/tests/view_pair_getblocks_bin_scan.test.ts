@@ -57,6 +57,87 @@ async function setupFixtures() {
   });
   await Bun.write(FIXTURE_RESPONSE_PLUS_20000, responsePlus20000);
 }
+test(
+  "getBlocksBinScanOneBlock",
+  async () => {
+    await setupFixtures();
+    const keypair = JSON.parse(
+      await Bun.file(FIXTURE_KEYPAIR).text(),
+    ) as Keypair;
+    const getBlocksBinResponse = new Uint8Array(
+      await Bun.file(FIXTURE_RESPONSE).arrayBuffer(),
+    );
+  },
+  { timeout: 60000 },
+);
+
+test(
+  "loadGetBlocksBinResponse three times with different heights",
+  async () => {
+    await setupFixtures();
+    const keypair = JSON.parse(
+      await Bun.file(FIXTURE_KEYPAIR).text(),
+    ) as Keypair;
+    const getBlocksBinResponse = new Uint8Array(
+      await Bun.file(FIXTURE_RESPONSE).arrayBuffer(),
+    );
+    const getBlocksBinResponsePlus10000 = new Uint8Array(
+      await Bun.file(FIXTURE_RESPONSE_PLUS_10000).arrayBuffer(),
+    );
+    const getBlocksBinResponsePlus20000 = new Uint8Array(
+      await Bun.file(FIXTURE_RESPONSE_PLUS_20000).arrayBuffer(),
+    );
+
+    const viewPair = await ViewPair.create(
+      keypair.view_key.mainnet_primary,
+      keypair.view_key.view_key,
+      0,
+      NODE_URL,
+    );
+
+    const meta1 = await viewPair.loadGetBlocksBinResponse(getBlocksBinResponse);
+    const meta2 = await viewPair.loadGetBlocksBinResponse(
+      getBlocksBinResponsePlus10000,
+    );
+    const meta3 = await viewPair.loadGetBlocksBinResponse(
+      getBlocksBinResponsePlus20000,
+    );
+
+    if ("error" in meta1) throw new Error("meta1 has error: " + meta1.error);
+    if ("error" in meta2) throw new Error("meta2 has error: " + meta2.error);
+    if ("error" in meta3) throw new Error("meta3 has error: " + meta3.error);
+
+    if (
+      meta1.new_height === meta2.new_height ||
+      meta2.new_height === meta3.new_height ||
+      meta1.new_height === meta3.new_height
+    ) {
+      throw new Error(
+        "Expected different new_heights, got " +
+          JSON.stringify({
+            meta1: meta1.new_height,
+            meta2: meta2.new_height,
+            meta3: meta3.new_height,
+          }),
+      );
+    }
+
+    await mkdir(TEST_RESULTS_DIR, { recursive: true });
+    await Bun.write(
+      `${TEST_RESULTS_DIR}/loadGetBlocksBinResponse.result.json`,
+      JSON.stringify(
+        {
+          meta1,
+          meta2,
+          meta3,
+        },
+        null,
+        2,
+      ),
+    );
+  },
+  { timeout: 120000 },
+);
 
 test(
   "getBlocksBinClassicScanResponse",
@@ -117,88 +198,4 @@ test(
     );
   },
   { timeout: 60000 },
-);
-
-test(
-  "getBlocksBinScanOneBlock",
-  async () => {
-    await setupFixtures();
-    const keypair = JSON.parse(
-      await Bun.file(FIXTURE_KEYPAIR).text(),
-    ) as Keypair;
-    const getBlocksBinResponse = new Uint8Array(
-      await Bun.file(FIXTURE_RESPONSE).arrayBuffer(),
-    );
-  },
-  { timeout: 60000 },
-);
-
-test(
-  "loadGetBlocksBinResponse three times with different heights",
-  async () => {
-    await setupFixtures();
-    const keypair = JSON.parse(
-      await Bun.file(FIXTURE_KEYPAIR).text(),
-    ) as Keypair;
-    const getBlocksBinResponse = new Uint8Array(
-      await Bun.file(FIXTURE_RESPONSE).arrayBuffer(),
-    );
-    const getBlocksBinResponsePlus10000 = new Uint8Array(
-      await Bun.file(FIXTURE_RESPONSE_PLUS_10000).arrayBuffer(),
-    );
-    const getBlocksBinResponsePlus20000 = new Uint8Array(
-      await Bun.file(FIXTURE_RESPONSE_PLUS_20000).arrayBuffer(),
-    );
-
-    const viewPair = await ViewPair.create(
-      keypair.view_key.mainnet_primary,
-      keypair.view_key.view_key,
-      0,
-      NODE_URL,
-    );
-
-    const meta1 = await viewPair.loadGetBlocksBinResponse(
-      getBlocksBinResponse,
-    );
-    const meta2 = await viewPair.loadGetBlocksBinResponse(
-      getBlocksBinResponsePlus10000,
-    );
-    const meta3 = await viewPair.loadGetBlocksBinResponse(
-      getBlocksBinResponsePlus20000,
-    );
-
-    if ("error" in meta1) throw new Error("meta1 has error: " + meta1.error);
-    if ("error" in meta2) throw new Error("meta2 has error: " + meta2.error);
-    if ("error" in meta3) throw new Error("meta3 has error: " + meta3.error);
-
-    if (
-      meta1.new_height === meta2.new_height ||
-      meta2.new_height === meta3.new_height ||
-      meta1.new_height === meta3.new_height
-    ) {
-      throw new Error(
-        "Expected different new_heights, got " +
-          JSON.stringify({
-            meta1: meta1.new_height,
-            meta2: meta2.new_height,
-            meta3: meta3.new_height,
-          }),
-      );
-    }
-
-    await mkdir(TEST_RESULTS_DIR, { recursive: true });
-    await Bun.write(
-      `${TEST_RESULTS_DIR}/loadGetBlocksBinResponse.result.json`,
-      JSON.stringify(
-        {
-          meta1,
-          meta2,
-          meta3,
-        },
-        null,
-        2,
-      ),
-    );
-  },
-  { timeout: 120000 },
 );
