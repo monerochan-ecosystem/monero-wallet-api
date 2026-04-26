@@ -352,6 +352,29 @@ export async function loadGetBlocksBinResponse<T extends WasmProcessor>(
   return resultMeta!;
 }
 
+/**
+ * Scans a single block from the previously loaded getBlocks.bin response.
+ * Call loadGetBlocksBinResponse first to load a response into WASM memory.
+ * @param processor the WASM processor
+ * @param blockIndex index of the block within the loaded response (0-based)
+ * @returns scan result with outputs and key images for that one block
+ */
+export async function getBlocksBinScanOneBlock<T extends WasmProcessor>(
+  processor: T,
+  blockIndex: number,
+) {
+  let result: ScanResult | ErrorResponse;
+  processor.readFromWasmMemory = (ptr, len) => {
+    result = JSON.parse(processor.readString(ptr, len), (key, value) => {
+      if (key === "amount") return BigInt(value);
+      return value;
+    }) as ScanResult | ErrorResponse;
+  };
+  //@ts-ignore
+  processor.tinywasi.instance.exports.get_blocks_bin_scan_one_block(blockIndex);
+  return result!;
+}
+
 export async function binaryFetchRequest(
   url: string,
   body: Uint8Array,

@@ -70,7 +70,7 @@ pub fn get_blocks_bin_response_meta(
   }
 }
 #[derive(serde::Serialize, Debug)]
-struct InputImage {
+pub(crate) struct InputImage {
   key_image_hex: String,
   relative_index: usize,
   tx_hash: String, // Assuming tx has a method like tx.hash() returning [u8; 32]
@@ -100,7 +100,7 @@ pub fn scan_blocks(
   return final_output_json.to_string();
 }
 
-fn scan_block(
+pub(crate) fn scan_block(
   scanner: &Scanner,
   primary_address: &str,
   get_blocks_bin: &GetBlocksResponse,

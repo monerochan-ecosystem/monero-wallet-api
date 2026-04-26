@@ -8,6 +8,7 @@ import {
   getBlocksBinScan,
   getBlocksBinExecuteRequest,
   getBlocksBinScanResponse,
+  getBlocksBinScanOneBlock,
   loadGetBlocksBinResponse,
   type GetBlocksBinMetaCallback,
   type GetBlocksBinRequest,
@@ -211,6 +212,15 @@ export class ViewPair extends WasmProcessor {
    */
   public loadGetBlocksBinResponse(getBlocksBinResponseBuffer: Uint8Array) {
     return loadGetBlocksBinResponse(this, getBlocksBinResponseBuffer);
+  }
+  /**
+   * Scans a single block from the previously loaded getBlocks.bin response by index.
+   * Call loadGetBlocksBinResponse first to load a response into WASM memory.
+   * @param blockIndex index of the block within the loaded response (0-based)
+   * @returns scan result with outputs and key images for that one block
+   */
+  public getBlocksBinScanOneBlock(blockIndex: number) {
+    return getBlocksBinScanOneBlock(this, blockIndex);
   }
   /**
    * scan

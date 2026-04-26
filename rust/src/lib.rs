@@ -3,6 +3,7 @@ pub mod transaction_building;
 pub mod keypairs;
 use block_parsing::convert_to_json;
 use block_parsing::get_blocks_bin_response_meta;
+use block_parsing::scan_block;
 use block_parsing::scan_blocks;
 use cuprate_epee_encoding::{from_bytes, to_bytes};
 use cuprate_rpc_types::bin::{GetBlocksRequest, GetBlocksResponse, GetOutsRequest, GetOutsResponse};
@@ -400,6 +401,40 @@ pub extern "C" fn load_get_blocks_bin_response(response_len: usize) {
           "error": error_message
       })
       .to_string();
+      output_string(&error_json);
+    }
+  }
+}
+#[no_mangle]
+pub extern "C" fn get_blocks_bin_scan_one_block(block_index: u32) {
+  let scanner = GLOBAL_SCANNER.with_borrow(|scanner| scanner.clone());
+  let primary_address =
+    GLOBAL_PRIMARY_ADDRESS.with_borrow(|primary_address| primary_address.clone());
+  let result = GLOBAL_GET_BLOCKS_BIN_RESPONSE.with_borrow(|response| {
+    match response {
+      Some(ref get_blocks_bin) => {
+        if (block_index as usize) >= get_blocks_bin.blocks.len() {
+          return Err(format!(
+            "Block index {} out of bounds (total blocks: {})",
+            block_index,
+            get_blocks_bin.blocks.len()
+          ));
+        }
+        match scan_block(&scanner, &primary_address, get_blocks_bin, block_index as usize) {
+          Ok((output_jsons, input_images_jsons)) => {
+            let result_json = json!({"outputs": output_jsons, "all_key_images": input_images_jsons});
+            Ok(convert_to_json(&result_json))
+          }
+          Err(error_string) => Err(error_string),
+        }
+      }
+      None => Err("No getBlocks.bin response loaded. Call loadGetBlocksBinResponse first.".to_string()),
+    }
+  });
+  match result {
+    Ok(json) => output_string(&json),
+    Err(error_msg) => {
+      let error_json = json!({"error": error_msg}).to_string();
       output_string(&error_json);
     }
   }

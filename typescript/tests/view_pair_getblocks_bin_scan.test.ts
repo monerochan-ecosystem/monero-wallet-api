@@ -67,6 +67,37 @@ test(
     const getBlocksBinResponse = new Uint8Array(
       await Bun.file(FIXTURE_RESPONSE).arrayBuffer(),
     );
+
+    const viewPair = await ViewPair.create(
+      keypair.view_key.mainnet_primary,
+      keypair.view_key.view_key,
+      0,
+      NODE_URL,
+    );
+
+    const meta = await viewPair.loadGetBlocksBinResponse(getBlocksBinResponse);
+    if ("error" in meta) throw new Error("meta has error: " + meta.error);
+
+    const scanResults = [];
+    for (let i = 0; i < meta.block_infos.length; i++) {
+      const result = await viewPair.getBlocksBinScanOneBlock(i);
+      if ("error" in result) throw new Error("error scanning block " + i + ": " + (result as { error: string }).error);
+      scanResults.push({
+        block_index: i,
+        block_height: meta.block_infos[i].block_height,
+        result: JSON.parse(
+          JSON.stringify(result, (_, v) =>
+            typeof v === "bigint" ? v.toString() : v,
+          ),
+        ),
+      });
+    }
+
+    await mkdir(TEST_RESULTS_DIR, { recursive: true });
+    await Bun.write(
+      `${TEST_RESULTS_DIR}/getBlocksBinScanOneBlock.result.json`,
+      JSON.stringify({ meta, scanResults }, null, 2),
+    );
   },
   { timeout: 60000 },
 );
