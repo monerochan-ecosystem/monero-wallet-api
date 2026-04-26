@@ -174,8 +174,8 @@ dist
 # Finder (MacOS) folder config
 .DS_Store
 
-# Test fixtures for view_pair_getblocks_bin_scan
-tests/fixtures/view_pair_getblocks_bin_scan/
+# Test fixtures for view_pair_getblocks_bin_scan and all others
+tests/fixtures/
 
 # Test result outputs
 tests/testresults/
