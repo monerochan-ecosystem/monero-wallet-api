@@ -37,12 +37,10 @@ pub struct GetBlocksResult {
   new_height: u64,
   daemon_height: u64,
   status: Status,
-  primary_address: String,
   block_infos: Vec<BlockInfo>,
 }
 pub fn get_blocks_bin_response_meta(
   get_blocks_bin: &GetBlocksResponse,
-  primary_address: &str,
 ) -> GetBlocksResult {
   let new_height = get_blocks_bin.start_height + (get_blocks_bin.blocks.len() as u64);
   let daemon_height = get_blocks_bin.current_height;
@@ -65,7 +63,6 @@ pub fn get_blocks_bin_response_meta(
     new_height,
     daemon_height,
     status: get_blocks_bin.base.response_base.status.clone(),
-    primary_address: primary_address.to_string(),
     block_infos,
   }
 }

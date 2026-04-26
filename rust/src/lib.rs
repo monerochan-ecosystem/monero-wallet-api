@@ -367,10 +367,7 @@ pub extern "C" fn scan_blocks_with_get_blocks_bin(response_len: usize) {
     Ok(blocks_response) => GLOBAL_SCANNER.with_borrow(|scanner| {
       let primary_address =
         GLOBAL_PRIMARY_ADDRESS.with_borrow(|primary_address| primary_address.clone());
-      output_string(&convert_to_json(&get_blocks_bin_response_meta(
-        &blocks_response,
-        &primary_address,
-      )));
+      output_string(&convert_to_json(&get_blocks_bin_response_meta(&blocks_response)));
       output_string(&scan_blocks(scanner.clone(), &primary_address, blocks_response));
     }),
     Err(error) => {
@@ -389,9 +386,7 @@ pub extern "C" fn load_get_blocks_bin_response(response_len: usize) {
 
   match from_bytes(&mut response.as_slice()) {
     Ok(blocks_response) => {
-      let primary_address =
-        GLOBAL_PRIMARY_ADDRESS.with_borrow(|primary_address| primary_address.clone());
-      let meta = get_blocks_bin_response_meta(&blocks_response, &primary_address);
+      let meta = get_blocks_bin_response_meta(&blocks_response);
       GLOBAL_GET_BLOCKS_BIN_RESPONSE.set(Some(blocks_response));
       output_string(&convert_to_json(&meta));
     }
@@ -447,7 +442,6 @@ pub extern "C" fn convert_get_blocks_bin_response_to_json(response_len: usize) {
     Ok(blocks_response) => {
       output_string(&convert_to_json(&get_blocks_bin_response_meta(
         &blocks_response,
-        "parsing-monerod-response-without-wallet",
       )));
       output_string(&convert_to_json(&blocks_response));
     }

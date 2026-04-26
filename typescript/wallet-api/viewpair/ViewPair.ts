@@ -206,7 +206,7 @@ export class ViewPair extends WasmProcessor {
       outputs: [],
       all_key_images: [],
       new_height: meta.new_height,
-      primary_address: meta.primary_address,
+      primary_address: this.primary_address,
       block_infos: meta.block_infos,
       daemon_height: meta.daemon_height,
     };
