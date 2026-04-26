@@ -1,9 +1,11 @@
 import { test, expect, beforeAll } from "bun:test";
-import { mkdir, readdir } from "node:fs/promises";
+import { mkdir, readdir, rm } from "node:fs/promises";
 import { get_info } from "../wallet-api/api";
+import { makeTestKeyPair, type Keypair } from "../wallet-api/keypairs-seeds/keypairs";
 
 const MONERONODE_DIR = "tests/moneronode";
 const MONEROD_PATH = `${MONERONODE_DIR}/monerod`;
+const KEYPAIR_PATH = `${MONERONODE_DIR}/keypair.json`;
 const RPC_PORT = 18081;
 const NODE_URL = `http://127.0.0.1:${RPC_PORT}`;
 
@@ -136,8 +138,34 @@ async function stopNode(proc: Bun.Subprocess): Promise<void> {
   await proc.exited;
 }
 
+async function setupKeypairFixture(): Promise<Keypair> {
+  if (await Bun.file(KEYPAIR_PATH).exists()) {
+    return JSON.parse(await Bun.file(KEYPAIR_PATH).text()) as Keypair;
+  }
+  const keypair = await makeTestKeyPair();
+  await Bun.write(KEYPAIR_PATH, JSON.stringify(keypair));
+  return keypair;
+}
+
+async function generateBlocks(address: string, count: number): Promise<void> {
+  const resp = await fetch(`${NODE_URL}/json_rpc`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: "0",
+      method: "generateblocks",
+      params: { amount_of_blocks: count, wallet_address: address },
+    }),
+  });
+  if (!resp.ok) throw new Error(`generateblocks RPC failed: ${resp.statusText}`);
+  const result = await resp.json();
+  if (result.error) throw new Error(`generateblocks error: ${JSON.stringify(result.error)}`);
+}
+
 beforeAll(async () => {
   await setupMoneroNode();
+  await setupKeypairFixture();
 }, { timeout: 600000 });
 
 test("start monero regtest node and verify RPC responds", async () => {
@@ -175,3 +203,31 @@ test("stop and restart monero regtest node", async () => {
     await stopNode(proc2);
   }
 }, { timeout: 60000 });
+
+test("mine 1000 blocks then restart with fresh chain", async () => {
+  const keypair = JSON.parse(await Bun.file(KEYPAIR_PATH).text()) as Keypair;
+  const address = keypair.view_key.mainnet_primary;
+
+  const proc = await startNode();
+  try {
+    await waitForNode();
+    await generateBlocks(address, 1000);
+    const info = await get_info(NODE_URL);
+    expect(info.height).toBe(1001);
+    expect(info.status).toBe("OK");
+  } finally {
+    await stopNode(proc);
+  }
+
+  await rm(`${MONERONODE_DIR}/data`, { recursive: true, force: true });
+
+  const proc2 = await startNode();
+  try {
+    await waitForNode();
+    const info2 = await get_info(NODE_URL);
+    expect(info2.height).toBe(1);
+    expect(info2.status).toBe("OK");
+  } finally {
+    await stopNode(proc2);
+  }
+}, { timeout: 120000 });
