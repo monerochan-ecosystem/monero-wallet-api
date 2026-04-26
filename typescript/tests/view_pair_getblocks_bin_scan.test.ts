@@ -11,6 +11,7 @@ const START_HEIGHT = 3160222;
 const FIXTURES_DIR = "tests/fixtures/view_pair_getblocks_bin_scan";
 const FIXTURE_KEYPAIR = `${FIXTURES_DIR}/keypair.json`;
 const FIXTURE_RESPONSE = `${FIXTURES_DIR}/getblocks.bin.response`;
+const TEST_RESULTS_DIR = "tests/testresults";
 
 async function setupFixtures() {
   const keypairFile = Bun.file(FIXTURE_KEYPAIR);
@@ -55,17 +56,44 @@ test(
       NODE_URL,
     );
 
+    // This test saves its output to tests/testresults/getBlocksBinClassicScanResponse.result.json
+    // The JSON includes timestamps for when the meta callback arrives and when the scan finishes,
+    // plus the duration between those two events in seconds.
+    await mkdir(TEST_RESULTS_DIR, { recursive: true });
+
+    let metaTimestamp: string | null = null;
+    let metaData: unknown = null;
+
     const result = await viewPair.getBlocksBinScanResponse(
       getBlocksBinResponse,
       (meta) => {
-        console.log("meta callback:", meta);
+        metaTimestamp = new Date().toISOString();
+        metaData = meta;
       },
     );
-    console.log(
-      "scan result:",
-      JSON.stringify(result, (_, v) =>
-        typeof v === "bigint" ? v.toString() : v,
+
+    const finishTimestamp = new Date().toISOString();
+    const durationSeconds = metaTimestamp
+      ? (new Date(finishTimestamp).getTime() -
+          new Date(metaTimestamp).getTime()) /
+        1000
+      : null;
+
+    const output = {
+      durationSeconds,
+      metaTimestamp,
+      finishTimestamp,
+      meta: metaData,
+      result: JSON.parse(
+        JSON.stringify(result, (_, v) =>
+          typeof v === "bigint" ? v.toString() : v,
+        ),
       ),
+    };
+
+    await Bun.write(
+      `${TEST_RESULTS_DIR}/getBlocksBinClassicScanResponse.result.json`,
+      JSON.stringify(output, null, 2),
     );
   },
   { timeout: 60000 },
