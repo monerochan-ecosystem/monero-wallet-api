@@ -322,6 +322,16 @@ export async function getOutsBinJson<T extends WasmProcessor & HasNodeUrl>(
   return result as GetOutsBinResponse;
 }
 
+/**
+ * Loads a getBlocks.bin response into the WASM module for later single-block scanning
+ * via repeated calls to scan_block. Unlike getBlocksBinScanResponse, this does not
+ * scan any outputs,it only returns the block metadata (heights, timestamps, hashes).
+ * Each call overwrites the previously stored response, so it can be called repeatedly
+ * without leaking memory.
+ * @param processor the WASM processor used to interface with the Rust module, eg ViewPair in viewpair.ts
+ * @param getBlocksBinResponseBuffer the raw binary response from the get_blocks.bin endpoint
+ * @returns metadata about the loaded blocks (new_height, daemon_height, status, block_infos)
+ */
 export async function loadGetBlocksBinResponse<T extends WasmProcessor>(
   processor: T,
   getBlocksBinResponseBuffer: Uint8Array,
@@ -360,16 +370,12 @@ export async function binaryFetchRequest(
     10,
   );
   if (contentLength > MAX_SIZE) {
-    throw new Error(
-      `Response exceeds 120MB (${contentLength} bytes)`,
-    );
+    throw new Error(`Response exceeds 120MB (${contentLength} bytes)`);
   }
 
   const buffer = await response.arrayBuffer();
   if (buffer.byteLength > MAX_SIZE) {
-    throw new Error(
-      `Response exceeds 120MB (${buffer.byteLength} bytes)`,
-    );
+    throw new Error(`Response exceeds 120MB (${buffer.byteLength} bytes)`);
   }
 
   return new Uint8Array(buffer);

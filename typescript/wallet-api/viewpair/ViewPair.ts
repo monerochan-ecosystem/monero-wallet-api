@@ -202,13 +202,15 @@ export class ViewPair extends WasmProcessor {
       metaCallBack,
     );
   }
-  public loadGetBlocksBinResponse(
-    getBlocksBinResponseBuffer: Uint8Array,
-  ) {
-    return loadGetBlocksBinResponse(
-      this,
-      getBlocksBinResponseBuffer,
-    );
+  /**
+   * Loads a getBlocks.bin response into the WASM module without scanning for outputs.
+   * The stored response can later be used to scan individual blocks. Subsequent calls
+   * overwrite the previously stored response.
+   * @param getBlocksBinResponseBuffer the raw binary response from the get_blocks.bin endpoint
+   * @returns metadata about the loaded blocks (new_height, daemon_height, status, block_infos)
+   */
+  public loadGetBlocksBinResponse(getBlocksBinResponseBuffer: Uint8Array) {
+    return loadGetBlocksBinResponse(this, getBlocksBinResponseBuffer);
   }
   /**
    * scan
