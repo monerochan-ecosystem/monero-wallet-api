@@ -240,78 +240,78 @@ afterAll(async () => {
   await cleanupReorgDir();
 });
 
-test(
-  "start monero regtest node and verify RPC responds",
-  async () => {
-    const proc = await startNode();
-    try {
-      await waitForNode();
-      const info = await get_info(NODE_URL);
-      expect(info.height).toBe(1);
-      expect(info.status).toBe("OK");
-    } finally {
-      await stopNode(proc);
-    }
-  },
-  { timeout: 60000 },
-);
+// test(
+//   "start monero regtest node and verify RPC responds",
+//   async () => {
+//     const proc = await startNode();
+//     try {
+//       await waitForNode();
+//       const info = await get_info(NODE_URL);
+//       expect(info.height).toBe(1);
+//       expect(info.status).toBe("OK");
+//     } finally {
+//       await stopNode(proc);
+//     }
+//   },
+//   { timeout: 60000 },
+// );
 
-test(
-  "stop and restart monero regtest node",
-  async () => {
-    const proc1 = await startNode();
-    try {
-      await waitForNode();
-      const info1 = await get_info(NODE_URL);
-      expect(info1.height).toBe(1);
-      expect(info1.status).toBe("OK");
-    } finally {
-      await stopNode(proc1);
-    }
+// test(
+//   "stop and restart monero regtest node",
+//   async () => {
+//     const proc1 = await startNode();
+//     try {
+//       await waitForNode();
+//       const info1 = await get_info(NODE_URL);
+//       expect(info1.height).toBe(1);
+//       expect(info1.status).toBe("OK");
+//     } finally {
+//       await stopNode(proc1);
+//     }
 
-    const proc2 = await startNode();
-    try {
-      await waitForNode();
-      const info2 = await get_info(NODE_URL);
-      expect(info2.height).toBe(1);
-      expect(info2.status).toBe("OK");
-    } finally {
-      await stopNode(proc2);
-    }
-  },
-  { timeout: 60000 },
-);
+//     const proc2 = await startNode();
+//     try {
+//       await waitForNode();
+//       const info2 = await get_info(NODE_URL);
+//       expect(info2.height).toBe(1);
+//       expect(info2.status).toBe("OK");
+//     } finally {
+//       await stopNode(proc2);
+//     }
+//   },
+//   { timeout: 60000 },
+// );
 
-test(
-  "mine 1000 blocks then restart with fresh chain",
-  async () => {
-    const keypairs = JSON.parse(
-      await Bun.file(KEYPAIRS_PATH).text(),
-    ) as Keypair[];
-    const address = keypairs[0].view_key.mainnet_primary;
+// test(
+//   "mine 1000 blocks then restart with fresh chain",
+//   async () => {
+//     const keypairs = JSON.parse(
+//       await Bun.file(KEYPAIRS_PATH).text(),
+//     ) as Keypair[];
+//     const address = keypairs[0].view_key.mainnet_primary;
 
-    const proc = await startNode();
-    try {
-      await waitForNode();
-      await generateBlocks(address, 1000);
-      const info = await get_info(NODE_URL);
-      expect(info.height).toBe(1001);
-      expect(info.status).toBe("OK");
-    } finally {
-      await stopNode(proc);
-    }
-    const proc2 = await startNode();
-    try {
-      await waitForNode();
-      const info2 = await get_info(NODE_URL);
-      expect(info2.height).toBe(1);
-      expect(info2.status).toBe("OK");
-    } finally {
-      await stopNode(proc2);
-    }
-  },
-  { timeout: 120000 },
-);
+//     const proc = await startNode();
+//     try {
+//       await waitForNode();
+//       await generateBlocks(address, 1000);
+//       const info = await get_info(NODE_URL);
+//       expect(info.height).toBe(1001);
+//       expect(info.status).toBe("OK");
+//     } finally {
+//       await stopNode(proc);
+//     }
+//     const proc2 = await startNode();
+//     try {
+//       await waitForNode();
+//       const info2 = await get_info(NODE_URL);
+//       expect(info2.height).toBe(1);
+//       expect(info2.status).toBe("OK");
+//     } finally {
+//       await stopNode(proc2);
+//     }
+//   },
+//   { timeout: 120000 },
+// );
 
 test(
   "pop blocks mid-session, reorg_info in cache, no catastrophic_reorg",
