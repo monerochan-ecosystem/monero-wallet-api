@@ -38,6 +38,40 @@ async function setupFixtures() {
 }
 
 test(
+  "getBlocksBinClassicScanResponse",
+  async () => {
+    await setupFixtures();
+    const keypair = JSON.parse(
+      await Bun.file(FIXTURE_KEYPAIR).text(),
+    ) as Keypair;
+    const getBlocksBinResponse = new Uint8Array(
+      await Bun.file(FIXTURE_RESPONSE).arrayBuffer(),
+    );
+
+    const viewPair = await ViewPair.create(
+      keypair.view_key.mainnet_primary,
+      keypair.view_key.view_key,
+      0,
+      NODE_URL,
+    );
+
+    const result = await viewPair.getBlocksBinScanResponse(
+      getBlocksBinResponse,
+      (meta) => {
+        console.log("meta callback:", meta);
+      },
+    );
+    console.log(
+      "scan result:",
+      JSON.stringify(result, (_, v) =>
+        typeof v === "bigint" ? v.toString() : v,
+      ),
+    );
+  },
+  { timeout: 60000 },
+);
+
+test(
   "getBlocksBinScanOneBlock",
   async () => {
     await setupFixtures();
