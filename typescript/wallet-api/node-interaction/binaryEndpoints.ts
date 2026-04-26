@@ -322,6 +322,26 @@ export async function getOutsBinJson<T extends WasmProcessor & HasNodeUrl>(
   return result as GetOutsBinResponse;
 }
 
+export async function loadGetBlocksBinResponse<T extends WasmProcessor>(
+  processor: T,
+  getBlocksBinResponseBuffer: Uint8Array,
+): Promise<GetBlocksResultMeta> {
+  processor.writeToWasmMemory = (ptr, len) => {
+    processor.writeArray(ptr, len, getBlocksBinResponseBuffer);
+  };
+  let resultMeta: GetBlocksResultMeta;
+  processor.readFromWasmMemory = (ptr, len) => {
+    resultMeta = JSON.parse(
+      processor.readString(ptr, len),
+    ) as GetBlocksResultMeta;
+  };
+  //@ts-ignore
+  processor.tinywasi.instance.exports.load_get_blocks_bin_response(
+    getBlocksBinResponseBuffer.length,
+  );
+  return resultMeta!;
+}
+
 export async function binaryFetchRequest(
   url: string,
   body: Uint8Array,

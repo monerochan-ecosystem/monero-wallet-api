@@ -8,6 +8,7 @@ import {
   getBlocksBinScan,
   getBlocksBinExecuteRequest,
   getBlocksBinScanResponse,
+  loadGetBlocksBinResponse,
   type GetBlocksBinMetaCallback,
   type GetBlocksBinRequest,
   MAINNET_GENESIS_BLOCK_HASH,
@@ -199,6 +200,14 @@ export class ViewPair extends WasmProcessor {
       this,
       getBlocksBinResponseBuffer,
       metaCallBack,
+    );
+  }
+  public loadGetBlocksBinResponse(
+    getBlocksBinResponseBuffer: Uint8Array,
+  ) {
+    return loadGetBlocksBinResponse(
+      this,
+      getBlocksBinResponseBuffer,
     );
   }
   /**
