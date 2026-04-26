@@ -69,14 +69,15 @@
 
 import { WasmProcessor } from "../wasm-processing/wasmProcessor";
 export type SpendKey = string;
+export type Keypair = {
+  spend_key: SpendKey;
+  view_key: ViewPairJson;
+};
 /**
  *  use this function to generate a keypair for testing
  * @returns spendkey and viewkey (contains primary address, for mainnet, testnet,stagenet)
  */
-export async function makeTestKeyPair(): Promise<{
-  spend_key: SpendKey;
-  view_key: ViewPairJson;
-}> {
+export async function makeTestKeyPair(): Promise<Keypair> {
   const spend_key = await makeSpendKey();
   const view_key = await makeViewKey(spend_key);
   return { spend_key, view_key };
