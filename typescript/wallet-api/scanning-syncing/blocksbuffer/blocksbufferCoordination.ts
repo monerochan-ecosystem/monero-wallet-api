@@ -56,11 +56,14 @@ export async function blocksBufferCoordination(
       pathPrefix,
     );
     connectionStatus = await readWriteConnectionStatusFile(async (cs) => {
-      const { current_range, scanned_ranges } = updateBlocksBufferScanHeight(
-        connectionStatus.sync.current_range!,
-        result_meta,
-        cs.sync.scanned_ranges,
-      );
+      const { current_range, scanned_ranges } =
+        await updateBlocksBufferScanHeight(
+          connectionStatus.sync.current_range!,
+          result_meta,
+          cs.sync.scanned_ranges,
+          node_url,
+          scan_settings_path,
+        );
       cs.sync.scanned_ranges = scanned_ranges;
       cs.sync.current_range = current_range;
       if (bufferItem) {
@@ -120,11 +123,13 @@ export async function initScannedRanges(
   }
 }
 
-export function updateBlocksBufferScanHeight(
+export async function updateBlocksBufferScanHeight(
   current_range: CacheRange,
   result_meta: GetBlocksResultMeta,
   scanned_ranges: CacheRange[],
-): BlocksBufferScanStatus {
+  node_url: string,
+  scan_settings_path?: string,
+): Promise<BlocksBufferScanStatus> {
   let last_block_hash_of_result = result_meta.block_infos.at(-1);
   let current_blockhash = current_range?.block_hashes.at(0);
   if (!current_blockhash)
@@ -146,11 +151,13 @@ export function updateBlocksBufferScanHeight(
 
   // if the first block hash in the response is not the same as the last block hash in the old range, there was a reorg
   if (!(first_block_hash.block_hash === current_blockhash.block_hash)) {
-    return handleBlocksBufferReorg(
+    return await handleBlocksBufferReorg(
       current_range,
       result_meta,
       scanned_ranges,
       oldRange,
+      node_url,
+      scan_settings_path,
     );
   }
   // scan only happens in one direction,
@@ -219,12 +226,14 @@ export function makeNewBlocksBufferScanRange(
   return newRange;
 }
 
-export function handleBlocksBufferReorg(
+export async function handleBlocksBufferReorg(
   current_range: CacheRange,
   result_meta: GetBlocksResultMeta,
   scanned_ranges: CacheRange[],
   oldRange: CacheRange,
-): BlocksBufferScanStatus {
+  node_url: string,
+  scan_settings_path?: string,
+): Promise<BlocksBufferScanStatus> {
   // we need to check where anchor candidate is and if not found, try the same for anchor
   // if else throw on catastrophic reorg
   for (const block_hash of oldRange.block_hashes) {
@@ -269,6 +278,15 @@ export function handleBlocksBufferReorg(
     };
   }
   // we tried all the block hashes and could not find the split height
+
+  await readWriteConnectionStatusFile((cs) => {
+    cs.last_packet = {
+      status: "catastrophic_reorg",
+      bytes_read: 0,
+      node_url,
+      timestamp: new Date().toISOString(),
+    };
+  }, scan_settings_path);
 
   throw new Error(
     "Could not find reorg split height. Most likely connected to faulty node / catastrophic reorg.",
