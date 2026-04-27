@@ -5,6 +5,7 @@ import {
   openWallets,
   cacheFileDefaultLocation,
   readConnectionStatusDefaultLocation,
+  blocksBufferCoordination,
   type ManyScanCachesOpened,
   type ScanCache,
   type ReorgInfo,
@@ -604,4 +605,167 @@ test(
     }
   },
   { timeout: 120000 },
+);
+
+test(
+  "blocksBufferCoordination handles normal reorg and refetches",
+  async () => {
+    await cleanupReorgDir();
+    const kp = JSON.parse(await Bun.file(KEYPAIRS_PATH).text()) as Keypair[];
+    const address = kp[0].view_key.mainnet_primary;
+
+    const proc = await startNode();
+    try {
+      await waitForNode();
+      await generateBlocks(address, 5);
+
+      const scan_settings_path = `${REORG_DIR}/buffer-normal-reorg.json`;
+
+      const controller = new AbortController();
+      const coordPromise = blocksBufferCoordination(
+        NODE_URL,
+        0,
+        scan_settings_path,
+        undefined,
+        controller.signal,
+        `${REORG_DIR}/`,
+      );
+
+      await Bun.sleep(2000);
+
+      await fetch(`${NODE_URL}/pop_blocks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nblocks: 2 }),
+      });
+      await generateBlocks(address, 3);
+
+      await Bun.sleep(3000);
+      controller.abort();
+      await coordPromise.catch(() => {});
+
+      const connStatus =
+        await readConnectionStatusDefaultLocation(scan_settings_path);
+      expect(connStatus).toBeDefined();
+      if (!connStatus) throw new Error("connection status missing");
+      expect(connStatus.last_packet.status).toBe("OK");
+      expect(connStatus.sync.scanned_ranges.length).toBeGreaterThan(0);
+      expect(connStatus.sync.current_range).toBeDefined();
+      const lastRange = connStatus.sync.scanned_ranges.at(-1);
+      expect(lastRange).toBeDefined();
+      expect(typeof lastRange!.end).toBe("number");
+    } finally {
+      await stopNode(proc);
+    }
+  },
+  { timeout: 60000 },
+);
+
+test(
+  "blocksBufferCoordination writes catastrophic_reorg and throws on unrecoverable reorg",
+  async () => {
+    await cleanupReorgDir();
+    const kp = JSON.parse(await Bun.file(KEYPAIRS_PATH).text()) as Keypair[];
+    const address = kp[0].view_key.mainnet_primary;
+
+    const proc1 = await startNode();
+    try {
+      await waitForNode();
+      await generateBlocks(address, 5);
+
+      const scan_settings_path = `${REORG_DIR}/buffer-cat-reorg.json`;
+
+      const controller1 = new AbortController();
+      const coordPromise1 = blocksBufferCoordination(
+        NODE_URL,
+        0,
+        scan_settings_path,
+        undefined,
+        controller1.signal,
+        `${REORG_DIR}/`,
+      );
+      await Bun.sleep(2000);
+      controller1.abort();
+      await coordPromise1.catch(() => {});
+    } finally {
+      await stopNode(proc1);
+    }
+
+    const proc2 = await startNode();
+    try {
+      await waitForNode();
+      await generateBlocks(address, 5);
+
+      const scan_settings_path = `${REORG_DIR}/buffer-cat-reorg.json`;
+
+      let threw = false;
+      try {
+        const controller2 = new AbortController();
+        const timeout = setTimeout(() => controller2.abort(), 5000);
+        await blocksBufferCoordination(
+          NODE_URL,
+          0,
+          scan_settings_path,
+          undefined,
+          controller2.signal,
+          `${REORG_DIR}/`,
+        );
+        clearTimeout(timeout);
+      } catch {
+        threw = true;
+      }
+      expect(threw).toBe(true);
+
+      const connStatus =
+        await readConnectionStatusDefaultLocation(scan_settings_path);
+      expect(connStatus?.last_packet.status).toBe("catastrophic_reorg");
+    } finally {
+      await stopNode(proc2);
+    }
+  },
+  { timeout: 60000 },
+);
+
+test(
+  "blocksBufferCoordination sleeps at tip when block_infos is empty",
+  async () => {
+    await cleanupReorgDir();
+    const kp = JSON.parse(await Bun.file(KEYPAIRS_PATH).text()) as Keypair[];
+    const address = kp[0].view_key.mainnet_primary;
+
+    const proc = await startNode();
+    try {
+      await waitForNode();
+      await generateBlocks(address, 5);
+
+      const scan_settings_path = `${REORG_DIR}/buffer-tip.json`;
+
+      const controller = new AbortController();
+      const coordPromise = blocksBufferCoordination(
+        NODE_URL,
+        0,
+        scan_settings_path,
+        undefined,
+        controller.signal,
+        `${REORG_DIR}/`,
+      );
+
+      await Bun.sleep(3500);
+      controller.abort();
+      await coordPromise.catch(() => {});
+
+      const connStatus =
+        await readConnectionStatusDefaultLocation(scan_settings_path);
+      expect(connStatus).toBeDefined();
+      if (!connStatus) throw new Error("connection status missing");
+      expect(connStatus.last_packet.status).toBe("OK");
+      expect(connStatus.sync.scanned_ranges.length).toBeGreaterThan(0);
+      const lastRange = connStatus.sync.scanned_ranges.at(-1);
+      expect(lastRange).toBeDefined();
+      expect(lastRange!.end).toBeGreaterThanOrEqual(5);
+    } finally {
+      await stopNode(proc);
+    }
+  },
+  { timeout: 60000 },
 );
