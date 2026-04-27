@@ -20,7 +20,7 @@ export type GetBlocksBinBufferItem = {
   get_blocks_result_meta: GetBlocksResultMeta;
 };
 export const MAX_BLOCKS_BUFFER_SIZE = 100000000000;
-export async function blocksBufferCoordination(
+export async function blocksBufferFetchLoop(
   node_url: string,
   start_height: number,
   scan_settings_path?: string,
@@ -54,7 +54,7 @@ export async function blocksBufferCoordination(
     );
     const result_meta = await nodeUrl.loadGetBlocksBinResponse(get_blocks_bin);
     console.log(
-      "blocksBufferCoordination block_infos.length:",
+      "blocksBufferFetchLoop block_infos.length:",
       result_meta.block_infos.length,
     );
     const bufferItem = await writeGetblocksBinBuffer(

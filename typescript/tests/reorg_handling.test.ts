@@ -5,7 +5,7 @@ import {
   openWallets,
   cacheFileDefaultLocation,
   readConnectionStatusDefaultLocation,
-  blocksBufferCoordination,
+  blocksBufferFetchLoop,
   type ManyScanCachesOpened,
   type ScanCache,
   type ReorgInfo,
@@ -628,7 +628,7 @@ test(
 );
 
 test(
-  "blocksBufferCoordination handles normal reorg, trims buffer front and refetches",
+  "blocksBufferFetchLoop handles normal reorg, trims buffer front and refetches",
   async () => {
     await cleanupReorgDir();
     const kp = JSON.parse(await Bun.file(KEYPAIRS_PATH).text()) as Keypair[];
@@ -642,7 +642,7 @@ test(
       await waitForNode();
 
       const controller = new AbortController();
-      const coordPromise = blocksBufferCoordination(
+      const coordPromise = blocksBufferFetchLoop(
         NODE_URL,
         0,
         scan_settings_path,
@@ -704,7 +704,7 @@ test(
 );
 
 test(
-  "blocksBufferCoordination writes catastrophic_reorg and throws on unrecoverable reorg",
+  "blocksBufferFetchLoop writes catastrophic_reorg and throws on unrecoverable reorg",
   async () => {
     await cleanupReorgDir();
     const kp = JSON.parse(await Bun.file(KEYPAIRS_PATH).text()) as Keypair[];
@@ -718,7 +718,7 @@ test(
       await generateBlocks(address, 20);
 
       const controller1 = new AbortController();
-      const coordPromise1 = blocksBufferCoordination(
+      const coordPromise1 = blocksBufferFetchLoop(
         NODE_URL,
         0,
         scan_settings_path,
@@ -742,7 +742,7 @@ test(
       try {
         const controller2 = new AbortController();
         const timeout = setTimeout(() => controller2.abort(), 8000);
-        await blocksBufferCoordination(
+        await blocksBufferFetchLoop(
           NODE_URL,
           0,
           scan_settings_path,
