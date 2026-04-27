@@ -7,6 +7,8 @@ import {
   getOutsBinJson,
   type GetOutsBinRequest,
   getOutsBinExecuteRequest,
+  MAINNET_GENESIS_BLOCK_HASH,
+  STAGENET_GENESIS_BLOCK_HASH,
 } from "./binaryEndpoints";
 import {
   get_block_headers_range,
@@ -19,6 +21,7 @@ import {
   type GetOutputDistributionParams,
   type SendRawTransactionResult,
 } from "./jsonEndpoints";
+export type NETWORKS = "mainnet" | "stagenet" | "testnet";
 
 import {
   makeInput,
@@ -37,12 +40,23 @@ export class NodeUrl extends WasmProcessor {
   protected constructor(public node_url: string) {
     super();
   }
-
+  private _network: NETWORKS | undefined;
+  get network(): NETWORKS {
+    return this._network as NETWORKS; // we set this in ViewPair.create()
+  }
+  private _genesis_hash: string | undefined;
+  get genesis_hash(): string {
+    if (!this._genesis_hash) {
+      throw new Error("Genesis hash not set. Node not connected?");
+    }
+    return this._genesis_hash; // set in first call to ViewPair.getBlocksBin, if params.block_ids is supplied
+  }
   public static async create(node_url?: string): Promise<NodeUrl> {
     const nodeUrl = new NodeUrl(node_url || LOCAL_NODE_DEFAULT_URL);
     await nodeUrl.initWasmModule();
     return nodeUrl;
   }
+
   /**
    * Executes a get_blocks.bin request and returns the raw binary response buffer.
    * @link https://docs.getmonero.org/rpc-library/monerod-rpc/#get_blocksbin
@@ -54,7 +68,11 @@ export class NodeUrl extends WasmProcessor {
     params: GetBlocksBinRequest,
     stopSync?: AbortSignal,
   ) {
-    return await getBlocksBinExecuteRequest(this, params, stopSync);
+    return await getBlocksBinExecuteRequest(
+      this,
+      await this.addGenesisHashToBlockIds(params),
+      stopSync,
+    );
   }
   /**
    * Loads a getBlocks.bin response into the WASM module.
@@ -157,7 +175,7 @@ export class NodeUrl extends WasmProcessor {
    * @returns The result object with headers, status, etc. Throws if the range is invalid:(end_height > daemonheight)
    */
   public async getBlockHeadersRange(params: GetBlockHeadersRangeParams) {
-    return get_block_headers_range(this.node_url, params);
+    return await get_block_headers_range(this.node_url, params);
   }
   /**
    * Fetch general information about the Monero daemon.
@@ -166,6 +184,27 @@ export class NodeUrl extends WasmProcessor {
    */
   public async getInfo() {
     return get_info(this.node_url);
+  }
+  async addGenesisHashToBlockIds(params: GetBlocksBinRequest) {
+    if (params.block_ids) {
+      if (!this._genesis_hash && this.network === "mainnet") {
+        this._genesis_hash = MAINNET_GENESIS_BLOCK_HASH;
+      }
+      if (!this._genesis_hash && this.network === "stagenet") {
+        this._genesis_hash = STAGENET_GENESIS_BLOCK_HASH;
+      }
+
+      if (!this._genesis_hash) {
+        // TESTNET
+        const range = await this.getBlockHeadersRange({
+          start_height: 0,
+          end_height: 0,
+        });
+        this._genesis_hash = range.headers[0].hash;
+      }
+      params.block_ids.push(this.genesis_hash);
+    }
+    return params;
   }
 }
 export const LOCAL_NODE_DEFAULT_URL = "http://127.0.0.1:18081";

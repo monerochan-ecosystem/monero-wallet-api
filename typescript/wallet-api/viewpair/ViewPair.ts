@@ -26,7 +26,10 @@ import {
   type UnsignedTransaction,
 } from "../send-functionality/transactionBuilding";
 import { WasmProcessor } from "../wasm-processing/wasmProcessor";
-import { LOCAL_NODE_DEFAULT_URL } from "../node-interaction/nodeUrl";
+import {
+  LOCAL_NODE_DEFAULT_URL,
+  type NETWORKS,
+} from "../node-interaction/nodeUrl";
 import {
   atomicWrite,
   get_block_headers_range,
@@ -56,7 +59,6 @@ import {
   writeConnectionStatusFile,
   type ConnectionStatus,
 } from "../scanning-syncing/connectionStatus";
-export type NETWORKS = "mainnet" | "stagenet" | "testnet";
 /**
  * This class is useful to interact with Moneros DaemonRpc binary requests in a convenient way.
  * (similar to how you would interact with a REST api that gives you json back.)
@@ -275,22 +277,19 @@ export class ViewPair extends WasmProcessor {
             { block_ids: current_range.block_hashes.map((b) => b.block_hash) },
             stopSync,
           );
-          await readWriteConnectionStatusFile(
-            (cs) => {
-              if (cs?.last_packet.status === "catastrophic_reorg") return;
-              const connectionStatus: ConnectionStatus = {
-                ...cs,
-                last_packet: {
-                  status: "OK",
-                  bytes_read: firstResponse.length,
-                  node_url: processor.node_url,
-                  timestamp: new Date().toISOString(),
-                },
-              };
-              return connectionStatus;
-            },
-            scan_settings_path,
-          );
+          await readWriteConnectionStatusFile((cs) => {
+            if (cs?.last_packet.status === "catastrophic_reorg") return;
+            const connectionStatus: ConnectionStatus = {
+              ...cs,
+              last_packet: {
+                status: "OK",
+                bytes_read: firstResponse.length,
+                node_url: processor.node_url,
+                timestamp: new Date().toISOString(),
+              },
+            };
+            return connectionStatus;
+          }, scan_settings_path);
 
           yield firstResponse;
         }
