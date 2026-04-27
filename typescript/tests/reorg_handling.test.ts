@@ -1,4 +1,4 @@
-import { test, expect, beforeAll, afterAll } from "bun:test";
+import { test, expect, beforeAll } from "bun:test";
 import { mkdir, readdir, rm } from "node:fs/promises";
 import {
   writeScanSettings,
@@ -17,7 +17,8 @@ import {
 import type { ScanSettings } from "../wallet-api/scanning-syncing/scanSettings";
 
 const MONERONODE_DIR = "tests/moneronode";
-const REORG_DIR = `${MONERONODE_DIR}/reorg_test`;
+const TEST_DATA_DIR = "test-data/reorg_handling";
+const REORG_DIR = TEST_DATA_DIR;
 const MONEROD_PATH = `${MONERONODE_DIR}/monerod`;
 const KEYPAIRS_PATH = `${MONERONODE_DIR}/keypairs.json`;
 const SCAN_SETTINGS_PATH = `${REORG_DIR}/ScanSettings.json`;
@@ -239,9 +240,7 @@ beforeAll(
   { timeout: 600000 },
 );
 
-afterAll(async () => {
-  await cleanupReorgDir();
-});
+// no afterAll cleanup,files stay on disk for debugging
 
 // test(
 //   "start monero regtest node and verify RPC responds",

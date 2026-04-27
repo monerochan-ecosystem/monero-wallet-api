@@ -182,3 +182,6 @@ tests/testresults/
 
 # Monero node binary for testing reorg handling
 tests/moneronode/
+
+# Per-test temp data folders
+test-data/

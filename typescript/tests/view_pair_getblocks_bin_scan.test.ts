@@ -1,11 +1,18 @@
-import { test } from "bun:test";
+import { test, beforeAll } from "bun:test";
 import { ViewPair } from "../wallet-api/api";
 import {
   makeTestKeyPair,
   type Keypair,
 } from "../wallet-api/keypairs-seeds/keypairs";
-import { mkdir } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import type { GetBlocksResultMeta } from "../wallet-api/node-interaction/binaryEndpoints";
+
+const TEST_DATA_DIR = "test-data/view_pair_getblocks_bin_scan";
+
+beforeAll(async () => {
+  await rm(TEST_DATA_DIR, { force: true, recursive: true });
+  await mkdir(TEST_DATA_DIR, { recursive: true });
+});
 
 const NODE_URL = "https://xmr-01.tari.com";
 const START_HEIGHT = 3160222;
@@ -14,7 +21,6 @@ const FIXTURE_KEYPAIR = `${FIXTURES_DIR}/keypair.json`;
 const FIXTURE_RESPONSE = `${FIXTURES_DIR}/getblocks.bin.response`;
 const FIXTURE_RESPONSE_PLUS_10000 = `${FIXTURES_DIR}/getblocks.bin.plus10000.response`;
 const FIXTURE_RESPONSE_PLUS_20000 = `${FIXTURES_DIR}/getblocks.bin.plus20000.response`;
-const TEST_RESULTS_DIR = "tests/testresults";
 
 async function setupFixtures() {
   const keypairFile = Bun.file(FIXTURE_KEYPAIR);
@@ -93,9 +99,8 @@ test(
       });
     }
 
-    await mkdir(TEST_RESULTS_DIR, { recursive: true });
     await Bun.write(
-      `${TEST_RESULTS_DIR}/getBlocksBinScanOneBlock.result.json`,
+      `${TEST_DATA_DIR}/getBlocksBinScanOneBlock.result.json`,
       JSON.stringify({ meta, scanResults }, null, 2),
     );
   },
@@ -153,9 +158,8 @@ test(
       );
     }
 
-    await mkdir(TEST_RESULTS_DIR, { recursive: true });
     await Bun.write(
-      `${TEST_RESULTS_DIR}/loadGetBlocksBinResponse.result.json`,
+      `${TEST_DATA_DIR}/loadGetBlocksBinResponse.result.json`,
       JSON.stringify(
         {
           meta1,
@@ -188,10 +192,9 @@ test(
       NODE_URL,
     );
 
-    // This test saves its output to tests/testresults/getBlocksBinClassicScanResponse.result.json
+    // This test saves its output to test-data/view_pair_getblocks_bin_scan/getBlocksBinClassicScanResponse.result.json
     // The JSON includes timestamps for when the meta callback arrives and when the scan finishes,
     // plus the duration between those two events in seconds.
-    await mkdir(TEST_RESULTS_DIR, { recursive: true });
 
     let metaTimestamp: string | null = null;
     let metaData: unknown = null;
@@ -224,7 +227,7 @@ test(
     };
 
     await Bun.write(
-      `${TEST_RESULTS_DIR}/getBlocksBinClassicScanResponse.result.json`,
+      `${TEST_DATA_DIR}/getBlocksBinClassicScanResponse.result.json`,
       JSON.stringify(output, null, 2),
     );
   },
