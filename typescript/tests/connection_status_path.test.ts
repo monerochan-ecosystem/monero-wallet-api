@@ -1,10 +1,10 @@
 import { test, expect } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
-import { writeConnectionStatusFile, readConnectionStatusDefaultLocation } from "../wallet-api/api";
+import { writeConnectionStatusFile, readConnectionStatusDefaultLocation, emptyConnectionStatus } from "../wallet-api/api";
 
 test("connectionStatusFilePath with bare filename writes to cwd", async () => {
   await writeConnectionStatusFile(
-    { last_packet: { status: "OK", bytes_read: 0, node_url: "http://localhost:18081", timestamp: new Date().toISOString() } },
+    emptyConnectionStatus({ last_packet: { status: "OK", bytes_read: 0, node_url: "http://localhost:18081", timestamp: new Date().toISOString() } }),
     "SomeSettings.json",
   );
   const filePath = "ConnectionStatus-SomeSettings.json";
@@ -17,7 +17,7 @@ test("connectionStatusFilePath with path in scan_settings_path writes to that di
   const scanPath = `${dir}/MySettings.json`;
 
   await writeConnectionStatusFile(
-    { last_packet: { status: "OK", bytes_read: 0, node_url: "http://localhost:18081", timestamp: new Date().toISOString() } },
+    emptyConnectionStatus({ last_packet: { status: "OK", bytes_read: 0, node_url: "http://localhost:18081", timestamp: new Date().toISOString() } }),
     scanPath,
   );
 
@@ -41,7 +41,7 @@ test("readConnectionStatusDefaultLocation uses same path logic", async () => {
   const scanPath = `${dir}/CheckSettings.json`;
 
   await writeConnectionStatusFile(
-    { last_packet: { status: "connection_failed", bytes_read: 100, node_url: "http://localhost:18081", timestamp: new Date().toISOString() } },
+    emptyConnectionStatus({ last_packet: { status: "connection_failed", bytes_read: 100, node_url: "http://localhost:18081", timestamp: new Date().toISOString() } }),
     scanPath,
   );
 
@@ -58,7 +58,7 @@ test("no directory is created by the path logic", async () => {
   const scanPath = `${dir}/DirTest.json`;
 
   await writeConnectionStatusFile(
-    { last_packet: { status: "OK", bytes_read: 0, node_url: "http://localhost:18081", timestamp: new Date().toISOString() } },
+    emptyConnectionStatus({ last_packet: { status: "OK", bytes_read: 0, node_url: "http://localhost:18081", timestamp: new Date().toISOString() } }),
     scanPath,
   );
 

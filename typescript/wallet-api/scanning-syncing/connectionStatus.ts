@@ -43,6 +43,28 @@ export function msToHHMM(ms: number): string {
   return `${paddedHours}:${paddedMinutes}`;
 }
 
+export function emptyConnectionStatus(
+  overrides?: Partial<ConnectionStatus>,
+): ConnectionStatus {
+  const defaultStatus: ConnectionStatus = {
+    last_packet: {
+      status: "no_connection_yet",
+      bytes_read: 0,
+      node_url: "",
+      timestamp: new Date().toISOString(),
+    },
+    sync: {
+      get_blocks_bin_buffer: [],
+      scanned_ranges: [],
+      daemon_height: 0,
+      current_scan_height: 0,
+      eta: "00:00",
+      timestamp: new Date().toISOString(),
+    },
+  };
+  return overrides ? { ...defaultStatus, ...overrides } : defaultStatus;
+}
+
 export async function updateSyncETA(
   daemon_height: number,
   current_scan_height: number,
@@ -130,22 +152,7 @@ export async function readWriteConnectionStatusFile(
   let connectionStatus =
     await readConnectionStatusDefaultLocation(scan_settings_path);
   if (!connectionStatus)
-    connectionStatus = {
-      last_packet: {
-        status: "no_connection_yet",
-        bytes_read: 0,
-        node_url: "",
-        timestamp: new Date().toISOString(),
-      },
-      sync: {
-        get_blocks_bin_buffer: [],
-        scanned_ranges: [],
-        daemon_height: 0,
-        current_scan_height: 0,
-        eta: "00:00",
-        timestamp: new Date().toISOString(),
-      },
-    };
+    connectionStatus = emptyConnectionStatus();
   await writeCB(connectionStatus);
   await writeConnectionStatusFile(connectionStatus, scan_settings_path);
   return connectionStatus;
