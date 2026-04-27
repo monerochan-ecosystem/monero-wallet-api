@@ -7,21 +7,21 @@ import { readCacheFileDefaultLocation, type CacheRange } from "./scanCache";
 export async function writeGetblocksBinBuffer(
   getBlocksBinResponseContent: Uint8Array,
   block_infos: BlockInfo[],
-  pathPrefix?: string
-) {
+  pathPrefix?: string,
+): Promise<GetBlocksBinBufferItemFilename | undefined> {
   if (!block_infos.length) return;
   const start = block_infos[0].block_height;
-  const end = block_infos.at(-1)?.block_height;
-  const block_hash = block_infos.at(-1)?.block_hash;
+  const end = block_infos.at(-1)!.block_height;
+  const block_hash = block_infos.at(-1)!.block_hash;
   const bufferItems = await readGetblocksBinBufferItems(pathPrefix);
   if (bufferItems.find((bi) => bi.last_block_hash === block_hash)) return;
-  // if we have the same end blockhash already, dont write
-  return await atomicWrite(
-    `${
-      pathPrefix ?? ""
-    }getblocksbinbuffer/${Date.now()}-${start}-${end}-${block_hash}-getblocks.bin`,
-    getBlocksBinResponseContent
+  const date = Date.now().toString();
+  const filename = `${date}-${start}-${end}-${block_hash}-getblocks.bin`;
+  await atomicWrite(
+    `${pathPrefix ?? ""}getblocksbinbuffer/${filename}`,
+    getBlocksBinResponseContent,
   );
+  return { start, end, filename, date, last_block_hash: block_hash };
 }
 export type GetBlocksBinBufferItemFilename = {
   start: number;
@@ -32,13 +32,13 @@ export type GetBlocksBinBufferItemFilename = {
 };
 export async function readGetblocksBinBuffer(
   current_height: number,
-  pathPrefix?: string
+  pathPrefix?: string,
 ): Promise<GetBlocksBinBufferItemFilename[]> {
   const bufferItems = await readGetblocksBinBufferItems(pathPrefix);
 
   const start_buffer =
     bufferItems.find(
-      (r) => current_height >= r.start && current_height <= r.end
+      (r) => current_height >= r.start && current_height <= r.end,
     ) ?? null;
   if (start_buffer)
     return [
@@ -62,7 +62,7 @@ declare module "bun" {
 }
 export async function trimGetBlocksBinBuffer(
   nonHaltedWallets: ScanSetting[],
-  pathPrefix?: string
+  pathPrefix?: string,
 ) {
   const snail = Math.min(
     ...(
@@ -74,12 +74,12 @@ export async function trimGetBlocksBinBuffer(
               (
                 await readCacheFileDefaultLocation(
                   wallet.primary_address,
-                  pathPrefix
+                  pathPrefix,
                 )
-              )?.scanned_ranges[0]?.end
-          )
+              )?.scanned_ranges[0]?.end,
+          ),
       )
-    ).filter((x) => x !== undefined)
+    ).filter((x) => x !== undefined),
   );
   // if all wallets have  higher start than end of blocksbufferitem, delete
   const bufferItems = await readGetblocksBinBufferItems(pathPrefix);
@@ -87,16 +87,16 @@ export async function trimGetBlocksBinBuffer(
   for (const bufferItem of bufferItems) {
     if (bufferItem.end <= snail) {
       await Bun.file(
-        `${pathPrefix ?? ""}getblocksbinbuffer/${bufferItem.filename}`
+        `${pathPrefix ?? ""}getblocksbinbuffer/${bufferItem.filename}`,
       ).delete();
     }
   }
 }
 export async function readGetblocksBinBufferItems(
-  pathPrefix?: string
+  pathPrefix?: string,
 ): Promise<GetBlocksBinBufferItemFilename[]> {
   const bufferItems = await readDir(
-    `${pathPrefix ?? ""}getblocksbinbuffer/`
+    `${pathPrefix ?? ""}getblocksbinbuffer/`,
   ).catch(() => []);
   const ranges = [];
   for (const filename of bufferItems) {
@@ -114,6 +114,6 @@ export async function readGetblocksBinBufferItems(
 export interface HasGetBlocksBinExecuteRequestMethod {
   getBlocksBinExecuteRequest: (
     params: GetBlocksBinRequest,
-    stopSync?: AbortSignal
+    stopSync?: AbortSignal,
   ) => Promise<Uint8Array>;
 }

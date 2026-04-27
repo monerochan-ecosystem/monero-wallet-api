@@ -8,6 +8,7 @@ import {
   type CacheRange,
   type GetBlocksResultMeta,
 } from "../../api";
+import { writeGetblocksBinBuffer } from "../scanresult/getBlocksbinBuffer";
 import { readWriteConnectionStatusFile } from "../connectionStatus";
 export type GetBlocksBinBufferItem = {
   start: number;
@@ -24,6 +25,7 @@ export async function blocksBufferCoordination(
   scan_settings_path?: string,
   max_blocks_buffer_size: number = MAX_BLOCKS_BUFFER_SIZE,
   stopSync?: AbortSignal,
+  pathPrefix?: string,
 ) {
   const nodeUrl = await NodeUrl.create(node_url);
 
@@ -48,15 +50,25 @@ export async function blocksBufferCoordination(
       stopSync,
     );
     const result_meta = await nodeUrl.loadGetBlocksBinResponse(get_blocks_bin);
+    const bufferItem = await writeGetblocksBinBuffer(
+      get_blocks_bin,
+      result_meta.block_infos,
+      pathPrefix,
+    );
     connectionStatus = await readWriteConnectionStatusFile(async (cs) => {
-      const { current_range, scanned_ranges } =
-        await updateBlocksBufferScanHeight(
-          connectionStatus.sync.current_range!,
-          result_meta,
-          cs.sync.scanned_ranges,
-        );
+      const { current_range, scanned_ranges } = updateBlocksBufferScanHeight(
+        connectionStatus.sync.current_range!,
+        result_meta,
+        cs.sync.scanned_ranges,
+      );
       cs.sync.scanned_ranges = scanned_ranges;
       cs.sync.current_range = current_range;
+      if (bufferItem) {
+        cs.sync.get_blocks_bin_buffer.push({
+          ...bufferItem,
+          get_blocks_result_meta: result_meta,
+        });
+      }
     }, scan_settings_path);
   }
 }
