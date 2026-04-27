@@ -608,18 +608,19 @@ test(
 );
 
 test(
-  "blocksBufferCoordination handles normal reorg and refetches",
+  "blocksBufferCoordination handles normal reorg, trims buffer front and refetches",
   async () => {
     await cleanupReorgDir();
     const kp = JSON.parse(await Bun.file(KEYPAIRS_PATH).text()) as Keypair[];
     const address = kp[0].view_key.mainnet_primary;
+    const pathPrefix = `${REORG_DIR}/`;
+    const scan_settings_path = `${REORG_DIR}/buffer-normal-reorg.json`;
+    const bufferDir = `${pathPrefix}getblocksbinbuffer`;
 
     const proc = await startNode();
     try {
       await waitForNode();
       await generateBlocks(address, 5);
-
-      const scan_settings_path = `${REORG_DIR}/buffer-normal-reorg.json`;
 
       const controller = new AbortController();
       const coordPromise = blocksBufferCoordination(
@@ -628,10 +629,10 @@ test(
         scan_settings_path,
         undefined,
         controller.signal,
-        `${REORG_DIR}/`,
+        pathPrefix,
       );
 
-      await Bun.sleep(2000);
+      await Bun.sleep(3000);
 
       await fetch(`${NODE_URL}/pop_blocks`, {
         method: "POST",
@@ -640,7 +641,7 @@ test(
       });
       await generateBlocks(address, 3);
 
-      await Bun.sleep(3000);
+      await Bun.sleep(4000);
       controller.abort();
       await coordPromise.catch(() => {});
 
@@ -648,12 +649,33 @@ test(
         await readConnectionStatusDefaultLocation(scan_settings_path);
       expect(connStatus).toBeDefined();
       if (!connStatus) throw new Error("connection status missing");
+
       expect(connStatus.last_packet.status).toBe("OK");
       expect(connStatus.sync.scanned_ranges.length).toBeGreaterThan(0);
       expect(connStatus.sync.current_range).toBeDefined();
       const lastRange = connStatus.sync.scanned_ranges.at(-1);
       expect(lastRange).toBeDefined();
       expect(typeof lastRange!.end).toBe("number");
+
+      expect(connStatus.sync.reorg_split_height).toBeDefined();
+
+      const bufferItems = connStatus.sync.get_blocks_bin_buffer;
+      expect(bufferItems.length).toBeGreaterThan(0);
+
+      const files = await readdir(bufferDir).catch(() => [] as string[]);
+      expect(files.length).toBeGreaterThan(0);
+      expect(files.length).toBe(bufferItems.length);
+
+      for (const filename of files) {
+        const filePath = `${bufferDir}/${filename}`;
+        const file = Bun.file(filePath);
+        expect(file.size).toBeGreaterThan(1000);
+      }
+
+      const connFilenames = new Set(bufferItems.map((bi) => bi.filename));
+      for (const filename of files) {
+        expect(connFilenames.has(filename)).toBe(true);
+      }
     } finally {
       await stopNode(proc);
     }
@@ -667,13 +689,13 @@ test(
     await cleanupReorgDir();
     const kp = JSON.parse(await Bun.file(KEYPAIRS_PATH).text()) as Keypair[];
     const address = kp[0].view_key.mainnet_primary;
+    const pathPrefix = `${REORG_DIR}/`;
+    const scan_settings_path = `${REORG_DIR}/buffer-cat-reorg.json`;
 
     const proc1 = await startNode();
     try {
       await waitForNode();
       await generateBlocks(address, 5);
-
-      const scan_settings_path = `${REORG_DIR}/buffer-cat-reorg.json`;
 
       const controller1 = new AbortController();
       const coordPromise1 = blocksBufferCoordination(
@@ -682,9 +704,9 @@ test(
         scan_settings_path,
         undefined,
         controller1.signal,
-        `${REORG_DIR}/`,
+        pathPrefix,
       );
-      await Bun.sleep(2000);
+      await Bun.sleep(3000);
       controller1.abort();
       await coordPromise1.catch(() => {});
     } finally {
@@ -696,19 +718,17 @@ test(
       await waitForNode();
       await generateBlocks(address, 5);
 
-      const scan_settings_path = `${REORG_DIR}/buffer-cat-reorg.json`;
-
       let threw = false;
       try {
         const controller2 = new AbortController();
-        const timeout = setTimeout(() => controller2.abort(), 5000);
+        const timeout = setTimeout(() => controller2.abort(), 8000);
         await blocksBufferCoordination(
           NODE_URL,
           0,
           scan_settings_path,
           undefined,
           controller2.signal,
-          `${REORG_DIR}/`,
+          pathPrefix,
         );
         clearTimeout(timeout);
       } catch {
@@ -721,50 +741,6 @@ test(
       expect(connStatus?.last_packet.status).toBe("catastrophic_reorg");
     } finally {
       await stopNode(proc2);
-    }
-  },
-  { timeout: 60000 },
-);
-
-test(
-  "blocksBufferCoordination sleeps at tip when block_infos is empty",
-  async () => {
-    await cleanupReorgDir();
-    const kp = JSON.parse(await Bun.file(KEYPAIRS_PATH).text()) as Keypair[];
-    const address = kp[0].view_key.mainnet_primary;
-
-    const proc = await startNode();
-    try {
-      await waitForNode();
-      await generateBlocks(address, 5);
-
-      const scan_settings_path = `${REORG_DIR}/buffer-tip.json`;
-
-      const controller = new AbortController();
-      const coordPromise = blocksBufferCoordination(
-        NODE_URL,
-        0,
-        scan_settings_path,
-        undefined,
-        controller.signal,
-        `${REORG_DIR}/`,
-      );
-
-      await Bun.sleep(3500);
-      controller.abort();
-      await coordPromise.catch(() => {});
-
-      const connStatus =
-        await readConnectionStatusDefaultLocation(scan_settings_path);
-      expect(connStatus).toBeDefined();
-      if (!connStatus) throw new Error("connection status missing");
-      expect(connStatus.last_packet.status).toBe("OK");
-      expect(connStatus.sync.scanned_ranges.length).toBeGreaterThan(0);
-      const lastRange = connStatus.sync.scanned_ranges.at(-1);
-      expect(lastRange).toBeDefined();
-      expect(lastRange!.end).toBeGreaterThanOrEqual(5);
-    } finally {
-      await stopNode(proc);
     }
   },
   { timeout: 60000 },

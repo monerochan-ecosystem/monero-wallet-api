@@ -51,13 +51,20 @@ export async function blocksBufferCoordination(
       stopSync,
     );
     const result_meta = await nodeUrl.loadGetBlocksBinResponse(get_blocks_bin);
+    console.log("blocksBufferCoordination block_infos.length:", result_meta.block_infos.length);
     const bufferItem = await writeGetblocksBinBuffer(
       get_blocks_bin,
       result_meta.block_infos,
       pathPrefix,
     );
     connectionStatus = await readWriteConnectionStatusFile(async (cs) => {
-      const { current_range, scanned_ranges } =
+      cs.last_packet = {
+        status: "OK",
+        bytes_read: get_blocks_bin.length,
+        node_url: node_url,
+        timestamp: new Date().toISOString(),
+      };
+      const { current_range, scanned_ranges, split_height } =
         await updateBlocksBufferScanHeight(
           connectionStatus.sync.current_range!,
           result_meta,
@@ -67,6 +74,22 @@ export async function blocksBufferCoordination(
         );
       cs.sync.scanned_ranges = scanned_ranges;
       cs.sync.current_range = current_range;
+      if (split_height) {
+        cs.sync.reorg_split_height = split_height;
+        const itemsToRemove = cs.sync.get_blocks_bin_buffer.filter(
+          (bi) => bi.end >= split_height.block_height,
+        );
+        for (const item of itemsToRemove) {
+          await Bun.file(
+            `${pathPrefix ?? ""}getblocksbinbuffer/${item.filename}`,
+          )
+            .delete()
+            .catch(() => {});
+        }
+        cs.sync.get_blocks_bin_buffer = cs.sync.get_blocks_bin_buffer.filter(
+          (bi) => bi.end < split_height.block_height,
+        );
+      }
       if (bufferItem) {
         cs.sync.get_blocks_bin_buffer.push({
           ...bufferItem,
@@ -82,6 +105,9 @@ export async function blocksBufferCoordination(
 export type BlocksBufferScanStatus = {
   current_range: CacheRange;
   scanned_ranges: CacheRange[];
+};
+export type BlocksBufferReorgResult = BlocksBufferScanStatus & {
+  split_height?: BlockInfo;
 };
 
 export async function initScannedRanges(
@@ -133,7 +159,7 @@ export async function updateBlocksBufferScanHeight(
   scanned_ranges: CacheRange[],
   node_url: string,
   scan_settings_path?: string,
-): Promise<BlocksBufferScanStatus> {
+): Promise<BlocksBufferReorgResult> {
   let last_block_hash_of_result = result_meta.block_infos.at(-1);
   let current_blockhash = current_range?.block_hashes.at(0);
   if (!current_blockhash)
@@ -237,7 +263,7 @@ export async function handleBlocksBufferReorg(
   oldRange: CacheRange,
   node_url: string,
   scan_settings_path?: string,
-): Promise<BlocksBufferScanStatus> {
+): Promise<BlocksBufferReorgResult> {
   // we need to check where anchor candidate is and if not found, try the same for anchor
   // if else throw on catastrophic reorg
   for (const block_hash of oldRange.block_hashes) {
@@ -248,8 +274,6 @@ export async function handleBlocksBufferReorg(
 
     // still a chance to find the split height, (could be candidate_anchor or anchor)
     if (!split_height) continue;
-    //TODO write split height to connectionstatus.sync
-    //TODO handle wallets reorg once we actually do CPU bound work based on the fetched blocks
 
     // we found the split height
     // find current range in scanned ranges and change its end value + latest_block_hash
@@ -279,6 +303,7 @@ export async function handleBlocksBufferReorg(
     return {
       current_range: makeNewBlocksBufferScanRange(newRange, scanned_ranges),
       scanned_ranges,
+      split_height,
     };
   }
   // we tried all the block hashes and could not find the split height
