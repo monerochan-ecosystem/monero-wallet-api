@@ -1,5 +1,5 @@
 import { atomicWrite, type BlockInfo, type CacheRange } from "../api";
-import type { GetBlocksBinBufferItem } from "./blocksbuffer/blocksbufferCoordination";
+import type { GetBlocksBinBufferItem } from "./blocksbuffer/blocksBufferFetchLoop";
 import { SCAN_SETTINGS_STORE_NAME_DEFAULT } from "./scanSettings";
 export type ConnectionStatusOptions =
   | "OK"
