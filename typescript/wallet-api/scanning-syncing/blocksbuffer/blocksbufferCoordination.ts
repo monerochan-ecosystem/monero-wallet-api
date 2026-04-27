@@ -4,6 +4,7 @@ import {
   get_block_headers_range,
   mergeRanges,
   NodeUrl,
+  sleep,
   type BlockInfo,
   type CacheRange,
   type GetBlocksResultMeta,
@@ -73,6 +74,9 @@ export async function blocksBufferCoordination(
         });
       }
     }, scan_settings_path);
+    if (result_meta.block_infos.length === 0) {
+      await sleep(1000);
+    }
   }
 }
 export type BlocksBufferScanStatus = {
