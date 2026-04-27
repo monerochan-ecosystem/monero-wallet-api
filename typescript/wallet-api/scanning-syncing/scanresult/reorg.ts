@@ -36,6 +36,14 @@ export function handleReorg(
       removed_outputs: [],
       reverted_spends: [],
     };
+    // First, collect reverted spends from all outputs (before any removals)
+    // so that outputs with block_height < split_height but spent_block_height >= split_height are captured
+    const reverted_outputs = Object.entries(cache.outputs).filter(
+      ([id, output]) =>
+        output.spent_block_height !== undefined &&
+        output.spent_block_height >= split_height.block_height
+    );
+
     const removed_outputs = Object.entries(cache.outputs).filter(
       ([id, output]) => output.block_height >= split_height.block_height
     );
@@ -54,13 +62,6 @@ export function handleReorg(
         change_reason: "reorged",
       });
     }
-
-    //for reverted spents, just do the same again with spent_height
-    const reverted_outputs = Object.entries(cache.outputs).filter(
-      ([id, output]) =>
-        output.spent_block_height !== undefined &&
-        output.spent_block_height >= split_height.block_height
-    );
 
     for (const [id, old_output_state_pointer] of reverted_outputs) {
       const [key_image] = Object.entries(cache.own_key_images).find(
