@@ -1,4 +1,5 @@
-import { atomicWrite } from "../api";
+import { atomicWrite, type BlockInfo, type CacheRange } from "../api";
+import type { GetBlocksBinBufferItem } from "./blocksbuffer/blocksbufferCoordination";
 import { SCAN_SETTINGS_STORE_NAME_DEFAULT } from "./scanSettings";
 export type ConnectionStatusOptions =
   | "OK"
@@ -13,7 +14,11 @@ export type ConnectionStatus = {
     node_url: string;
     timestamp: string;
   };
-  sync?: {
+  sync: {
+    get_blocks_bin_buffer: GetBlocksBinBufferItem[];
+    reorg_split_height?: BlockInfo;
+    current_range?: CacheRange;
+    scanned_ranges: CacheRange[]; // list of block height ranges that have been scanned [0].start, [length-1].end <-- last scanned height
     daemon_height: number;
     current_scan_height: number;
     eta: string;
@@ -72,6 +77,7 @@ export async function updateSyncETA(
   await readWriteConnectionStatusFile((cs) => {
     if (!cs) return undefined;
     cs.sync = {
+      ...cs.sync,
       daemon_height,
       current_scan_height,
       eta,
@@ -120,12 +126,29 @@ export async function writeConnectionStatusFile(
 }
 
 export async function readWriteConnectionStatusFile(
-  writeCB: (cs: ConnectionStatus | undefined) => ConnectionStatus | undefined,
+  writeCB: (cs: ConnectionStatus) => void,
   scan_settings_path?: string,
 ) {
-  const connectionStatus =
+  let connectionStatus =
     await readConnectionStatusDefaultLocation(scan_settings_path);
-  const cb = await writeCB(connectionStatus);
-  if (typeof cb === "undefined") return;
-  return await writeConnectionStatusFile(cb, scan_settings_path);
+  if (!connectionStatus)
+    connectionStatus = {
+      last_packet: {
+        status: "no_connection_yet",
+        bytes_read: 0,
+        node_url: "",
+        timestamp: new Date().toISOString(),
+      },
+      sync: {
+        get_blocks_bin_buffer: [],
+        scanned_ranges: [],
+        daemon_height: 0,
+        current_scan_height: 0,
+        eta: "00:00",
+        timestamp: new Date().toISOString(),
+      },
+    };
+  await writeCB(connectionStatus);
+  await writeConnectionStatusFile(connectionStatus, scan_settings_path);
+  return connectionStatus;
 }
