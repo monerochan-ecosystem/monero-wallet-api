@@ -32,13 +32,15 @@ export async function blocksBufferCoordination(
 
   start_height = await cullTooLargeScanHeight(node_url, scan_settings_path);
   let connectionStatus = await readWriteConnectionStatusFile(async (cs) => {
-    const { current_range, scanned_ranges } = await initScannedRanges(
-      node_url,
-      start_height,
-      cs.sync.scanned_ranges,
-    );
-    cs.sync.scanned_ranges = scanned_ranges;
-    cs.sync.current_range = current_range;
+    if (!cs.sync.current_range) {
+      const { current_range, scanned_ranges } = await initScannedRanges(
+        node_url,
+        start_height,
+        cs.sync.scanned_ranges,
+      );
+      cs.sync.scanned_ranges = scanned_ranges;
+      cs.sync.current_range = current_range;
+    }
   }, scan_settings_path);
   while (true) {
     if (stopSync?.aborted) return;
