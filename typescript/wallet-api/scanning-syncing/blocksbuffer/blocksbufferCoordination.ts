@@ -1,4 +1,5 @@
 import {
+  cullTooLargeScanHeight,
   findRange,
   get_block_headers_range,
   mergeRanges,
@@ -22,13 +23,12 @@ export async function blocksBufferCoordination(
   start_height: number,
   scan_settings_path?: string,
   max_blocks_buffer_size: number = MAX_BLOCKS_BUFFER_SIZE,
+  stopSync?: AbortSignal,
 ) {
   const nodeUrl = await NodeUrl.create(node_url);
 
-  const get_blocks_bin = await nodeUrl.getBlocksBinExecuteRequest({});
-  const result_meta = await nodeUrl.loadGetBlocksBinResponse();
-
-  const connectionStatus = await readWriteConnectionStatusFile(async (cs) => {
+  start_height = await cullTooLargeScanHeight(node_url, scan_settings_path);
+  let connectionStatus = await readWriteConnectionStatusFile(async (cs) => {
     const { current_range, scanned_ranges } = await initScannedRanges(
       node_url,
       start_height,
@@ -37,13 +37,39 @@ export async function blocksBufferCoordination(
     cs.sync.scanned_ranges = scanned_ranges;
     cs.sync.current_range = current_range;
   }, scan_settings_path);
+  while (true) {
+    if (stopSync?.aborted) return;
+    const get_blocks_bin = await nodeUrl.getBlocksBinExecuteRequest(
+      {
+        block_ids: connectionStatus.sync.current_range!.block_hashes.map(
+          (b) => b.block_hash,
+        ),
+      },
+      stopSync,
+    );
+    const result_meta = await nodeUrl.loadGetBlocksBinResponse(get_blocks_bin);
+    connectionStatus = await readWriteConnectionStatusFile(async (cs) => {
+      const { current_range, scanned_ranges } =
+        await updateBlocksBufferScanHeight(
+          connectionStatus.sync.current_range!,
+          result_meta,
+          cs.sync.scanned_ranges,
+        );
+      cs.sync.scanned_ranges = scanned_ranges;
+      cs.sync.current_range = current_range;
+    }, scan_settings_path);
+  }
 }
+export type BlocksBufferScanStatus = {
+  current_range: CacheRange;
+  scanned_ranges: CacheRange[];
+};
 
 export async function initScannedRanges(
   node_url: string,
   start_height: number,
   scanned_ranges: CacheRange[] = [],
-): Promise<{ current_range: CacheRange; scanned_ranges: CacheRange[] }> {
+): Promise<BlocksBufferScanStatus> {
   {
     let current_height = start_height;
 
@@ -86,20 +112,17 @@ export function updateBlocksBufferScanHeight(
   current_range: CacheRange,
   result_meta: GetBlocksResultMeta,
   scanned_ranges: CacheRange[],
-): CacheRange {
+): BlocksBufferScanStatus {
   let last_block_hash_of_result = result_meta.block_infos.at(-1);
   let current_blockhash = current_range?.block_hashes.at(0);
   if (!current_blockhash)
     throw new Error(
       "current_range passed to updateScanHeight was malformed. block_hashes is empty",
     );
-  if (!last_block_hash_of_result) return current_range; // block_infos empty, no change (we are at tip and there was no new block)
+  if (!last_block_hash_of_result) return { current_range, scanned_ranges }; // block_infos empty, no change (we are at tip and there was no new block)
   // if last blockhash is undefined it means there was not reorg, we are at tip, block_infos is empty ( no new blocks )
 
-  const oldRange = findRange(
-    scanned_ranges,
-    current_blockhash.block_height,
-  );
+  const oldRange = findRange(scanned_ranges, current_blockhash.block_height);
   if (!oldRange)
     throw new Error(
       `could not find scan range for height ${current_blockhash.block_height},\n       that means the blocks in the response from getBlocks.bin do not overlap\n       with the scanned ranges in the cache. This should not happen, as even if \n       we are starting from a new start_height that has been supplied to scanWithCache,\n       it has been found as an existing range in the cache, or it has been\n       added as a new range before we started scannning.`,
@@ -107,7 +130,7 @@ export function updateBlocksBufferScanHeight(
   // now we need to find the block_infos of old range in the new geblocksbin response result block_infos
   // if we cant find the new range, there was a reorg and we need to clean all outputs after that and log what happened
   let first_block_hash = result_meta.block_infos.at(0);
-  if (!first_block_hash) return current_range; // should never happen, if there is last_block_hash there should be first_block_hash
+  if (!first_block_hash) return { current_range, scanned_ranges }; // block_infos empty, no change (we are at tip and there was no new block) current_range; // should never happen, if there is last_block_hash there should be first_block_hash
 
   // if the first block hash in the response is not the same as the last block hash in the old range, there was a reorg
   if (!(first_block_hash.block_hash === current_blockhash.block_hash)) {
@@ -145,8 +168,7 @@ export function updateBlocksBufferScanHeight(
       anchor = old_anchor_candidate; // use the anchor_candidate as anchor
       // new anchor_candidate: is the one 100 blocks in, or the old scan tip
       anchor_candidate =
-        result_meta.block_infos.slice(-100)[0] ||
-        oldRange?.block_hashes.at(0); // use  use the old scan tip as anchor candidate
+        result_meta.block_infos.slice(-100)[0] || oldRange?.block_hashes.at(0); // use  use the old scan tip as anchor candidate
     }
   }
   // if there is no old anchor, use the one 100 blocks in, or the last block hash
@@ -162,7 +184,10 @@ export function updateBlocksBufferScanHeight(
     block_hashes: [last_block_hash_of_result, anchor_candidate, anchor],
   };
 
-  return makeNewBlocksBufferScanRange(newRange, scanned_ranges);
+  return {
+    current_range: makeNewBlocksBufferScanRange(newRange, scanned_ranges),
+    scanned_ranges,
+  };
 }
 
 export function makeNewBlocksBufferScanRange(
@@ -187,7 +212,7 @@ export function handleBlocksBufferReorg(
   result_meta: GetBlocksResultMeta,
   scanned_ranges: CacheRange[],
   oldRange: CacheRange,
-): CacheRange {
+): BlocksBufferScanStatus {
   // we need to check where anchor candidate is and if not found, try the same for anchor
   // if else throw on catastrophic reorg
   for (const block_hash of oldRange.block_hashes) {
@@ -198,6 +223,8 @@ export function handleBlocksBufferReorg(
 
     // still a chance to find the split height, (could be candidate_anchor or anchor)
     if (!split_height) continue;
+    //TODO write split height to connectionstatus.sync
+    //TODO handle wallets reorg once we actually do CPU bound work based on the fetched blocks
 
     // we found the split height
     // find current range in scanned ranges and change its end value + latest_block_hash
@@ -224,7 +251,10 @@ export function handleBlocksBufferReorg(
       end,
       block_hashes: [last_block_hash_of_result, anchor, anchor],
     };
-    return makeNewBlocksBufferScanRange(newRange, scanned_ranges);
+    return {
+      current_range: makeNewBlocksBufferScanRange(newRange, scanned_ranges),
+      scanned_ranges,
+    };
   }
   // we tried all the block hashes and could not find the split height
 
