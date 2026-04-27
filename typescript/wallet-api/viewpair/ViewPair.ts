@@ -41,7 +41,7 @@ import {
   trimGetBlocksBinBuffer,
   writeGetblocksBinBuffer,
   type SlaveViewPair,
-} from "../scanning-syncing/scanresult/getBlocksbinBuffer";
+} from "../scanning-syncing/blocksbuffer/getBlocksbinBuffer";
 import {
   initScanCache,
   readCacheFileDefaultLocation,

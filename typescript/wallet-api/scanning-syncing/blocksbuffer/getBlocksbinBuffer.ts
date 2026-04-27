@@ -2,7 +2,10 @@ import type { BlockInfo, GetBlocksBinRequest, ViewPair } from "../../api";
 import { atomicWrite } from "../../io/atomicWrite";
 import { readDir } from "../../io/readDir";
 import type { ScanSetting } from "../scanSettings";
-import { readCacheFileDefaultLocation, type CacheRange } from "./scanCache";
+import {
+  readCacheFileDefaultLocation,
+  type CacheRange,
+} from "../scanresult/scanCache";
 
 export async function writeGetblocksBinBuffer(
   getBlocksBinResponseContent: Uint8Array,

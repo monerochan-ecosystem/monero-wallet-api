@@ -9,7 +9,7 @@ import {
   type CacheRange,
   type GetBlocksResultMeta,
 } from "../../api";
-import { writeGetblocksBinBuffer } from "../scanresult/getBlocksbinBuffer";
+import { writeGetblocksBinBuffer } from "./getBlocksbinBuffer";
 import { readWriteConnectionStatusFile } from "../connectionStatus";
 export type GetBlocksBinBufferItem = {
   start: number;
