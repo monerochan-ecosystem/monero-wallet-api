@@ -23,7 +23,7 @@ export async function writeGetblocksBinBuffer(
     getBlocksBinResponseContent
   );
 }
-export type GetBlocksBinBufferItem = {
+export type GetBlocksBinBufferItemFilename = {
   start: number;
   end: number;
   filename: string;
@@ -33,7 +33,7 @@ export type GetBlocksBinBufferItem = {
 export async function readGetblocksBinBuffer(
   current_height: number,
   pathPrefix?: string
-): Promise<GetBlocksBinBufferItem[]> {
+): Promise<GetBlocksBinBufferItemFilename[]> {
   const bufferItems = await readGetblocksBinBufferItems(pathPrefix);
 
   const start_buffer =
@@ -94,7 +94,7 @@ export async function trimGetBlocksBinBuffer(
 }
 export async function readGetblocksBinBufferItems(
   pathPrefix?: string
-): Promise<GetBlocksBinBufferItem[]> {
+): Promise<GetBlocksBinBufferItemFilename[]> {
   const bufferItems = await readDir(
     `${pathPrefix ?? ""}getblocksbinbuffer/`
   ).catch(() => []);
