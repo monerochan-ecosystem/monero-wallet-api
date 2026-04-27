@@ -648,9 +648,11 @@ export class ScanCacheOpened {
   public selectOneInput(amount: bigint): Output | undefined {
     return this.spendableInputs()
       .filter((output) => output.amount >= amount)
-      .sort((a, b) =>
-        b.amount > a.amount ? -1 : b.amount < a.amount ? 1 : 0,
-      )[0];
+      .sort((a, b) => {
+        if (b.amount > a.amount) return -1;
+        if (b.amount < a.amount) return 1;
+        return a.block_height - b.block_height;
+      })[0];
   }
   /**
    * selectMultipleInputs larger than amount, sorted from largest to smallest until total reaches amount
