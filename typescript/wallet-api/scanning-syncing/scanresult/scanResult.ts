@@ -162,6 +162,15 @@ export function updateScanHeight(
        current height: ${current_blockhash.block_height}, new height: ${last_block_hash_of_result.block_height}`,
     );
 
+  // guard against degenerate single-block ranges
+  if (
+    current_blockhash.block_height === last_block_hash_of_result.block_height
+  ) {
+    oldRange.end = last_block_hash_of_result.block_height;
+    oldRange.block_hashes[0] = last_block_hash_of_result;
+    return [oldRange, []];
+  }
+
   // 1. add new scanned range
   let anchor: BlockInfo | undefined = undefined;
   let anchor_candidate: BlockInfo | undefined = undefined;

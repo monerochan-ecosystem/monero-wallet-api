@@ -53,7 +53,10 @@ export async function blocksBufferCoordination(
       stopSync,
     );
     const result_meta = await nodeUrl.loadGetBlocksBinResponse(get_blocks_bin);
-    console.log("blocksBufferCoordination block_infos.length:", result_meta.block_infos.length);
+    console.log(
+      "blocksBufferCoordination block_infos.length:",
+      result_meta.block_infos.length,
+    );
     const bufferItem = await writeGetblocksBinBuffer(
       get_blocks_bin,
       result_meta.block_infos,
@@ -201,6 +204,15 @@ export async function updateBlocksBufferScanHeight(
     throw new Error(
       `current scan height was larger than block height of last block from latest scan result. \n       Most likely connected to faulty node / catastrophic reorg.\n       current height: ${current_blockhash.block_height}, new height: ${last_block_hash_of_result.block_height}`,
     );
+
+  // guard against degenerate single-block ranges
+  if (
+    current_blockhash.block_height === last_block_hash_of_result.block_height
+  ) {
+    oldRange.end = last_block_hash_of_result.block_height;
+    oldRange.block_hashes[0] = last_block_hash_of_result;
+    return { current_range: oldRange, scanned_ranges };
+  }
 
   // 1. add new scanned range
   let anchor: BlockInfo | undefined = undefined;
