@@ -414,6 +414,10 @@ test(
     try {
       await waitForNode();
 
+      const TOTAL_BLOCKS = 1000;
+      const TX_BLOCKS = 1;
+      const POP_BLOCKS = 10;
+
       await writeScanSettings(
         {
           wallets: [
@@ -449,12 +453,12 @@ test(
         no_stats: true,
         notifyMasterChanged: async (params) => {
           const last = params.newCache.scanned_ranges.at(-1);
-          if (last && last.end >= 3000 && !syncedCalled) {
+          if (last && last.end >= TOTAL_BLOCKS && !syncedCalled) {
             syncedCalled = true;
             resolveSynced();
             return;
           }
-          if (last && last.end >= 3005) {
+          if (last && last.end >= TOTAL_BLOCKS + TX_BLOCKS) {
             resolvePostTxSync();
             return;
           }
@@ -467,31 +471,47 @@ test(
         },
       });
 
-      await generateBlocks(address0, 3000);
+      await generateBlocks(address0, TOTAL_BLOCKS);
       await syncedPromise;
 
       if (!wallets) throw new Error("wallets not opened");
-      const unsignedTx = await wallets.wallets[0].makeStandardTransaction(
-        address1,
-        "100000000000",
-      );
+
+      let unsignedTx: string;
+      try {
+        unsignedTx = await wallets.wallets[0].makeStandardTransaction(
+          address1,
+          "100000000000",
+        );
+      } catch (e) {
+        throw new Error(
+          `transaction construction failed (likely not enough decoys): ${e}`,
+        );
+      }
       const signedTx = await wallets.wallets[0].signTransaction(unsignedTx);
       const sendResult = await wallets.wallets[0].sendTransaction(signedTx);
       expect(sendResult.status).toBe("OK");
+      expect(sendResult.low_mixin).toBe(false);
+      expect(sendResult.double_spend).toBe(false);
+      expect(sendResult.fee_too_low).toBe(false);
+      expect(sendResult.invalid_input).toBe(false);
+      expect(sendResult.invalid_output).toBe(false);
+      expect(sendResult.not_relayed).toBe(false);
+      expect(sendResult.overspend).toBe(false);
+      expect(sendResult.too_big).toBe(false);
 
-      await generateBlocks(address0, 5);
+      await generateBlocks(address0, TX_BLOCKS);
       await postTxSyncPromise;
 
       await fetch(`${NODE_URL}/pop_blocks`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nblocks: 10 }),
+        body: JSON.stringify({ nblocks: POP_BLOCKS }),
       });
       await fetch(`${NODE_URL}/flush_txpool`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
-      await generateBlocks(address1, 10);
+      await generateBlocks(address1, POP_BLOCKS);
 
       await reorgPromise;
 
@@ -524,7 +544,7 @@ test(
       await stopNode(proc);
     }
   },
-  { timeout: 300000 },
+  { timeout: 40000 },
 );
 
 test(
