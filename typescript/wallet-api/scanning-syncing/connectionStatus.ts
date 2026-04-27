@@ -75,7 +75,6 @@ export async function updateSyncETA(
   }
 
   await readWriteConnectionStatusFile((cs) => {
-    if (!cs) return undefined;
     cs.sync = {
       ...cs.sync,
       daemon_height,
@@ -83,7 +82,6 @@ export async function updateSyncETA(
       eta,
       timestamp: new Date().toISOString(),
     };
-    return cs;
   }, scan_settings_path);
 
   return { last_height: current_scan_height, last_timestamp: Date.now() };

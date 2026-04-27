@@ -278,17 +278,13 @@ export class ViewPair extends WasmProcessor {
             stopSync,
           );
           await readWriteConnectionStatusFile((cs) => {
-            if (cs?.last_packet.status === "catastrophic_reorg") return;
-            const connectionStatus: ConnectionStatus = {
-              ...cs,
-              last_packet: {
-                status: "OK",
-                bytes_read: firstResponse.length,
-                node_url: processor.node_url,
-                timestamp: new Date().toISOString(),
-              },
+            if (cs.last_packet.status === "catastrophic_reorg") return;
+            cs.last_packet = {
+              status: "OK",
+              bytes_read: firstResponse.length,
+              node_url: processor.node_url,
+              timestamp: new Date().toISOString(),
             };
-            return connectionStatus;
           }, scan_settings_path);
 
           yield firstResponse;
@@ -320,14 +316,13 @@ export class ViewPair extends WasmProcessor {
       }
       const catastrophic_reorg_cb = async () => {
         await readWriteConnectionStatusFile((cs) => {
-          ((cs.last_packet = {
+          cs.last_packet = {
             status: "catastrophic_reorg",
             bytes_read: 0,
             node_url: processor.node_url,
             timestamp: new Date().toISOString(),
-          }),
-            scan_settings_path);
-        });
+          };
+        }, scan_settings_path);
       };
       for await (const firstResponse of blockGenerator) {
         if (!firstResponse) continue;
