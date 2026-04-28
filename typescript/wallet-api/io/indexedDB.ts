@@ -68,8 +68,8 @@ class IndexedDBFile implements BunFile {
   }
 
   exists(): Promise<boolean> {
-    throw new Error("not implemented");
-    return Promise.resolve(false);
+    if (!this.path) return Promise.resolve(false);
+    return getFileFromIndexedDB(this.path).then((r) => r !== undefined).catch(() => false);
   }
   delete(): Promise<void> {
     return deleteFileFromIndexedDB(this.path!);
