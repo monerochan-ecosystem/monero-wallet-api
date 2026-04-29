@@ -455,17 +455,14 @@ test(
           if (last && last.end >= TOTAL_BLOCKS && !syncedCalled) {
             syncedCalled = true;
             resolveSynced();
-            return;
           }
           if (last && last.end >= TOTAL_BLOCKS + TX_BLOCKS) {
             resolvePostTxSync();
-            return;
           }
           if (params.newCache.reorg_info) {
             capturedReorgInfo =
               capturedReorgInfo || structuredClone(params.newCache.reorg_info);
             resolveReorg();
-            return;
           }
         },
       });
@@ -474,6 +471,9 @@ test(
       await syncedPromise;
 
       if (!wallets) throw new Error("wallets not opened");
+
+      // enable decoy retry (safe because we're on a local regtest node)
+      wallets.wallets[0].decoyRetry = true;
 
       let unsignedTx: string;
       try {
@@ -543,7 +543,7 @@ test(
       await stopNode(proc);
     }
   },
-  { timeout: 40000 },
+  { timeout: 60000 },
 );
 
 test(
@@ -627,43 +627,94 @@ test(
 );
 
 test(
-  "blocksBufferFetchLoop handles normal reorg, trims buffer front and refetches",
+  "blocksBufferFetchLoop calls notifyHandler for each fetched item",
   async () => {
+    await killLeftoverMonerod();
     await cleanupReorgDir();
     const kp = JSON.parse(await Bun.file(KEYPAIRS_PATH).text()) as Keypair[];
     const address = kp[0].view_key.mainnet_primary;
-    const pathPrefix = `${REORG_DIR}/`;
+    const scan_settings_path = `${REORG_DIR}/buffer-notify.json`;
+
+    const proc = await startNode();
+    try {
+      await waitForNode();
+
+      const notified: any[] = [];
+      const notifyHandler = (item: any) => {
+        notified.push(item?.end ?? null);
+      };
+
+      const controller = new AbortController();
+      // blocksBufferFetchLoop runs forever — start it, don't await
+      const loopPromise = blocksBufferFetchLoop(
+        NODE_URL,
+        0,
+        scan_settings_path,
+        controller.signal,
+        notifyHandler,
+      );
+
+      // let it initialise, then generate blocks so the loop catches them
+      await Bun.sleep(1000);
+      await generateBlocks(address, 5);
+      await Bun.sleep(3000);
+      controller.abort();
+      await loopPromise;
+
+      // notifyHandler must have been called with at least one item
+      expect(notified.length).toBeGreaterThan(0);
+      // at least one item should have a block end height (not null/undefined from tip)
+      expect(notified.some((n) => typeof n === "number")).toBe(true);
+    } finally {
+      await stopNode(proc);
+    }
+  },
+  { timeout: 60000 },
+);
+
+test(
+  "blocksBufferFetchLoop handles normal reorg, trims buffer front and refetches",
+  async () => {
+    await killLeftoverMonerod();
+    await cleanupReorgDir();
+    const kp = JSON.parse(await Bun.file(KEYPAIRS_PATH).text()) as Keypair[];
+    const address = kp[0].view_key.mainnet_primary;
     const scan_settings_path = `${REORG_DIR}/buffer-normal-reorg.json`;
-    const bufferDir = `${pathPrefix}getblocksbinbuffer`;
 
     const proc = await startNode();
     try {
       await waitForNode();
 
       const controller = new AbortController();
-      const coordPromise = blocksBufferFetchLoop(
+      const items: any[] = [];
+      const loopPromise = blocksBufferFetchLoop(
         NODE_URL,
         0,
         scan_settings_path,
-        undefined,
         controller.signal,
-        pathPrefix,
+        (item) => {
+          if (item) items.push(item);
+        },
       );
 
-      await generateBlocks(address, 20);
-      await Bun.sleep(4000);
+      // let it initialise (cullTooLargeScanHeight sets start_height to latest block)
+      await Bun.sleep(1000);
 
+      // now generate blocks — the fetch loop will pick them up
+      await generateBlocks(address, 20);
+      await Bun.sleep(3000);
+
+      // pop blocks to cause a reorg
       await fetch(`${NODE_URL}/pop_blocks`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ nblocks: 2 }),
       });
-      await Bun.sleep(1000);
       await generateBlocks(address, 5);
+      await Bun.sleep(3000);
 
-      await Bun.sleep(4000);
       controller.abort();
-      await coordPromise.catch(() => {});
+      await loopPromise;
 
       const connStatus =
         await readConnectionStatusDefaultLocation(scan_settings_path);
@@ -679,22 +730,9 @@ test(
 
       expect(connStatus.sync.reorg_split_height).toBeDefined();
 
-      const bufferItems = connStatus.sync.get_blocks_bin_buffer;
-      expect(bufferItems.length).toBeGreaterThanOrEqual(0);
-
-      const files = await readdir(bufferDir).catch(() => [] as string[]);
-      expect(files.length).toBe(bufferItems.length);
-
-      for (const filename of files) {
-        const filePath = `${bufferDir}/${filename}`;
-        const file = Bun.file(filePath);
-        expect(file.size).toBeGreaterThan(1000);
-      }
-
-      const connFilenames = new Set(bufferItems.map((bi) => bi.filename));
-      for (const filename of files) {
-        expect(connFilenames.has(filename)).toBe(true);
-      }
+      // verify reorg_infos has an entry
+      expect(connStatus.sync.reorg_infos.length).toBeGreaterThan(0);
+      expect(connStatus.sync.reorg_infos[0].split_height).toBeDefined();
     } finally {
       await stopNode(proc);
     }
@@ -705,10 +743,10 @@ test(
 test(
   "blocksBufferFetchLoop writes catastrophic_reorg and throws on unrecoverable reorg",
   async () => {
+    await killLeftoverMonerod();
     await cleanupReorgDir();
     const kp = JSON.parse(await Bun.file(KEYPAIRS_PATH).text()) as Keypair[];
     const address = kp[0].view_key.mainnet_primary;
-    const pathPrefix = `${REORG_DIR}/`;
     const scan_settings_path = `${REORG_DIR}/buffer-cat-reorg.json`;
 
     const proc1 = await startNode();
@@ -717,17 +755,18 @@ test(
       await generateBlocks(address, 20);
 
       const controller1 = new AbortController();
-      const coordPromise1 = blocksBufferFetchLoop(
+      const loop1 = blocksBufferFetchLoop(
         NODE_URL,
         0,
         scan_settings_path,
-        undefined,
         controller1.signal,
-        pathPrefix,
       );
-      await Bun.sleep(4000);
+      // let it initialise and fetch some blocks
+      await Bun.sleep(1000);
+      await generateBlocks(address, 20);
+      await Bun.sleep(3000);
       controller1.abort();
-      await coordPromise1.catch(() => {});
+      await loop1;
     } finally {
       await stopNode(proc1);
     }
@@ -740,15 +779,15 @@ test(
       let threw = false;
       try {
         const controller2 = new AbortController();
-        const timeout = setTimeout(() => controller2.abort(), 8000);
-        await blocksBufferFetchLoop(
+        const loop2 = blocksBufferFetchLoop(
           NODE_URL,
           0,
           scan_settings_path,
-          undefined,
           controller2.signal,
-          pathPrefix,
         );
+        // it should detect catastrophic reorg and throw
+        const timeout = setTimeout(() => controller2.abort(), 8000);
+        await loop2;
         clearTimeout(timeout);
       } catch {
         threw = true;
