@@ -1,5 +1,5 @@
 import { atomicWrite, type BlockInfo, type CacheRange } from "../api";
-import type { GetBlocksBinBufferItem } from "./blocksbuffer/blocksBufferFetchLoop";
+import type { ReorgInfo } from "./scanresult/reorg";
 import { SCAN_SETTINGS_STORE_NAME_DEFAULT } from "./scanSettings";
 export type ConnectionStatusOptions =
   | "OK"
@@ -15,8 +15,8 @@ export type ConnectionStatus = {
     timestamp: string;
   };
   sync: {
-    get_blocks_bin_buffer: GetBlocksBinBufferItem[];
     reorg_split_height?: BlockInfo;
+    reorg_infos: ReorgInfo[];
     current_range?: CacheRange;
     scanned_ranges: CacheRange[]; // list of block height ranges that have been scanned [0].start, [length-1].end <-- last scanned height
     daemon_height: number;
@@ -54,7 +54,7 @@ export function emptyConnectionStatus(
       timestamp: new Date().toISOString(),
     },
     sync: {
-      get_blocks_bin_buffer: [],
+      reorg_infos: [],
       scanned_ranges: [],
       daemon_height: 0,
       current_scan_height: 0,
