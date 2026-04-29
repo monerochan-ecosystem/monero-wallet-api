@@ -74,6 +74,23 @@ export type CreateTransactionParams = {
   no_fee_circuit_breaker?: boolean;
 };
 export class ScanCacheOpened {
+  /** how many decoys to sample per input (default 20, ring size is 11) */
+  public decoySampleCount: number = 20;
+  /**
+   * when true, retry makeInput with higher sample counts on failure.
+   *
+   * PRIVACY WARNING: retrying contacts the node multiple times for the same
+   * input, each time with a different set of candidate indices. this lets the
+   * node correlate which output is the real spend across the retries.
+   * only ever enable this on your own local trusted node, never on a remote
+   * public node.
+   *
+   * defaults to false, on failure the original error propagates.
+   */
+  public decoyRetry: boolean = false;
+  /** sample sizes to try when decoyRetry is enabled, in order */
+  public readonly decoyRetrySizes: number[] = [20, 50, 100, 200, 500];
+
   public static async create(params: ScanCacheOpenedCreateParams) {
     const theCatchToBeOpened = await readCacheFileDefaultLocation(
       params.primary_address,
@@ -332,21 +349,36 @@ export class ScanCacheOpened {
     const node = await NodeUrl.create(this.node_url);
 
     const distibution = await node.getOutputDistribution();
-    const preparedInputs: PreparedInput[] = [];
+    const inputs: Input[] = [];
+
     for (const input of selectedInputs) {
       // 5. sample decoys & get outs from node: here is where a privacy compromising event could happen
-      preparedInputs.push(prepareInput(node, distibution, input));
+      const sizesToTry = this.decoyRetry
+        ? this.decoyRetrySizes
+        : [this.decoySampleCount];
+
+      let madeInput: Input | undefined;
+
+      for (const size of sizesToTry) {
+        if (madeInput) break;
+        try {
+          const prepared = prepareInput(node, distibution, input, size);
+          const wasmInput = node.makeInput(
+            prepared.input,
+            prepared.sample.candidates,
+            await prepared.outsResponse,
+          );
+          madeInput = wasmInput;
+        } catch (e) {
+          if (size === sizesToTry[sizesToTry.length - 1]) throw e;
+          // fall through to next size
+        }
+      }
+
+      if (!madeInput) throw new Error("failed to make input");
+      inputs.push(madeInput);
     }
-    const inputs: Input[] = [];
-    for (const preparedInput of preparedInputs) {
-      // 6. make input: combine output with sampled and verified unlocked decoys
-      const input = node.makeInput(
-        preparedInput.input,
-        preparedInput.sample.candidates,
-        await preparedInput.outsResponse,
-      );
-      inputs.push(input);
-    }
+
     // 7. make transaction: combine inputs, payments + fee info
     const unsignedTx = this.view_pair.makeTransaction({
       inputs,
