@@ -357,10 +357,17 @@ export async function handleBlocksBufferReorg(
     const end = last_block_hash_of_result.block_height;
 
     const start = current_range.start > end ? end : current_range.start;
+    // preserve the old deep anchor (3rd element) so subsequent reorgs
+    // have a fallback beyond the split height. without this, both anchors
+    // point to the same height and the next pop past it is catastrophic.
+    const oldDeepAnchor = oldRange.block_hashes.at(-1);
+    const newAnchor = oldDeepAnchor && oldDeepAnchor.block_height < anchor.block_height
+      ? oldDeepAnchor
+      : anchor;
     const newRange = {
       start,
       end,
-      block_hashes: [last_block_hash_of_result, anchor, anchor],
+      block_hashes: [last_block_hash_of_result, anchor, newAnchor],
     };
     return {
       current_range: makeNewBlocksBufferScanRange(newRange, scanned_ranges),
