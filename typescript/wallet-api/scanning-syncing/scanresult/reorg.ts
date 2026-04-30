@@ -3,13 +3,14 @@ import type { KeyImage } from "./computeKeyImage";
 import { makeNewRange, type ScanResult } from "./scanResult";
 import type { CacheRange, ChangedOutput, ScanCache } from "./scanCache";
 export type ReorgInfo = {
-  split_height: BlockInfo;
+  split_heights: BlockInfo[];
   removed_outputs: ReorgedOutput[]; // Copies of detached outputs for logging
   reverted_spends: ReorgedOutput[]; // Outputs that became unspent again
 };
 export type ReorgedOutput = {
   old_output_state: Output;
   key_image: KeyImage;
+  split_height: BlockInfo;
 };
 export function handleReorg(
   current_range: CacheRange,
@@ -31,11 +32,16 @@ export function handleReorg(
     if (!split_height) continue;
 
     // we found the split height & do the reorg
-    const reorg_info: ReorgInfo = {
-      split_height,
-      removed_outputs: [],
-      reverted_spends: [],
-    };
+    if (!cache.reorg_info) {
+      cache.reorg_info = {
+        split_heights: [split_height],
+        removed_outputs: [],
+        reverted_spends: [],
+      };
+    } else {
+      cache.reorg_info.split_heights.push(split_height);
+    }
+
     // First, collect reverted spends from all outputs (before any removals)
     // so that outputs with block_height < split_height but spent_block_height >= split_height are captured
     const reverted_outputs = Object.entries(cache.outputs).filter(
@@ -52,7 +58,11 @@ export function handleReorg(
       const [key_image] = Object.entries(cache.own_key_images).find(
         ([own_key_image, globalid]) => globalid === id,
       ) || [""]; // if this is viewonly the key_image will be empty
-      reorg_info.removed_outputs.push({ old_output_state, key_image });
+      cache.reorg_info.removed_outputs.push({
+        old_output_state,
+        key_image,
+        split_height,
+      });
 
       // 2. remove from outputs and own_key_images
       delete cache.outputs[id];
@@ -68,9 +78,10 @@ export function handleReorg(
         ([own_key_image, globalid]) => globalid === id,
       ) || [""]; // if this is viewonly the key_image will be empty
       const old_output_state = Object.assign({}, old_output_state_pointer);
-      reorg_info.reverted_spends.push({
+      cache.reorg_info.reverted_spends.push({
         old_output_state,
         key_image, // in this case key_image only used here, does not get removed
+        split_height,
       });
 
       // remove spend info from original cache (if output still exists
@@ -90,7 +101,6 @@ export function handleReorg(
     // find current range in scanned ranges and change its end value + latest_block_hash
     oldRange.end = split_height.block_height;
     oldRange.block_hashes[0] = split_height;
-    cache.reorg_info = reorg_info;
     // fix current_range
     let anchor: BlockInfo | undefined = result.block_infos.slice(-100)[0]; // if we got lots of new blocks
     const old_anchor = oldRange.block_hashes.at(-1);
