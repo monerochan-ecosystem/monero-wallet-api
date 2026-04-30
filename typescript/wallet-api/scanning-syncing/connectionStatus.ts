@@ -5,25 +5,26 @@ export type ConnectionStatusOptions =
   | "OK"
   | "partial_read"
   | "connection_failed"
+  | "blocks_buffer_full"
   | "no_connection_yet"
   | "catastrophic_reorg";
+export type ConnectionSatusLastPacket = {
+  status: ConnectionStatusOptions;
+  bytes_read: number;
+  node_url: string;
+  timestamp: string;
+};
+export type ConnectionStatusSync = {
+  reorg_info?: ReorgInfo;
+  scanned_ranges: CacheRange[]; // list of block height ranges that have been scanned [0].start, [length-1].end <-- last scanned height
+  daemon_height: number;
+  current_scan_height: number; //  derived from:  scan_settings start_height + end height of scanned_range that start height is in scanned_ranges
+  eta: string;
+  timestamp: string;
+};
 export type ConnectionStatus = {
-  last_packet: {
-    status: ConnectionStatusOptions;
-    bytes_read: number;
-    node_url: string;
-    timestamp: string;
-  };
-  sync: {
-    reorg_split_height?: BlockInfo;
-    reorg_infos: ReorgInfo[];
-    current_range?: CacheRange;
-    scanned_ranges: CacheRange[]; // list of block height ranges that have been scanned [0].start, [length-1].end <-- last scanned height
-    daemon_height: number;
-    current_scan_height: number;
-    eta: string;
-    timestamp: string;
-  };
+  last_packet: ConnectionSatusLastPacket;
+  sync: ConnectionStatusSync;
 };
 
 export const DEFAULT_CONNECTION_STATUS_PREFIX = "ConnectionStatus-";
@@ -54,7 +55,6 @@ export function emptyConnectionStatus(
       timestamp: new Date().toISOString(),
     },
     sync: {
-      reorg_infos: [],
       scanned_ranges: [],
       daemon_height: 0,
       current_scan_height: 0,
@@ -151,8 +151,7 @@ export async function readWriteConnectionStatusFile(
 ) {
   let connectionStatus =
     await readConnectionStatusDefaultLocation(scan_settings_path);
-  if (!connectionStatus)
-    connectionStatus = emptyConnectionStatus();
+  if (!connectionStatus) connectionStatus = emptyConnectionStatus();
   await writeCB(connectionStatus);
   await writeConnectionStatusFile(connectionStatus, scan_settings_path);
   return connectionStatus;
