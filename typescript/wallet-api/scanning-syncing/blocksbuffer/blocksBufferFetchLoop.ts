@@ -1,7 +1,7 @@
 import {
-  cullTooLargeScanHeight,
   findRange,
   get_block_headers_range,
+  get_info,
   mergeRanges,
   NodeUrl,
   sleep,
@@ -24,25 +24,17 @@ export const MAX_BLOCKS_BUFFER_SIZE = 10;
 // calls notifyHandler for each fetched item (undefined if at tip).
 // handles reorg detection and catastrophic reorg throwing.
 // no disk writes for buffer data. no get_blocks_bin_buffer in connection status.
-export async function blocksBufferFetchLoop(
+export async function* blocksBufferFetchLoop(
   node_url: string,
   start_height: number,
-  scan_settings_path?: string,
   max_blocks_buffer_size: number = MAX_BLOCKS_BUFFER_SIZE,
   stopSync?: AbortSignal,
   notifyHandler?: (item: GetBlocksBinBufferItem | undefined) => void,
-): Promise<void> {
+): AsyncGenerator<void> {
   const nodeUrl = await NodeUrl.create(node_url);
   console.log("[blocksBufferFetchLoop] NodeUrl created, fetching info...");
 
-  start_height = await cullTooLargeScanHeight(
-    nodeUrl.node_url,
-    scan_settings_path,
-  );
-  console.log(
-    "[blocksBufferFetchLoop] cullTooLargeScanHeight done, start_height=" +
-      start_height,
-  );
+  start_height = await reduceStartHeightToTip(start_height, nodeUrl.node_url);
 
   // initialise ranges on first call
   let connectionStatus = await readWriteConnectionStatusFile(async (cs) => {
@@ -372,4 +364,32 @@ export async function handleBlocksBufferReorg(
   throw new Error(
     "Could not find reorg split height. Most likely connected to faulty node / catastrophic reorg.",
   );
+}
+/**
+ * getBlocks.bin monero RPC call will block clients as peers,
+ * after 3 attempts of fetching a height higher than tip,
+ * this is ugly but it is what it is, so we need to do a get_info
+ * rpc call to get the tip height and reduce the start_height to the tip height,
+ * if it is larger than the tip height
+ * @param start_height
+ * @param node_url
+ * @returns Promise<number>  a promise with the new potentially reduced start_height
+ */
+export async function reduceStartHeightToTip(
+  start_height: number,
+  node_url: string,
+): Promise<number> {
+  const getInfo = await get_info(node_url);
+
+  if (start_height > getInfo.height - 1) {
+    const oldStartHeight = start_height;
+    start_height = getInfo.height - 1;
+    console.log(
+      "[reduceStartHeightToTip] start height was larger than daemon height, setting start_height=" +
+        start_height,
+      " oldStartHeight=" + oldStartHeight,
+    );
+  }
+
+  return start_height;
 }
