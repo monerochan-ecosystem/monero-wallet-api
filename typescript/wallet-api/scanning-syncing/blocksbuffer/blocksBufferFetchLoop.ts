@@ -9,41 +9,64 @@ import {
   type CacheRange,
   type GetBlocksResultMeta,
 } from "../../api";
-import { writeGetblocksBinBuffer } from "./getBlocksbinBuffer";
 import { readWriteConnectionStatusFile } from "../connectionStatus";
 export type GetBlocksBinBufferItem = {
   start: number;
   end: number;
-  filename: string;
-  date: string;
   last_block_hash: string;
   get_blocks_result_meta: GetBlocksResultMeta;
+  data: Uint8Array;
 };
-export const MAX_BLOCKS_BUFFER_SIZE = 100000000000;
+export const MAX_BLOCKS_BUFFER_SIZE = 10;
+
+// runs forever, fetching blocks from the node.
+// writes connection status (scanned_ranges, current_range, reorg_split_height).
+// calls notifyHandler for each fetched item (undefined if at tip).
+// handles reorg detection and catastrophic reorg throwing.
+// no disk writes for buffer data. no get_blocks_bin_buffer in connection status.
 export async function blocksBufferFetchLoop(
   node_url: string,
   start_height: number,
   scan_settings_path?: string,
   max_blocks_buffer_size: number = MAX_BLOCKS_BUFFER_SIZE,
   stopSync?: AbortSignal,
-  pathPrefix?: string,
-) {
+  notifyHandler?: (item: GetBlocksBinBufferItem | undefined) => void,
+): Promise<void> {
   const nodeUrl = await NodeUrl.create(node_url);
+  console.log("[blocksBufferFetchLoop] NodeUrl created, fetching info...");
 
-  start_height = await cullTooLargeScanHeight(node_url, scan_settings_path);
+  start_height = await cullTooLargeScanHeight(
+    nodeUrl.node_url,
+    scan_settings_path,
+  );
+  console.log(
+    "[blocksBufferFetchLoop] cullTooLargeScanHeight done, start_height=" +
+      start_height,
+  );
+
+  // initialise ranges on first call
   let connectionStatus = await readWriteConnectionStatusFile(async (cs) => {
     if (!cs.sync.current_range) {
-      const { current_range, scanned_ranges } = await initScannedRanges(
-        node_url,
+      const r = await initScannedRanges(
+        nodeUrl.node_url,
         start_height,
         cs.sync.scanned_ranges,
       );
-      cs.sync.scanned_ranges = scanned_ranges;
-      cs.sync.current_range = current_range;
+      cs.sync.scanned_ranges = r.scanned_ranges;
+      cs.sync.current_range = r.current_range;
+      cs.last_packet = {
+        status: "OK",
+        bytes_read: 0,
+        node_url: nodeUrl.node_url,
+        timestamp: new Date().toISOString(),
+      };
     }
   }, scan_settings_path);
+
   while (true) {
     if (stopSync?.aborted) return;
+
+    console.log("[blocksBufferFetchLoop] fetching from current_range...");
     const get_blocks_bin = await nodeUrl.getBlocksBinExecuteRequest(
       {
         block_ids: connectionStatus.sync.current_range!.block_hashes.map(
@@ -52,16 +75,44 @@ export async function blocksBufferFetchLoop(
       },
       stopSync,
     );
+
+    if (stopSync?.aborted) return;
+
     const result_meta = await nodeUrl.loadGetBlocksBinResponse(get_blocks_bin);
     console.log(
-      "blocksBufferFetchLoop block_infos.length:",
-      result_meta.block_infos.length,
+      "[blocksBufferFetchLoop] response: " +
+        result_meta.block_infos.length +
+        " blocks",
     );
-    const bufferItem = await writeGetblocksBinBuffer(
-      get_blocks_bin,
-      result_meta.block_infos,
-      pathPrefix,
-    );
+
+    // no new blocks: at tip, sleep and retry
+    if (!result_meta.block_infos.length) {
+      connectionStatus = await readWriteConnectionStatusFile(async (cs) => {
+        cs.last_packet = {
+          status: "OK",
+          bytes_read: get_blocks_bin.length,
+          node_url: node_url,
+          timestamp: new Date().toISOString(),
+        };
+      }, scan_settings_path);
+
+      if (notifyHandler) notifyHandler(undefined);
+      await sleep(1000);
+      continue;
+    }
+
+    const bi = result_meta.block_infos;
+    const start = bi[0].block_height;
+    const end = bi.at(-1)!.block_height;
+    const block_hash = bi.at(-1)!.block_hash;
+    const bufferItem: GetBlocksBinBufferItem = {
+      start,
+      end,
+      last_block_hash: block_hash,
+      data: get_blocks_bin,
+      get_blocks_result_meta: result_meta,
+    };
+
     connectionStatus = await readWriteConnectionStatusFile(async (cs) => {
       cs.last_packet = {
         status: "OK",
@@ -81,32 +132,19 @@ export async function blocksBufferFetchLoop(
       cs.sync.current_range = current_range;
       if (split_height) {
         cs.sync.reorg_split_height = split_height;
-        const itemsToRemove = cs.sync.get_blocks_bin_buffer.filter(
-          (bi) => bi.end >= split_height.block_height,
-        );
-        for (const item of itemsToRemove) {
-          await Bun.file(
-            `${pathPrefix ?? ""}getblocksbinbuffer/${item.filename}`,
-          )
-            .delete()
-            .catch(() => {});
-        }
-        cs.sync.get_blocks_bin_buffer = cs.sync.get_blocks_bin_buffer.filter(
-          (bi) => bi.end < split_height.block_height,
-        );
-      }
-      if (bufferItem) {
-        cs.sync.get_blocks_bin_buffer.push({
-          ...bufferItem,
-          get_blocks_result_meta: result_meta,
+        // push a new ReorgInfo entry for this reorg
+        cs.sync.reorg_infos.push({
+          split_height,
+          removed_outputs: [],
+          reverted_spends: [],
         });
       }
     }, scan_settings_path);
-    if (result_meta.block_infos.length === 0) {
-      await sleep(1000);
-    }
+
+    if (notifyHandler) notifyHandler(bufferItem);
   }
 }
+
 export type BlocksBufferScanStatus = {
   current_range: CacheRange;
   scanned_ranges: CacheRange[];
