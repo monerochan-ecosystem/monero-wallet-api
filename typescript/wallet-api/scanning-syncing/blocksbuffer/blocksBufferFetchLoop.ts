@@ -59,6 +59,12 @@ export async function* blocksBufferFetchLoop(
   yield connection_status.last_packet;
 
   while (true) {
+    // avoid overwriting last_packet in case of catastrophic reorg
+    // this generator will block on this. coordinator should rethrow the CatastrophicReorgError
+    if (connection_status.last_packet.status === "catastrophic_reorg") {
+      yield connection_status.last_packet;
+      continue;
+    }
     if (blocks_buffer.length >= max_blocks_buffer_size) {
       connection_status.last_packet = {
         status: "blocks_buffer_full",
