@@ -129,5 +129,106 @@ test("it2: regtest node, barebones coordinator", async () => {
     } catch {}
   }
 }, 10000);
+
+test("it3: regtest node - mine 400 in chunks so anchors evolve, kill, restart, cat reorg", async () => {
+  const dir = `${OUTPUT_DIR}/it3`;
+  await rm(dir, { force: true, recursive: true });
+  await mkdir(dir, { recursive: true });
+
+  await writeScanSettings({
+    wallets: [{ primary_address: "44AFFq5kSiGBoZ4NMDwYtN18obc8AemS33DBLWs3H7otXft3XjrpDtQGv7SqSsaBYBb98uNbr2VBBEt7f2wfn3RVGQBEP3A" }],
+    node_url: NODE_URL, start_height: 0,
+  }, `${dir}/ScanSettings.json`);
+
+  const proc = Bun.spawn(
+    [MONEROD_PATH, "--regtest", "--offline", "--fixed-difficulty", "1",
+     "--rpc-bind-ip", "127.0.0.1", "--rpc-bind-port", String(RPC_PORT), "--non-interactive"],
+    { stdin: "pipe", stdout: "pipe", stderr: "pipe" },
+  );
+
+  try {
+    await waitForNode(NODE_URL);
+    const kp = JSON.parse(await Bun.file(KEYPAIRS_PATH).text());
+    const addr = kp[0].view_key.mainnet_primary;
+
+    // mine 50 first so generator has blocks to fetch
+    await rpc(NODE_URL, "generateblocks", { amount_of_blocks: 50, wallet_address: addr });
+
+    const buffer: GetBlocksBinBufferItem[] = [];
+    const cs: ConnectionStatus = emptyConnectionStatus();
+    const gen = blocksBufferFetchLoop(NODE_URL, 0, buffer, cs);
+
+    // single for-await loop, mine more on each sync so anchors walk away from genesis
+    let totalMined = 50;
+    let syncCount = 0;
+    for await (const event of gen) {
+      if (event === "blocks_buffer_changed") continue;
+      if ("status" in event) {
+        await readWriteConnectionStatusFile((cs2) => { cs2.last_packet = event; }, `${dir}/ScanSettings.json`);
+        continue;
+      }
+      syncCount++;
+      await readWriteConnectionStatusFile((cs2) => { cs2.sync = event; }, `${dir}/ScanSettings.json`);
+      const saved = JSON.parse(await Bun.file(connectionStatusFilePath(`${dir}/ScanSettings.json`)).text());
+      const lr = saved.sync.scanned_ranges?.at(-1);
+      if (lr?.block_hashes) {
+        console.log(`[it3] sync ${syncCount}: totalMined ${totalMined}, anchors: ${lr.block_hashes.map((h: any) => h.block_height+":"+h.block_hash.slice(0,12)).join(", ")}`);
+      }
+      if (syncCount >= 8) break; // 8 chunks of 50 = 400
+      await rpc(NODE_URL, "generateblocks", { amount_of_blocks: 50, wallet_address: addr });
+      totalMined += 50;
+    }
+    console.log("[it3] mined 400 total, anchors evolved, killing node");
+  } finally {
+    proc.kill(9);
+    try { await proc.exited; } catch {}
+    await Bun.sleep(1000);
+  }
+
+  // restart same node (same command)
+  const proc2 = Bun.spawn(
+    [MONEROD_PATH, "--regtest", "--offline", "--fixed-difficulty", "1",
+     "--rpc-bind-ip", "127.0.0.1", "--rpc-bind-port", String(RPC_PORT), "--non-interactive"],
+    { stdin: "pipe", stdout: "pipe", stderr: "pipe" },
+  );
+
+  try {
+    await waitForNode(NODE_URL);
+    const kp = JSON.parse(await Bun.file(KEYPAIRS_PATH).text());
+    const addr = kp[0].view_key.mainnet_primary;
+
+    await rpc(NODE_URL, "generateblocks", { amount_of_blocks: 50, wallet_address: addr });
+    console.log("[it3] mined 50 on restarted node");
+
+    const cs2: ConnectionStatus = JSON.parse(
+      await Bun.file(connectionStatusFilePath(`${dir}/ScanSettings.json`)).text()
+    );
+    const lr = cs2.sync.scanned_ranges?.at(-1);
+    if (lr?.block_hashes) {
+      console.log(`[it3] cs2 anchors: ${lr.block_hashes.map((h: any) => h.block_height+":"+h.block_hash.slice(0,12)).join(", ")}`);
+    }
+
+    const buffer2: GetBlocksBinBufferItem[] = [];
+    const gen2 = blocksBufferFetchLoop(NODE_URL, 0, buffer2, cs2);
+
+    let sawCat = false;
+    for await (const event of gen2) {
+      if (event === "blocks_buffer_changed") continue;
+      if ("status" in event) {
+        console.log(`[it3] gen2: status=${event.status}`);
+        await readWriteConnectionStatusFile((cs3) => { cs3.last_packet = event; }, `${dir}/ScanSettings.json`);
+        if (event.status === "catastrophic_reorg") { sawCat = true; break; }
+        continue;
+      }
+      break;
+    }
+    expect(sawCat).toBe(true);
+    console.log("[it3] catastrophic reorg confirmed and written to conn status file");
+
+  } finally {
+    proc2.kill(9);
+    try { await proc2.exited; } catch {}
+  }
+}, 20000);
 // note: don't bump timeouts above 20s, all tests finish under 16s total.
 // if a test times out the bug is elsewhere, not the timeout.
