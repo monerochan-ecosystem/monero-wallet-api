@@ -9,7 +9,11 @@ import {
   type CacheRange,
   type GetBlocksResultMeta,
 } from "../../api";
-import { readWriteConnectionStatusFile } from "../connectionStatus";
+import {
+  type ConnectionSatusLastPacket,
+  type ConnectionStatus,
+  type ConnectionStatusSync,
+} from "../connectionStatus";
 export type GetBlocksBinBufferItem = {
   start: number;
   end: number;
@@ -20,55 +24,52 @@ export type GetBlocksBinBufferItem = {
 export const MAX_BLOCKS_BUFFER_SIZE = 10;
 
 // runs forever, fetching blocks from the node.
-// writes connection status (scanned_ranges, current_range, reorg_split_height).
-// calls notifyHandler for each fetched item (undefined if at tip).
-// handles reorg detection and catastrophic reorg throwing.
-// no disk writes for buffer data. no get_blocks_bin_buffer in connection status.
+// handles scan level reorg detection and catastrophic reorg
 export async function* blocksBufferFetchLoop(
   node_url: string,
   start_height: number,
+  blocks_buffer: GetBlocksBinBufferItem[], // pass by reference
+  connection_status: ConnectionStatus, // we make a local copy of this and pass last_packet and sync updates seperately
   max_blocks_buffer_size: number = MAX_BLOCKS_BUFFER_SIZE,
   stopSync?: AbortSignal,
-  notifyHandler?: (item: GetBlocksBinBufferItem | undefined) => void,
-): AsyncGenerator<void> {
+): AsyncGenerator<
+  | ConnectionSatusLastPacket
+  | ConnectionStatusSync
+  // | ConnectionStatus
+  | "blocks_buffer_changed"
+> {
+  connection_status = structuredClone(connection_status);
   const nodeUrl = await NodeUrl.create(node_url);
   console.log("[blocksBufferFetchLoop] NodeUrl created, fetching info...");
 
   start_height = await reduceStartHeightToTip(start_height, nodeUrl.node_url);
-
   // initialise ranges on first call
-  let connectionStatus = await readWriteConnectionStatusFile(async (cs) => {
-    if (!cs.sync.current_range) {
-      const r = await initScannedRanges(
-        nodeUrl.node_url,
-        start_height,
-        cs.sync.scanned_ranges,
-      );
-      cs.sync.scanned_ranges = r.scanned_ranges;
-      cs.sync.current_range = r.current_range;
-      cs.last_packet = {
-        status: "OK",
-        bytes_read: 0,
-        node_url: nodeUrl.node_url,
-        timestamp: new Date().toISOString(),
-      };
-    }
-  }, scan_settings_path);
+  let { current_range, scanned_ranges } = await initScannedRanges(
+    nodeUrl.node_url,
+    start_height,
+    connection_status.sync.scanned_ranges,
+  );
+  connection_status.sync.scanned_ranges = scanned_ranges;
+  connection_status.last_packet = {
+    status: "no_connection_yet",
+    bytes_read: 0,
+    node_url: nodeUrl.node_url,
+    timestamp: new Date().toISOString(),
+  };
+  yield connection_status.last_packet;
 
   while (true) {
-    if (stopSync?.aborted) return;
-
+    if (blocks_buffer.length >= max_blocks_buffer_size) {
+      connection_status.last_packet = {
+        status: "blocks_buffer_full",
+        bytes_read: 0,
+        node_url: node_url,
+        timestamp: new Date().toISOString(),
+      };
+      await sleep(1000);
+    }
     console.log("[blocksBufferFetchLoop] fetching from current_range...");
-    const get_blocks_bin = await nodeUrl.getBlocksBinExecuteRequest(
-      {
-        block_ids: connectionStatus.sync.current_range!.block_hashes.map(
-          (b) => b.block_hash,
-        ),
-      },
-      stopSync,
-    );
-
-    if (stopSync?.aborted) return;
+    const get_blocks_bin = await doRPCrequest(nodeUrl, current_range, stopSync);
 
     const result_meta = await nodeUrl.loadGetBlocksBinResponse(get_blocks_bin);
     console.log(
@@ -76,19 +77,15 @@ export async function* blocksBufferFetchLoop(
         result_meta.block_infos.length +
         " blocks",
     );
-
+    connection_status.last_packet = {
+      status: "OK",
+      bytes_read: get_blocks_bin.length,
+      node_url: node_url,
+      timestamp: new Date().toISOString(),
+    };
+    yield connection_status.last_packet;
     // no new blocks: at tip, sleep and retry
     if (!result_meta.block_infos.length) {
-      connectionStatus = await readWriteConnectionStatusFile(async (cs) => {
-        cs.last_packet = {
-          status: "OK",
-          bytes_read: get_blocks_bin.length,
-          node_url: node_url,
-          timestamp: new Date().toISOString(),
-        };
-      }, scan_settings_path);
-
-      if (notifyHandler) notifyHandler(undefined);
       await sleep(1000);
       continue;
     }
@@ -104,39 +101,60 @@ export async function* blocksBufferFetchLoop(
       data: get_blocks_bin,
       get_blocks_result_meta: result_meta,
     };
-
-    connectionStatus = await readWriteConnectionStatusFile(async (cs) => {
-      cs.last_packet = {
-        status: "OK",
-        bytes_read: get_blocks_bin.length,
-        node_url: node_url,
-        timestamp: new Date().toISOString(),
-      };
-      const { current_range, scanned_ranges, split_height } =
-        await updateBlocksBufferScanHeight(
-          connectionStatus.sync.current_range!,
-          result_meta,
-          cs.sync.scanned_ranges,
-          node_url,
-          scan_settings_path,
-        );
-      cs.sync.scanned_ranges = scanned_ranges;
-      cs.sync.current_range = current_range;
-      if (split_height) {
-        cs.sync.reorg_split_height = split_height;
+    try {
+      const parse_result = await updateBlocksBufferScanHeight(
+        current_range,
+        result_meta,
+        connection_status.sync.scanned_ranges,
+      );
+      connection_status.sync.scanned_ranges = parse_result.scanned_ranges;
+      current_range = parse_result.current_range;
+      if (parse_result.split_height) {
         // push a new ReorgInfo entry for this reorg
-        cs.sync.reorg_infos.push({
-          split_height,
-          removed_outputs: [],
-          reverted_spends: [],
-        });
+        if (!connection_status.sync.reorg_info) {
+          connection_status.sync.reorg_info = {
+            split_heights: [parse_result.split_height],
+            removed_outputs: [],
+            reverted_spends: [],
+          };
+        } else {
+          connection_status.sync.reorg_info.split_heights.push(
+            parse_result.split_height,
+          );
+        }
       }
-    }, scan_settings_path);
-
-    if (notifyHandler) notifyHandler(bufferItem);
+      blocks_buffer.push(bufferItem);
+      yield "blocks_buffer_changed";
+      yield connection_status.sync;
+    } catch (error) {
+      //cat reorg
+      if (error instanceof CatastrophicReorgError) {
+        connection_status.last_packet = {
+          status: "catastrophic_reorg",
+          bytes_read: 0,
+          node_url,
+          timestamp: new Date().toISOString(),
+        };
+        yield connection_status.last_packet;
+      } else {
+        throw error;
+      }
+    }
   }
 }
-
+export async function doRPCrequest(
+  nodeUrl: NodeUrl,
+  current_range: CacheRange,
+  stopSync?: AbortSignal,
+) {
+  const get_blocks_bin = await nodeUrl.getBlocksBinExecuteRequest(
+    {
+      block_ids: current_range.block_hashes.map((b) => b.block_hash),
+    },
+    stopSync,
+  );
+  return get_blocks_bin;
+}
 export type BlocksBufferScanStatus = {
   current_range: CacheRange;
   scanned_ranges: CacheRange[];
@@ -192,8 +210,6 @@ export async function updateBlocksBufferScanHeight(
   current_range: CacheRange,
   result_meta: GetBlocksResultMeta,
   scanned_ranges: CacheRange[],
-  node_url: string,
-  scan_settings_path?: string,
 ): Promise<BlocksBufferReorgResult> {
   let last_block_hash_of_result = result_meta.block_infos.at(-1);
   let current_blockhash = current_range?.block_hashes.at(0);
@@ -221,8 +237,6 @@ export async function updateBlocksBufferScanHeight(
       result_meta,
       scanned_ranges,
       oldRange,
-      node_url,
-      scan_settings_path,
     );
   }
   // scan only happens in one direction,
@@ -305,8 +319,6 @@ export async function handleBlocksBufferReorg(
   result_meta: GetBlocksResultMeta,
   scanned_ranges: CacheRange[],
   oldRange: CacheRange,
-  node_url: string,
-  scan_settings_path?: string,
 ): Promise<BlocksBufferReorgResult> {
   // we need to check where anchor candidate is and if not found, try the same for anchor
   // if else throw on catastrophic reorg
@@ -352,16 +364,7 @@ export async function handleBlocksBufferReorg(
   }
   // we tried all the block hashes and could not find the split height
 
-  await readWriteConnectionStatusFile((cs) => {
-    cs.last_packet = {
-      status: "catastrophic_reorg",
-      bytes_read: 0,
-      node_url,
-      timestamp: new Date().toISOString(),
-    };
-  }, scan_settings_path);
-
-  throw new Error(
+  throw new CatastrophicReorgError(
     "Could not find reorg split height. Most likely connected to faulty node / catastrophic reorg.",
   );
 }
@@ -392,4 +395,8 @@ export async function reduceStartHeightToTip(
   }
 
   return start_height;
+}
+
+export class CatastrophicReorgError extends Error {
+  name = "CatastrophicReorgError";
 }
