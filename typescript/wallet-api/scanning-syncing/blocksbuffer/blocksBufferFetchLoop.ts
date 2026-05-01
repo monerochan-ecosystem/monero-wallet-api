@@ -115,12 +115,14 @@ export async function* blocksBufferFetchLoop(
             parse_result.split_height,
           );
         }
-        //pop blocks that were reorged
-        //then push new blocks
-        popBlocksBufferItemsFromSplitHeight(
-          blocks_buffer,
-          parse_result.split_height,
-        );
+        // pop blocks at/above the split height if there are any
+        // (buffer may be empty on a fresh generator start)
+        if (blocks_buffer.length > 0) {
+          popBlocksBufferItemsFromSplitHeight(
+            blocks_buffer,
+            parse_result.split_height,
+          );
+        }
         blocks_buffer.push(bufferItem);
         yield "blocks_buffer_changed";
       } else {
@@ -184,7 +186,7 @@ export function findBufferitemBySplitHeight(
 export function findBufferItemIndexByLocalId(
   blocks_buffer: GetBlocksBinBufferItem[],
   local_uuid: string,
-): number | undefined {
+): number {
   return blocks_buffer.findIndex((item) => item.local_uuid === local_uuid);
 }
 export function popBlocksBufferItemsFromSplitHeight(
@@ -193,20 +195,17 @@ export function popBlocksBufferItemsFromSplitHeight(
 ): GetBlocksBinBufferItem[] {
   const found = findBufferitemBySplitHeight(blocks_buffer, split_height);
   if (!found) {
-    throw new CatastrophicReorgError(
-      "could not find split height in blocks buffer: " +
-        split_height.block_height,
-    );
+    // buffer is empty or doesn't contain the split height.
+    // this can happen on a fresh generator start, nothing to pop.
+    return [];
   }
   const foundIndex = findBufferItemIndexByLocalId(
     blocks_buffer,
     found.local_uuid,
   );
-  if (!foundIndex || foundIndex < 0) {
-    throw new CatastrophicReorgError(
-      "could not find split height in blocks buffer: " +
-        split_height.block_height,
-    );
+  if (foundIndex < 0) {
+    // item was removed between finding it and getting its index
+    return [];
   }
   // pop from this index onward, everything at or above the split
   const removed: GetBlocksBinBufferItem[] = [];
