@@ -97,7 +97,6 @@ test("it2: regtest node, barebones coordinator", async () => {
     const { generator, blocksBuffer } = await setupBlocksBufferGenerator({
       nodeUrl: NODE_URL,
       startHeight: 0,
-      scanSettingsPath: `${dir}/ScanSettings.json`,
     });
     await rpc("generateblocks", { amount_of_blocks: 10, wallet_address: addr });
     await advanceSync(generator, `${dir}/ScanSettings.json`);
@@ -158,7 +157,6 @@ test("it3: regtest node, mine 400, kill, restart, cat reorg", async () => {
     const { generator } = await setupBlocksBufferGenerator({
       nodeUrl: NODE_URL,
       startHeight: 0,
-      scanSettingsPath: `${dir}/ScanSettings.json`,
     });
     for (let i = 0; i < 8; i++) {
       await rpc("generateblocks", {
@@ -208,7 +206,6 @@ test("it3: regtest node, mine 400, kill, restart, cat reorg", async () => {
       nodeUrl: NODE_URL,
       startHeight: 0,
       anchor_range: anchor,
-      scanSettingsPath: `${dir}/ScanSettings.json`,
     });
     try {
       await advanceSync(gen2, `${dir}/ScanSettings.json`);
@@ -272,7 +269,6 @@ test("it4: regtest node, two reorgs at non-zero split heights", async () => {
     const { generator, blocksBuffer } = await setupBlocksBufferGenerator({
       nodeUrl: NODE_URL,
       startHeight: 0,
-      scanSettingsPath: `${dir}/ScanSettings.json`,
     });
 
     for (let i = 0; i < 6; i++) {
