@@ -100,7 +100,7 @@ beforeAll(async () => {
   kp2 = await makeKeypair();
 }, 30000);
 
-test("a: two wallets, findWorkToBeDone creates caches and picks anchor", async () => {
+test("a: two wallets, no prior scan, anchor_range undefined", async () => {
   const dir = `${OUT}/a`;
   await rm(dir, { force: true, recursive: true });
   await mkdir(dir, { recursive: true });
@@ -118,7 +118,7 @@ test("a: two wallets, findWorkToBeDone creates caches and picks anchor", async (
   expect(w).not.toBe(false);
   if (!w) return;
   expect(w.wallet_caches.length).toBe(2);
-  expect(w.anchor_range).toBeDefined();
+  expect(w.anchor_range).toBeUndefined();
   expect(w.start_height).toBeGreaterThan(0);
   console.log(
     `[a] wallets: 2, anchor: ${w.anchor_range?.start}-${w.anchor_range?.end}, start: ${w.start_height}`,
@@ -143,7 +143,7 @@ test("b: single wallet with generator pipeline", async () => {
   expect(w).not.toBe(false);
   if (!w) return;
   expect(w.wallet_caches.length).toBe(1);
-  expect(w.anchor_range).toBeDefined();
+  expect(w.anchor_range).toBeUndefined();
   console.log(
     `[b] first call: anchor ${w.anchor_range?.start}-${w.anchor_range?.end}, start ${w.start_height}`,
   );
