@@ -1,34 +1,28 @@
-/**
- * blocksBufferFetchLoop.test.ts, generator integration tests.
- * barebones blocks coordinator: iterates generator, writes last_packet
- * and sync to connection status file via readWriteConnectionStatusFile.
- */
 import { test, expect } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import {
   blocksBufferFetchLoop,
-  emptyConnectionStatus,
-  readWriteConnectionStatusFile,
+  setupBlocksBufferGenerator,
+  handleConnectionStatusChanges,
   writeScanSettings,
   connectionStatusFilePath,
 } from "../../../dist/api";
 import type {
   GetBlocksBinBufferItem,
-  ConnectionStatus,
+  BlocksBufferLoopResult,
 } from "../../../dist/api";
 
 const OUTPUT_DIR = "test-data/blocksbuffer/integration/output";
-
 const MONEROD_PATH = "tests/moneronode/monerod";
 const KEYPAIRS_PATH = "tests/moneronode/keypairs.json";
 const RPC_PORT = 18088;
 const NODE_URL = `http://127.0.0.1:${RPC_PORT}`;
 
-async function waitForNode(url: string) {
+async function waitForNode() {
   const deadline = Date.now() + 30000;
   while (Date.now() < deadline) {
     try {
-      const r = await fetch(`${url}/json_rpc`, {
+      const r = await fetch(`${NODE_URL}/json_rpc`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ jsonrpc: "2.0", id: "0", method: "get_info" }),
@@ -39,19 +33,34 @@ async function waitForNode(url: string) {
   }
 }
 
-async function rpc(url: string, method: string, params: any) {
-  await fetch(`${url}/json_rpc`, {
+async function rpc(method: string, params: any) {
+  await fetch(`${NODE_URL}/json_rpc`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", id: "0", method, params }),
   });
 }
 
+// advance one generator until it yields a sync event.
+// uses generator.next() directly (not for await...of) so the generator
+// stays alive after return for await...of calls return() on exit.
+async function advanceSync(
+  generator: AsyncGenerator<BlocksBufferLoopResult>,
+  scanSettingsPath: string,
+): Promise<BlocksBufferLoopResult | undefined> {
+  while (true) {
+    const { value, done } = await generator.next();
+    if (done) return undefined;
+    if (value === "blocks_buffer_changed") continue;
+    await handleConnectionStatusChanges(value, scanSettingsPath);
+    if ("scanned_ranges" in value) return value;
+  }
+}
+
 test("it2: regtest node, barebones coordinator", async () => {
   const dir = `${OUTPUT_DIR}/it2`;
   await rm(dir, { force: true, recursive: true });
   await mkdir(dir, { recursive: true });
-
   await writeScanSettings(
     {
       wallets: [
@@ -81,46 +90,25 @@ test("it2: regtest node, barebones coordinator", async () => {
     ],
     { stdin: "pipe", stdout: "pipe", stderr: "pipe" },
   );
-
   try {
-    await waitForNode(NODE_URL);
+    await waitForNode();
     const kp = JSON.parse(await Bun.file(KEYPAIRS_PATH).text());
     const addr = kp[0].view_key.mainnet_primary;
-
-    await rpc(NODE_URL, "generateblocks", {
-      amount_of_blocks: 10,
-      wallet_address: addr,
+    const { generator, blocksBuffer } = await setupBlocksBufferGenerator({
+      nodeUrl: NODE_URL,
+      startHeight: 0,
+      scanSettingsPath: `${dir}/ScanSettings.json`,
     });
-    console.log("[IT2] generated 10 blocks");
-
-    const buffer: GetBlocksBinBufferItem[] = [];
-    const cs: ConnectionStatus = emptyConnectionStatus();
-    const gen = blocksBufferFetchLoop(NODE_URL, 0, buffer, cs);
-
-    let yields = 0;
-    for await (const event of gen) {
-      yields++;
-      if (event === "blocks_buffer_changed") continue;
-      if ("status" in event) {
-        await readWriteConnectionStatusFile((cs2) => {
-          cs2.last_packet = event;
-        }, `${dir}/ScanSettings.json`);
-      } else {
-        await readWriteConnectionStatusFile((cs2) => {
-          cs2.sync = event;
-        }, `${dir}/ScanSettings.json`);
-      }
-      if (buffer.length > 0 && yields >= 4) break;
-    }
-
-    expect(yields).toBeGreaterThan(0);
-    expect(buffer.length).toBeGreaterThan(0);
-
-    // inspect conn status file written by coordinator
-    const connPath = connectionStatusFilePath(`${dir}/ScanSettings.json`);
-    const csData = JSON.parse(await Bun.file(connPath).text());
+    await rpc("generateblocks", { amount_of_blocks: 10, wallet_address: addr });
+    await advanceSync(generator, `${dir}/ScanSettings.json`);
+    expect(blocksBuffer.length).toBeGreaterThan(0);
+    const cs = JSON.parse(
+      await Bun.file(
+        connectionStatusFilePath(`${dir}/ScanSettings.json`),
+      ).text(),
+    );
     console.log(
-      `[IT2] status: ${csData.last_packet.status}, ranges: ${JSON.stringify(csData.sync.scanned_ranges?.slice(-1))}, buffer: ${buffer.length}`,
+      `[it2] status: ${cs.last_packet.status}, ranges: ${JSON.stringify(cs.sync.scanned_ranges?.slice(-1))}`,
     );
   } finally {
     proc.kill(9);
@@ -130,11 +118,10 @@ test("it2: regtest node, barebones coordinator", async () => {
   }
 }, 10000);
 
-test("it3: regtest node, mine 400 in chunks so anchors evolve, kill, restart, cat reorg", async () => {
+test("it3: regtest node, mine 400, kill, restart, cat reorg", async () => {
   const dir = `${OUTPUT_DIR}/it3`;
   await rm(dir, { force: true, recursive: true });
   await mkdir(dir, { recursive: true });
-
   await writeScanSettings(
     {
       wallets: [
@@ -164,56 +151,23 @@ test("it3: regtest node, mine 400 in chunks so anchors evolve, kill, restart, ca
     ],
     { stdin: "pipe", stdout: "pipe", stderr: "pipe" },
   );
-
   try {
-    await waitForNode(NODE_URL);
+    await waitForNode();
     const kp = JSON.parse(await Bun.file(KEYPAIRS_PATH).text());
     const addr = kp[0].view_key.mainnet_primary;
-
-    // mine 50 first so generator has blocks to fetch
-    await rpc(NODE_URL, "generateblocks", {
-      amount_of_blocks: 50,
-      wallet_address: addr,
+    const { generator } = await setupBlocksBufferGenerator({
+      nodeUrl: NODE_URL,
+      startHeight: 0,
+      scanSettingsPath: `${dir}/ScanSettings.json`,
     });
-
-    const buffer: GetBlocksBinBufferItem[] = [];
-    const cs: ConnectionStatus = emptyConnectionStatus();
-    const gen = blocksBufferFetchLoop(NODE_URL, 0, buffer, cs);
-
-    // single for-await loop, mine more on each sync so anchors walk away from genesis
-    let totalMined = 50;
-    let syncCount = 0;
-    for await (const event of gen) {
-      if (event === "blocks_buffer_changed") continue;
-      if ("status" in event) {
-        await readWriteConnectionStatusFile((cs2) => {
-          cs2.last_packet = event;
-        }, `${dir}/ScanSettings.json`);
-        continue;
-      }
-      syncCount++;
-      await readWriteConnectionStatusFile((cs2) => {
-        cs2.sync = event;
-      }, `${dir}/ScanSettings.json`);
-      const saved = JSON.parse(
-        await Bun.file(
-          connectionStatusFilePath(`${dir}/ScanSettings.json`),
-        ).text(),
-      );
-      const lr = saved.sync.scanned_ranges?.at(-1);
-      if (lr?.block_hashes) {
-        console.log(
-          `[it3] sync ${syncCount}: totalMined ${totalMined}, anchors: ${lr.block_hashes.map((h: any) => h.block_height + ":" + h.block_hash.slice(0, 12)).join(", ")}`,
-        );
-      }
-      if (syncCount >= 8) break; // 8 chunks of 50 = 400
-      await rpc(NODE_URL, "generateblocks", {
+    for (let i = 0; i < 8; i++) {
+      await rpc("generateblocks", {
         amount_of_blocks: 50,
         wallet_address: addr,
       });
-      totalMined += 50;
+      await advanceSync(generator, `${dir}/ScanSettings.json`);
     }
-    console.log("[it3] mined 400 total, anchors evolved, killing node");
+    console.log("[it3] mined 400, killing node");
   } finally {
     proc.kill(9);
     try {
@@ -222,7 +176,6 @@ test("it3: regtest node, mine 400 in chunks so anchors evolve, kill, restart, ca
     await Bun.sleep(1000);
   }
 
-  // restart same node (same command)
   const proc2 = Bun.spawn(
     [
       MONEROD_PATH,
@@ -238,53 +191,37 @@ test("it3: regtest node, mine 400 in chunks so anchors evolve, kill, restart, ca
     ],
     { stdin: "pipe", stdout: "pipe", stderr: "pipe" },
   );
-
   try {
-    await waitForNode(NODE_URL);
+    await waitForNode();
     const kp = JSON.parse(await Bun.file(KEYPAIRS_PATH).text());
     const addr = kp[0].view_key.mainnet_primary;
+    await rpc("generateblocks", { amount_of_blocks: 50, wallet_address: addr });
 
-    await rpc(NODE_URL, "generateblocks", {
-      amount_of_blocks: 50,
-      wallet_address: addr,
-    });
-    console.log("[it3] mined 50 on restarted node");
-
-    const cs2: ConnectionStatus = JSON.parse(
+    const saved = JSON.parse(
       await Bun.file(
         connectionStatusFilePath(`${dir}/ScanSettings.json`),
       ).text(),
     );
-    const lr = cs2.sync.scanned_ranges?.at(-1);
-    if (lr?.block_hashes) {
-      console.log(
-        `[it3] cs2 anchors: ${lr.block_hashes.map((h: any) => h.block_height + ":" + h.block_hash.slice(0, 12)).join(", ")}`,
-      );
+    const anchor = saved.sync.scanned_ranges?.at(-1);
+    console.log(`[it3] anchor: ${anchor?.start}-${anchor?.end}`);
+    const { generator: gen2 } = await setupBlocksBufferGenerator({
+      nodeUrl: NODE_URL,
+      startHeight: 0,
+      anchor_range: anchor,
+      scanSettingsPath: `${dir}/ScanSettings.json`,
+    });
+    try {
+      await advanceSync(gen2, `${dir}/ScanSettings.json`);
+    } catch (e: any) {
+      if (e?.name !== "CatastrophicReorgError") throw e;
     }
-
-    const buffer2: GetBlocksBinBufferItem[] = [];
-    const gen2 = blocksBufferFetchLoop(NODE_URL, 0, buffer2, cs2);
-
-    let sawCat = false;
-    for await (const event of gen2) {
-      if (event === "blocks_buffer_changed") continue;
-      if ("status" in event) {
-        console.log(`[it3] gen2: status=${event.status}`);
-        await readWriteConnectionStatusFile((cs3) => {
-          cs3.last_packet = event;
-        }, `${dir}/ScanSettings.json`);
-        if (event.status === "catastrophic_reorg") {
-          sawCat = true;
-          break;
-        }
-        continue;
-      }
-      break;
-    }
-    expect(sawCat).toBe(true);
-    console.log(
-      "[it3] catastrophic reorg confirmed and written to conn status file",
+    const cs = JSON.parse(
+      await Bun.file(
+        connectionStatusFilePath(`${dir}/ScanSettings.json`),
+      ).text(),
     );
+    expect(cs.last_packet.status).toBe("catastrophic_reorg");
+    console.log("[it3] catastrophic reorg confirmed");
   } finally {
     proc2.kill(9);
     try {
@@ -297,7 +234,6 @@ test("it4: regtest node, two reorgs at non-zero split heights", async () => {
   const dir = `${OUTPUT_DIR}/it4`;
   await rm(dir, { force: true, recursive: true });
   await mkdir(dir, { recursive: true });
-
   await writeScanSettings(
     {
       wallets: [
@@ -327,176 +263,89 @@ test("it4: regtest node, two reorgs at non-zero split heights", async () => {
     ],
     { stdin: "pipe", stdout: "pipe", stderr: "pipe" },
   );
-
   try {
-    await waitForNode(NODE_URL);
+    await waitForNode();
     const kp = JSON.parse(await Bun.file(KEYPAIRS_PATH).text());
     const addr = kp[0].view_key.mainnet_primary;
     const addr1 = kp[1].view_key.mainnet_primary;
 
-    // mine first 50 so generator has something to fetch
-    await rpc(NODE_URL, "generateblocks", {
-      amount_of_blocks: 50,
-      wallet_address: addr,
+    const { generator, blocksBuffer } = await setupBlocksBufferGenerator({
+      nodeUrl: NODE_URL,
+      startHeight: 0,
+      scanSettingsPath: `${dir}/ScanSettings.json`,
     });
 
-    const buffer: GetBlocksBinBufferItem[] = [];
-    const cs: ConnectionStatus = emptyConnectionStatus();
-    const gen = blocksBufferFetchLoop(NODE_URL, 0, buffer, cs);
-
-    // mine in chunks so anchors advance past genesis (same pattern as it3)
-    let mined = 50;
-    for await (const event of gen) {
-      if (event === "blocks_buffer_changed") continue;
-      if ("status" in event) {
-        await readWriteConnectionStatusFile((cs2) => {
-          cs2.last_packet = event;
-        }, `${dir}/ScanSettings.json`);
-        continue;
-      }
-      await readWriteConnectionStatusFile((cs2) => {
-        cs2.sync = event;
-      }, `${dir}/ScanSettings.json`);
-      if (mined >= 300) break;
-      await rpc(NODE_URL, "generateblocks", {
+    for (let i = 0; i < 6; i++) {
+      await rpc("generateblocks", {
         amount_of_blocks: 50,
         wallet_address: addr,
       });
-      mined += 50;
+      await advanceSync(generator, `${dir}/ScanSettings.json`);
     }
-    console.log("[it4] mined 300 blocks, anchors advanced");
+    console.log("[it4] mined 300, anchors advanced");
 
-    // first reorg: pop 5, mine 5
+    // first reorg
     await fetch(`${NODE_URL}/pop_blocks`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ nblocks: 5 }),
     });
-    await rpc(NODE_URL, "generateblocks", {
-      amount_of_blocks: 5,
-      wallet_address: addr1,
-    });
-
-    const cs2: ConnectionStatus = JSON.parse(
+    await rpc("generateblocks", { amount_of_blocks: 5, wallet_address: addr1 });
+    await advanceSync(generator, `${dir}/ScanSettings.json`);
+    const cs1 = JSON.parse(
       await Bun.file(
         connectionStatusFilePath(`${dir}/ScanSettings.json`),
       ).text(),
     );
-    const buffer2: GetBlocksBinBufferItem[] = [];
-    const gen2 = blocksBufferFetchLoop(NODE_URL, 0, buffer2, cs2);
-
-    for await (const event of gen2) {
-      if (event === "blocks_buffer_changed") continue;
-      if ("status" in event) {
-        await readWriteConnectionStatusFile((cs3) => {
-          cs3.last_packet = event;
-        }, `${dir}/ScanSettings.json`);
-        continue;
-      }
-      await readWriteConnectionStatusFile((cs3) => {
-        cs3.sync = event;
-      }, `${dir}/ScanSettings.json`);
-      break;
-    }
-
-    const csMid = JSON.parse(
-      await Bun.file(
-        connectionStatusFilePath(`${dir}/ScanSettings.json`),
-      ).text(),
+    expect(cs1.last_packet.status).toBe("OK");
+    expect(cs1.sync.reorg_info?.split_heights?.length).toBe(1);
+    expect(
+      cs1.sync.reorg_info?.split_heights?.[0]?.block_height,
+    ).toBeGreaterThan(200);
+    console.log(
+      `[it4] first reorg: split at ${cs1.sync.reorg_info?.split_heights?.[0]?.block_height}`,
     );
-    const split1 = csMid.sync.reorg_info?.split_heights?.[0]?.block_height;
-    console.log(`[it4] first reorg: split_heights=1, height=${split1}`);
-    expect(csMid.last_packet.status).toBe("OK");
-    expect(csMid.sync.reorg_info?.split_heights?.length).toBe(1);
-    expect(split1).toBeGreaterThan(200);
 
-    // second reorg: pop 60 (deeper than first reorg's 5, hits different anchor)
+    // second reorg
     await fetch(`${NODE_URL}/pop_blocks`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ nblocks: 60 }),
     });
-    await rpc(NODE_URL, "generateblocks", {
+    await rpc("generateblocks", {
       amount_of_blocks: 60,
       wallet_address: addr1,
     });
-
-    const cs3: ConnectionStatus = JSON.parse(
+    await advanceSync(generator, `${dir}/ScanSettings.json`);
+    const cs2 = JSON.parse(
       await Bun.file(
         connectionStatusFilePath(`${dir}/ScanSettings.json`),
       ).text(),
     );
-    const buffer3: GetBlocksBinBufferItem[] = [];
-    const gen3 = blocksBufferFetchLoop(NODE_URL, 0, buffer3, cs3);
-
-    for await (const event of gen3) {
-      if (event === "blocks_buffer_changed") continue;
-      if ("status" in event) {
-        await readWriteConnectionStatusFile((cs4) => {
-          cs4.last_packet = event;
-        }, `${dir}/ScanSettings.json`);
-        continue;
-      }
-      await readWriteConnectionStatusFile((cs4) => {
-        cs4.sync = event;
-      }, `${dir}/ScanSettings.json`);
-      break;
-    }
-
-    const csAfter2 = JSON.parse(
-      await Bun.file(
-        connectionStatusFilePath(`${dir}/ScanSettings.json`),
-      ).text(),
-    );
-    const heights =
-      csAfter2.sync.reorg_info?.split_heights?.map(
-        (h: any) => h.block_height,
-      ) ?? [];
+    expect(cs2.last_packet.status).toBe("OK");
+    expect(cs2.sync.reorg_info?.split_heights?.length).toBe(2);
     console.log(
-      `[it4] after reorg 2: heights=[${heights.join(",")}], anchors=${csAfter2.sync.scanned_ranges
-        ?.at(-1)
-        ?.block_hashes?.map((h: any) => h.block_height)
-        .join(",")}`,
+      `[it4] second reorg: heights=[${cs2.sync.reorg_info?.split_heights?.map((h: any) => h.block_height).join(",")}]`,
     );
-    expect(csAfter2.last_packet.status).toBe("OK");
-    expect(csAfter2.sync.reorg_info?.split_heights?.length).toBe(2);
 
-    // mine 100 more, sync third anchor should advance past genesis
-    await rpc(NODE_URL, "generateblocks", {
+    // mine 100 more, anchors advance
+    await rpc("generateblocks", {
       amount_of_blocks: 100,
       wallet_address: addr,
     });
-    const longBuffer: GetBlocksBinBufferItem[] = [];
-    const cs4: ConnectionStatus = JSON.parse(
+    await advanceSync(generator, `${dir}/ScanSettings.json`);
+    const cs3 = JSON.parse(
       await Bun.file(
         connectionStatusFilePath(`${dir}/ScanSettings.json`),
       ).text(),
     );
-    const gen4 = blocksBufferFetchLoop(NODE_URL, 0, longBuffer, cs4);
-    for await (const event of gen4) {
-      if (event === "blocks_buffer_changed") continue;
-      if ("status" in event) {
-        await readWriteConnectionStatusFile((cs5) => {
-          cs5.last_packet = event;
-        }, `${dir}/ScanSettings.json`);
-        continue;
-      }
-      await readWriteConnectionStatusFile((cs5) => {
-        cs5.sync = event;
-      }, `${dir}/ScanSettings.json`);
-      break;
-    }
-    const csFinal = JSON.parse(
-      await Bun.file(
-        connectionStatusFilePath(`${dir}/ScanSettings.json`),
-      ).text(),
-    );
-    const finalAnchors =
-      csFinal.sync.scanned_ranges
+    const anchors =
+      cs3.sync.scanned_ranges
         ?.at(-1)
         ?.block_hashes?.map((h: any) => h.block_height) ?? [];
-    console.log(`[it4] after +100 blocks: anchors=[${finalAnchors.join(",")}]`);
-    expect(finalAnchors[2]).toBeGreaterThan(0); // third anchor moved past genesis
+    console.log(`[it4] after +100: anchors=[${anchors.join(",")}]`);
+    expect(anchors[2]).toBeGreaterThan(0);
+    expect(blocksBuffer.length).toBeGreaterThan(0);
   } finally {
     proc.kill(9);
     try {
