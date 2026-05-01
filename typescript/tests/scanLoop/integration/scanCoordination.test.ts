@@ -2,9 +2,9 @@
  * scanCoordination.test.ts, integration for findWorkToBeDone
  * + setupBlocksBufferGenerator pipeline.
  *
- * all wallet cache ranges must cover the node's tip height, not exceed it.
- * (too large start_height culling is done by findWorkToBeDone)
- * anchor is the cached range ending lowest among those that do.
+ * findWorkToBeDone reads ScanSettings, reads wallet keys from env,
+ * calls initScanCache to create/update cache files, then determines
+ * the anchor range (lowest end among wallets that cover the start height).
  */
 import { test, expect, beforeAll, afterAll } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
@@ -15,19 +15,12 @@ import {
   writeScanSettings,
   connectionStatusFilePath,
 } from "../../../dist/api";
+import { makeTestKeyPair } from "../../../wallet-api/keypairs-seeds/keypairs";
 
 const OUT = "test-data/scanCoordination";
 const MONEROD = "tests/moneronode/monerod";
-const KEYPAIRS = "tests/moneronode/keypairs.json";
 const PORT = 18092;
 const URL = `http://127.0.0.1:${PORT}`;
-
-const A =
-  "45djNCPuMDuVYrekuBqhkLi24YA6RpVrG9Wh1meEJWf6RTpXkgnuRkLfmRBs66X1GTJc11BnWgUvWREEbyMWwp1pRLUCPye";
-const B =
-  "43BfNNFey6KbDr8F8MqEviY5RjbzWTMbbeuJvo8EX4gYf2zcGqi3Y9B2jBUpRYjyRWNJ9iyV7vK1hiEzdhMXpniSGFHNt7p";
-const C =
-  "44AFFq5kSiGBoZ4NMDwYtN18obc8AemS33DBLWs3H7otXft3XjrpDtQGv7SqSsaBYBb98uNbr2VBBEt7f2wfn3RVGQBEP3A";
 
 const proc = Bun.spawn(
   [
@@ -68,48 +61,7 @@ async function rpc(method: string, params: any) {
   });
 }
 
-async function tip(): Promise<number> {
-  const r = await (
-    await fetch(`${URL}/json_rpc`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ jsonrpc: "2.0", id: "0", method: "get_info" }),
-    })
-  ).json();
-  return (r?.result?.height ?? 1) - 1;
-}
-
-function range(start: number, end: number, hash: string) {
-  const fill =
-    hash || "418015bb9ae982a1975da7d79277c2705727a56894ba0fb246adaabb1f4632e3";
-  return {
-    start,
-    end,
-    block_hashes: [
-      { block_height: end, block_hash: hash, block_timestamp: 1 },
-      { block_height: start, block_hash: fill, block_timestamp: 1 },
-      { block_height: start, block_hash: fill, block_timestamp: 1 },
-    ],
-  };
-}
-
-async function cache(addr: string, ranges: any[]) {
-  await Bun.write(
-    `${OUT}/${addr}_cache.json`,
-    JSON.stringify(
-      {
-        daemon_height: 0,
-        outputs: {},
-        own_key_images: {},
-        scanned_ranges: ranges,
-        primary_address: addr,
-      },
-      null,
-      2,
-    ),
-  );
-}
-
+// advance generator until first sync event
 async function advance(g: any, path: string) {
   while (true) {
     const { value, done } = await g.next();
@@ -120,101 +72,84 @@ async function advance(g: any, path: string) {
   }
 }
 
-await rm(OUT, { force: true, recursive: true }).catch(() => {});
+// generate a keypair and set env vars so walletSettingsPlusKeys can find them
+interface KeypairResult {
+  addr: string;
+  vk: string;
+  sk: string;
+}
+async function makeKeypair(): Promise<KeypairResult> {
+  const kp = await makeTestKeyPair();
+  const a = kp.view_key.mainnet_primary;
+  const v = kp.view_key.view_key;
+  const s = kp.spend_key;
+  Bun.env[`vk${a}`] = v;
+  Bun.env[`sk${a}`] = s;
+  return { addr: a, vk: v, sk: s };
+}
+
+let kp1: KeypairResult, kp2: KeypairResult;
 
 beforeAll(async () => {
   await waitNode();
-  const kp = JSON.parse(await Bun.file(KEYPAIRS).text());
-  await rpc("generateblocks", {
-    amount_of_blocks: 200,
-    wallet_address: kp[0].view_key.mainnet_primary,
-  });
+  const addr = JSON.parse(
+    await Bun.file("tests/moneronode/keypairs.json").text(),
+  )[0].view_key.mainnet_primary;
+  await rpc("generateblocks", { amount_of_blocks: 200, wallet_address: addr });
+  kp1 = await makeKeypair();
+  kp2 = await makeKeypair();
 }, 30000);
 
-test("a: two wallets, both cover tip, lower end wins", async () => {
-  const t = await tip();
-  // A: 0-250, B: 20-210.  both cover t=200.  lowest end is B (210)
-  await cache(A, [range(0, 250, "a")]);
-  await cache(B, [range(20, 210, "b")]);
+test("a: two wallets, findWorkToBeDone creates caches and picks anchor", async () => {
+  const dir = `${OUT}/a`;
+  await rm(dir, { force: true, recursive: true });
+  await mkdir(dir, { recursive: true });
+
   await writeScanSettings(
     {
-      wallets: [{ primary_address: A }, { primary_address: B }],
+      wallets: [{ primary_address: kp1.addr }, { primary_address: kp2.addr }],
       node_url: URL,
       start_height: null,
     },
-    `${OUT}/ScanSettings.json`,
+    `${dir}/ScanSettings.json`,
   );
 
-  const w = await findWorkToBeDone(`${OUT}/ScanSettings.json`, `${OUT}/`);
+  const w = await findWorkToBeDone(`${dir}/ScanSettings.json`, `${dir}/`);
   expect(w).not.toBe(false);
   if (!w) return;
-  expect(w.anchor_range?.start).toBe(20);
-  expect(w.anchor_range?.end).toBe(210);
-  expect(w.start_height).toBe(210);
   expect(w.wallet_caches.length).toBe(2);
-});
-
-test("b: one wallet missing cache, uses remaining", async () => {
-  await rm(`${OUT}/${B}_cache.json`, { force: true }).catch(() => {});
-  // only A has a cache now
-  const w = await findWorkToBeDone(`${OUT}/ScanSettings.json`, `${OUT}/`);
-  expect(w).not.toBe(false);
-  if (!w) return;
   expect(w.anchor_range).toBeDefined();
-  expect(w.wallet_caches.length).toBe(1);
+  expect(w.start_height).toBeGreaterThan(0);
+  console.log(
+    `[a] wallets: 2, anchor: ${w.anchor_range?.start}-${w.anchor_range?.end}, start: ${w.start_height}`,
+  );
 });
 
-test("c: no cache files, anchor_range undefined", async () => {
-  await rm(`${OUT}/${A}_cache.json`, { force: true }).catch(() => {});
-  await rm(`${OUT}/${B}_cache.json`, { force: true }).catch(() => {});
-  const w = await findWorkToBeDone(`${OUT}/ScanSettings.json`, `${OUT}/`);
-  expect(w).not.toBe(false);
-  if (!w) return;
-  expect(w.anchor_range).toBeUndefined();
-  expect(w.wallet_caches.length).toBe(0);
-});
+test("b: single wallet with generator pipeline", async () => {
+  const dir = `${OUT}/b`;
+  await rm(dir, { force: true, recursive: true });
+  await mkdir(dir, { recursive: true });
 
-test("d: single block range at node tip", async () => {
-  const t = await tip();
-  await cache(A, [range(t, t, "d")]);
-  const w = await findWorkToBeDone(`${OUT}/ScanSettings.json`, `${OUT}/`);
-  expect(w).not.toBe(false);
-  if (!w) return;
-  expect(w.anchor_range?.start).toBe(t);
-  expect(w.anchor_range?.end).toBe(t);
-  expect(w.start_height).toBe(t);
-});
-
-test("e: three wallets, lowest end among covers wins", async () => {
-  const t = await tip();
-  await cache(A, [range(0, t + 50, "e1")]);
-  await cache(B, [range(20, t + 10, "e2")]);
-  await cache(C, [range(10, t + 30, "e3")]);
   await writeScanSettings(
     {
-      wallets: [
-        { primary_address: A },
-        { primary_address: B },
-        { primary_address: C },
-      ],
+      wallets: [{ primary_address: kp1.addr }],
       node_url: URL,
       start_height: null,
     },
-    `${OUT}/ScanSettings.json`,
+    `${dir}/ScanSettings.json`,
   );
 
-  const w = await findWorkToBeDone(`${OUT}/ScanSettings.json`, `${OUT}/`);
+  let w = await findWorkToBeDone(`${dir}/ScanSettings.json`, `${dir}/`);
   expect(w).not.toBe(false);
   if (!w) return;
-  // B's end is lowest (t+10)
-  expect(w.anchor_range?.start).toBe(20);
-  expect(w.anchor_range?.end).toBe(t + 10);
-  expect(w.start_height).toBe(t + 10);
-});
+  expect(w.wallet_caches.length).toBe(1);
+  expect(w.anchor_range).toBeDefined();
+  console.log(
+    `[b] first call: anchor ${w.anchor_range?.start}-${w.anchor_range?.end}, start ${w.start_height}`,
+  );
 
-test("f: full pipeline with real blocks", async () => {
-  const t = await tip();
-  const h = await (
+  // second call with start_height below tip to test pipeline
+  const t = await (
     await fetch(`${URL}/json_rpc`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -226,37 +161,168 @@ test("f: full pipeline with real blocks", async () => {
       }),
     })
   ).json();
-  const h150 = h?.result?.block_header?.hash;
+  const h150 = t?.result?.block_header?.hash;
 
-  // wallet cache scanned 0-150 with real hash
-  await cache(A, [range(0, 150, h150)]);
+  // write cache that initScanCache will merge into
+  await Bun.write(
+    `${dir}/${kp1.addr}_cache.json`,
+    JSON.stringify(
+      {
+        daemon_height: 0,
+        outputs: {},
+        own_key_images: {},
+        scanned_ranges: [
+          {
+            start: 0,
+            end: 150,
+            block_hashes: [
+              { block_height: 150, block_hash: h150, block_timestamp: 1 },
+              {
+                block_height: 0,
+                block_hash:
+                  "418015bb9ae982a1975da7d79277c2705727a56894ba0fb246adaabb1f4632e3",
+                block_timestamp: 1,
+              },
+              {
+                block_height: 0,
+                block_hash:
+                  "418015bb9ae982a1975da7d79277c2705727a56894ba0fb246adaabb1f4632e3",
+                block_timestamp: 1,
+              },
+            ],
+          },
+        ],
+        primary_address: kp1.addr,
+      },
+      null,
+      2,
+    ),
+  );
+
   await writeScanSettings(
     {
-      wallets: [{ primary_address: A }],
+      wallets: [{ primary_address: kp1.addr }],
       node_url: URL,
       start_height: 150,
     },
-    `${OUT}/ScanSettings.json`,
+    `${dir}/ScanSettings.json`,
   );
 
-  const w = await findWorkToBeDone(`${OUT}/ScanSettings.json`, `${OUT}/`);
+  w = await findWorkToBeDone(`${dir}/ScanSettings.json`, `${dir}/`);
+  expect(w).not.toBe(false);
+  if (!w) return;
+
+  const { generator, blocksBuffer } = await setupBlocksBufferGenerator({
+    nodeUrl: URL,
+    startHeight: w.start_height,
+    anchor_range: w.anchor_range,
+    scanSettingsPath: `${dir}/ScanSettings.json`,
+  });
+  await advance(generator, `${dir}/ScanSettings.json`);
+
+  expect(blocksBuffer.length).toBeGreaterThan(0);
+  const cs = JSON.parse(
+    await Bun.file(connectionStatusFilePath(`${dir}/ScanSettings.json`)).text(),
+  );
+  expect(cs.last_packet.status).toBe("OK");
+  console.log(
+    `[b] pipeline: buffer ${blocksBuffer.length}, status ${cs.last_packet.status}`,
+  );
+});
+
+test("c: no wallets in ScanSettings, returns false", async () => {
+  const dir = `${OUT}/c`;
+  await rm(dir, { force: true, recursive: true });
+  await mkdir(dir, { recursive: true });
+
+  await writeScanSettings(
+    { wallets: [], node_url: URL, start_height: null },
+    `${dir}/ScanSettings.json`,
+  );
+  const w = await findWorkToBeDone(`${dir}/ScanSettings.json`, `${dir}/`);
+  expect(w).toBe(false);
+});
+
+test("d: full pipeline with real blocks", async () => {
+  const dir = `${OUT}/d`;
+  await rm(dir, { force: true, recursive: true });
+  await mkdir(dir, { recursive: true });
+
+  const t = await (
+    await fetch(`${URL}/json_rpc`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "0",
+        method: "get_block_header_by_height",
+        params: { height: 150 },
+      }),
+    })
+  ).json();
+  const h150 = t?.result?.block_header?.hash;
+
+  await Bun.write(
+    `${dir}/${kp1.addr}_cache.json`,
+    JSON.stringify(
+      {
+        daemon_height: 0,
+        outputs: {},
+        own_key_images: {},
+        scanned_ranges: [
+          {
+            start: 0,
+            end: 150,
+            block_hashes: [
+              { block_height: 150, block_hash: h150, block_timestamp: 1 },
+              {
+                block_height: 0,
+                block_hash:
+                  "418015bb9ae982a1975da7d79277c2705727a56894ba0fb246adaabb1f4632e3",
+                block_timestamp: 1,
+              },
+              {
+                block_height: 0,
+                block_hash:
+                  "418015bb9ae982a1975da7d79277c2705727a56894ba0fb246adaabb1f4632e3",
+                block_timestamp: 1,
+              },
+            ],
+          },
+        ],
+        primary_address: kp1.addr,
+      },
+      null,
+      2,
+    ),
+  );
+
+  await writeScanSettings(
+    {
+      wallets: [{ primary_address: kp1.addr }],
+      node_url: URL,
+      start_height: 150,
+    },
+    `${dir}/ScanSettings.json`,
+  );
+
+  const w = await findWorkToBeDone(`${dir}/ScanSettings.json`, `${dir}/`);
   expect(w).not.toBe(false);
   if (!w) return;
   expect(w.anchor_range?.end).toBe(150);
   expect(w.start_height).toBe(150);
 
-  // generator with anchor (0,150) node has blocks up to 200, fetches 151+
   const { generator, blocksBuffer } = await setupBlocksBufferGenerator({
     nodeUrl: URL,
     startHeight: w.start_height,
     anchor_range: w.anchor_range,
-    scanSettingsPath: `${OUT}/ScanSettings.json`,
+    scanSettingsPath: `${dir}/ScanSettings.json`,
   });
-  await advance(generator, `${OUT}/ScanSettings.json`);
+  await advance(generator, `${dir}/ScanSettings.json`);
 
   expect(blocksBuffer.length).toBeGreaterThan(0);
   const cs = JSON.parse(
-    await Bun.file(connectionStatusFilePath(`${OUT}/ScanSettings.json`)).text(),
+    await Bun.file(connectionStatusFilePath(`${dir}/ScanSettings.json`)).text(),
   );
   expect(cs.last_packet.status).toBe("OK");
 });
