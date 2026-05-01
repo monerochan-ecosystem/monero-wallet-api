@@ -20,7 +20,11 @@ export type GetBlocksBinBufferItem = {
   data: Uint8Array;
 };
 export const MAX_BLOCKS_BUFFER_SIZE = 10;
-
+export type BlocksBufferLoopResult =
+  | ConnectionSatusLastPacket
+  | ConnectionStatusSync
+  // | ConnectionStatus
+  | "blocks_buffer_changed";
 // runs forever, fetching blocks from the node.
 // handles scan level reorg detection and catastrophic reorg
 export async function* blocksBufferFetchLoop(
@@ -30,12 +34,7 @@ export async function* blocksBufferFetchLoop(
   connection_status: ConnectionStatus, // we make a local copy of this and pass last_packet and sync updates seperately
   max_blocks_buffer_size: number = MAX_BLOCKS_BUFFER_SIZE,
   stopSync?: AbortSignal,
-): AsyncGenerator<
-  | ConnectionSatusLastPacket
-  | ConnectionStatusSync
-  // | ConnectionStatus
-  | "blocks_buffer_changed"
-> {
+): AsyncGenerator<BlocksBufferLoopResult> {
   connection_status = structuredClone(connection_status);
   const nodeUrl = await NodeUrl.create(node_url);
   console.log("[blocksBufferFetchLoop] NodeUrl created, fetching info...");
