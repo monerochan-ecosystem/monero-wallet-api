@@ -156,3 +156,22 @@ export async function readWriteConnectionStatusFile(
   await writeConnectionStatusFile(connectionStatus, scan_settings_path);
   return connectionStatus;
 }
+/**
+ * read the connection status from disk (typical /path/to/ConnectionStatus-ScanSettings.json)
+ * and persist empty inital status if not found
+ * @param scan_settings_path  path to the scan settings file /path/to/ScanSettings.json
+ * @returns connection status or empty initalized connection status
+ */
+export async function readOrInitConnectionStatus(
+  scan_settings_path?: string,
+): Promise<ConnectionStatus> {
+  const cs = await readConnectionStatusFile(
+    connectionStatusFilePath(scan_settings_path),
+  );
+  if (typeof cs === "undefined") {
+    const emptyInitial = emptyConnectionStatus();
+    await writeConnectionStatusFile(emptyInitial, scan_settings_path);
+    return emptyInitial;
+  }
+  return cs;
+}

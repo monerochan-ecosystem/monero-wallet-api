@@ -128,7 +128,8 @@ export async function* blocksBufferFetchLoop(
         blocks_buffer.push(bufferItem);
         yield "blocks_buffer_changed";
       }
-
+      //TODO: only write this to disk after blocks_buffer_changed has been handled by wallets.
+      //look for same comment in blocksBufferCoordination.ts
       yield connection_status.sync;
     } catch (error) {
       //cat reorg
