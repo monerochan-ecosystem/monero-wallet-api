@@ -7,9 +7,11 @@ import {
   findRange,
   readCacheFileDefaultLocation,
   type CacheRange,
+  type ScanCache,
 } from "./scanCache";
 export type WorkToBeDone = {
   start_height: number;
+  wallet_caches: ScanCache[];
   anchor_range?: CacheRange;
 };
 /**
@@ -34,18 +36,21 @@ export async function findWorkToBeDone(
   const wallets = getNonHaltedWallets(scanSettings);
   if (!wallets.length) return false;
   const potential_anchor_ranges: CacheRange[] = [];
+  const wallet_caches: ScanCache[] = [];
   for (const wallet of wallets) {
     const walletCache = await readCacheFileDefaultLocation(
       wallet.primary_address,
       pathPrefix ?? prefix,
     );
     if (!walletCache) continue;
+    wallet_caches.push(walletCache);
     const range = findRange(walletCache.scanned_ranges, total_start_height);
     if (!range) continue;
     potential_anchor_ranges.push(range);
   }
   if (!potential_anchor_ranges.length)
     return {
+      wallet_caches,
       start_height: total_start_height,
     };
   const anchor_range = potential_anchor_ranges.reduce((a, b) =>
@@ -58,6 +63,7 @@ export async function findWorkToBeDone(
   // ( they cant they contain newer ranges then resulting start height after
   // lowest fast forward start height on all wallets )
   return {
+    wallet_caches,
     start_height,
     anchor_range,
   };
