@@ -20,6 +20,7 @@ export type WorkToBeDone = {
 /**
  * this depends only on ScanSettings.json start_height and wallet caches scanned_ranges
  * side effect: will init wallet cache file if it does not exist
+ * side effect: will merge scan ranges + add subaddreses to existing cache files
  * @param scan_settings_path
  */
 export async function findWorkToBeDone(
@@ -42,38 +43,33 @@ export async function findWorkToBeDone(
   const potential_anchor_ranges: CacheRange[] = [];
   const wallet_caches: ScanCache[] = [];
   for (const wallet of wallets) {
-    let walletCache = await readCacheFileDefaultLocation(
+    const walletSettingsWithKeys = await walletSettingsPlusKeys({
+      ...wallet,
+      node_url: scanSettings.node_url,
+      start_height: total_start_height,
+    });
+    const newWalletViewPair = await ViewPair.create(
+      wallet.primary_address,
+      walletSettingsWithKeys.secret_view_key,
+      wallet.subaddress_index,
+      walletSettingsWithKeys.node_url,
+    );
+    await initScanCache(
+      newWalletViewPair,
+      total_start_height,
+      scan_settings_path,
+      pathPrefix ?? prefix,
+    );
+    const walletCache = await readCacheFileDefaultLocation(
       wallet.primary_address,
       pathPrefix ?? prefix,
     );
-    if (!walletCache) {
-      const walletSettingsWithKeys = await walletSettingsPlusKeys({
-        ...wallet,
-        node_url: scanSettings.node_url,
-        start_height: total_start_height,
-      });
-      const newWalletViewPair = await ViewPair.create(
-        wallet.primary_address,
-        walletSettingsWithKeys.secret_view_key,
-        wallet.subaddress_index,
-        walletSettingsWithKeys.node_url,
+    if (!walletCache)
+      throw new Error(
+        "wallet cache not found and new one could not be created for " +
+          wallet.primary_address,
       );
-      await initScanCache(
-        newWalletViewPair,
-        total_start_height,
-        scan_settings_path,
-        pathPrefix ?? prefix,
-      );
-      walletCache = await readCacheFileDefaultLocation(
-        wallet.primary_address,
-        pathPrefix ?? prefix,
-      );
-      if (!walletCache)
-        throw new Error(
-          "wallet cache not found and new one could not be created for " +
-            wallet.primary_address,
-        );
-    }
+
     wallet_caches.push(walletCache);
     const range = findRange(walletCache.scanned_ranges, total_start_height);
     if (!range) continue;
