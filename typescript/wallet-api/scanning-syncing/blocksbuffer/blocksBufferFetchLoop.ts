@@ -33,6 +33,7 @@ export async function* blocksBufferFetchLoop(
   blocks_buffer: GetBlocksBinBufferItem[], // pass by reference
   connection_status: ConnectionStatus, // we make a local copy of this and pass last_packet and sync updates seperately
   max_blocks_buffer_size: number = MAX_BLOCKS_BUFFER_SIZE,
+  anchor_range?: CacheRange,
   stopSync?: AbortSignal,
 ): AsyncGenerator<BlocksBufferLoopResult> {
   connection_status = structuredClone(connection_status);
@@ -44,7 +45,7 @@ export async function* blocksBufferFetchLoop(
   let { current_range, scanned_ranges } = await initScannedRanges(
     nodeUrl.node_url,
     start_height,
-    connection_status.sync.scanned_ranges,
+    anchor_range ? [anchor_range] : [],
   );
   connection_status.sync.scanned_ranges = scanned_ranges;
   connection_status.last_packet = {

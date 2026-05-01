@@ -6,11 +6,13 @@ import {
   type BlocksBufferLoopResult,
   CatastrophicReorgError,
   readOrInitConnectionStatus,
+  type CacheRange,
 } from "../../api";
 
 export type SetupBlocksBufferGeneratorParams = {
   nodeUrl: string;
   startHeight: number;
+  anchor_range?: CacheRange;
   stopSync?: AbortSignal;
   maxBufferItems?: number;
 };
@@ -27,6 +29,7 @@ export async function setupBlocksBufferGenerator(
     blocksBuffer,
     connection_status,
     params.maxBufferItems,
+    params.anchor_range,
     params.stopSync,
   );
 
