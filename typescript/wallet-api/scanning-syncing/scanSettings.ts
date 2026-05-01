@@ -426,6 +426,16 @@ export async function openNonHaltedWallets(
   return nonHaltedWallets;
 }
 
+export function getNonHaltedWallets(
+  scan_settings?: ScanSettings,
+): ScanSetting[] {
+  if (!scan_settings) return [];
+  const nonHaltedWallets = scan_settings.wallets.filter(
+    (wallet) => !wallet?.halted,
+  );
+  return nonHaltedWallets;
+}
+
 export async function doesScanSettingsFileExist(
   scan_settings_path: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
 ): Promise<boolean> {

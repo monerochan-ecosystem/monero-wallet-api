@@ -1,0 +1,64 @@
+import {
+  cullTooLargeScanHeight,
+  getNonHaltedWallets,
+  openScanSettingsFile,
+} from "../scanSettings";
+import {
+  findRange,
+  readCacheFileDefaultLocation,
+  type CacheRange,
+} from "./scanCache";
+export type WorkToBeDone = {
+  start_height: number;
+  anchor_range?: CacheRange;
+};
+/**
+ * this depends only on ScanSettings.json start_height and wallet caches scanned_ranges
+ * @param scan_settings_path
+ */
+export async function findWorkToBeDone(
+  scan_settings_path: string,
+  pathPrefix?: string,
+): Promise<WorkToBeDone | false> {
+  const parts = scan_settings_path.split("/");
+  const basename = parts.pop()!;
+  const dir = parts.join("/");
+  const prefix = dir ? `${dir}/` : "";
+
+  const scanSettings = await openScanSettingsFile(scan_settings_path);
+  if (!scanSettings) return false;
+  const total_start_height = await cullTooLargeScanHeight(
+    scanSettings.node_url,
+    scan_settings_path,
+  );
+  const wallets = getNonHaltedWallets(scanSettings);
+  if (!wallets.length) return false;
+  const potential_anchor_ranges: CacheRange[] = [];
+  for (const wallet of wallets) {
+    const walletCache = await readCacheFileDefaultLocation(
+      wallet.primary_address,
+      pathPrefix ?? prefix,
+    );
+    if (!walletCache) continue;
+    const range = findRange(walletCache.scanned_ranges, total_start_height);
+    if (!range) continue;
+    potential_anchor_ranges.push(range);
+  }
+  if (!potential_anchor_ranges.length)
+    return {
+      start_height: total_start_height,
+    };
+  const anchor_range = potential_anchor_ranges.reduce((a, b) =>
+    a.end < b.end ? a : b,
+  );
+  const start_height = anchor_range.end;
+
+  //  connection settings scanned_ranges is reset on every scan
+  // (done in setupBlocksBufferGenerator init)
+  // ( they cant they contain newer ranges then resulting start height after
+  // lowest fast forward start height on all wallets )
+  return {
+    start_height,
+    anchor_range,
+  };
+}
