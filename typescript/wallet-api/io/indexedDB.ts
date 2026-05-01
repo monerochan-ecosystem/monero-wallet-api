@@ -16,13 +16,13 @@ class IndexedDBBun implements Bun {
   file(path: string | number | URL, options?: { type?: string }): BunFile {
     return new IndexedDBFile(
       getFileFromIndexedDB(path.toString()),
-      path.toString()
+      path.toString(),
     );
   }
 
   async write(
     destination: string | number | BunFile | URL,
-    input: PossibleBunFileContent
+    input: PossibleBunFileContent,
   ): Promise<number> {
     return await putFileIntoIndexedDB(destination.toString(), input);
   }
@@ -37,7 +37,10 @@ class IndexedDBFile implements BunFile {
   readonly size: number = 0;
   readonly type: string = "";
 
-  constructor(readonly content?: Promise<unknown>, private path?: string) {}
+  constructor(
+    readonly content?: Promise<unknown>,
+    private path?: string,
+  ) {}
   async text(): Promise<string> {
     const result = (await this.content) as Promise<string | undefined>;
     if (!result)
@@ -69,7 +72,9 @@ class IndexedDBFile implements BunFile {
 
   exists(): Promise<boolean> {
     if (!this.path) return Promise.resolve(false);
-    return getFileFromIndexedDB(this.path).then((r) => r !== undefined).catch(() => false);
+    return getFileFromIndexedDB(this.path)
+      .then((r) => r !== undefined)
+      .catch(() => false);
   }
   delete(): Promise<void> {
     return deleteFileFromIndexedDB(this.path!);
@@ -78,7 +83,7 @@ class IndexedDBFile implements BunFile {
 
 class BunFileSink implements FileSink {
   write(
-    chunk: string | ArrayBufferView | ArrayBuffer | SharedArrayBuffer
+    chunk: string | ArrayBufferView | ArrayBuffer | SharedArrayBuffer,
   ): number {
     throw new Error("not implemented");
     return 0;
@@ -113,7 +118,7 @@ export type IndexedDBItem =
   | ArrayBuffer
   | SharedArrayBuffer;
 export async function getItemLength(
-  input: PossibleBunFileContent
+  input: PossibleBunFileContent,
 ): Promise<[IndexedDBItem, number]> {
   if (typeof input === "string") {
     return [input, new TextEncoder().encode(input).length];
@@ -136,7 +141,7 @@ export async function getItemLength(
 }
 export async function putFileIntoIndexedDB(
   path: string,
-  content: PossibleBunFileContent
+  content: PossibleBunFileContent,
 ): Promise<number> {
   if (!browserGlobal.filesDb) {
     throw new Error("IndexedDB not initialized");
@@ -215,6 +220,7 @@ if (typeof globalThis.Bun === "undefined") {
 }
 
 export async function refreshEnvIndexedDB() {
+  if (!areWeInTheBrowser) return;
   browserGlobal.Bun.env = await readEnvIndexedDB();
 }
 
