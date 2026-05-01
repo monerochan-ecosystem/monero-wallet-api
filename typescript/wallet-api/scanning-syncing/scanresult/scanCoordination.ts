@@ -7,8 +7,7 @@ import {
 } from "../scanSettings";
 import {
   findRange,
-  initScanCache,
-  readCacheFileDefaultLocation,
+  initScanCacheFile,
   type CacheRange,
   type ScanCache,
 } from "./scanCache";
@@ -54,16 +53,12 @@ export async function findWorkToBeDone(
       wallet.subaddress_index,
       walletSettingsWithKeys.node_url,
     );
-    await initScanCache(
+    const walletCache = await initScanCacheFile(
       newWalletViewPair,
-      total_start_height,
       scan_settings_path,
       pathPrefix ?? prefix,
     );
-    const walletCache = await readCacheFileDefaultLocation(
-      wallet.primary_address,
-      pathPrefix ?? prefix,
-    );
+
     if (!walletCache)
       throw new Error(
         "wallet cache not found and new one could not be created for " +

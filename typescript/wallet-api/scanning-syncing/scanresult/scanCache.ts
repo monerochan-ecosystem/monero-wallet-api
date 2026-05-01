@@ -70,6 +70,32 @@ export async function initScanCache(
 
   return current_range;
 }
+export async function initScanCacheFile(
+  viewpair: ViewPair,
+  scan_settings_path?: string,
+  pathPrefix?: string,
+): Promise<ScanCache> {
+  const initialCache = await readCacheFileDefaultLocation(
+    viewpair.primary_address,
+    pathPrefix,
+  );
+  let cache: ScanCache = {
+    daemon_height: 0,
+    outputs: {},
+    own_key_images: {},
+    scanned_ranges: [],
+    primary_address: viewpair.primary_address,
+  };
+  if (initialCache) cache = initialCache;
+
+  cache.scanned_ranges = mergeRanges(cache.scanned_ranges);
+
+  await viewpair.addSubaddressesToScanCache(cache, scan_settings_path);
+
+  // write to cache
+  await writeCacheToFile(cache, pathPrefix);
+  return cache;
+}
 export async function readCacheFile(
   cacheFilePath: string,
 ): Promise<ScanCache | undefined> {
