@@ -15,13 +15,15 @@ export type SetupBlocksBufferGeneratorParams = {
   anchor_range?: CacheRange;
   stopSync?: AbortSignal;
   maxBufferItems?: number;
+  scanSettingsPath: string;
 };
 export async function setupBlocksBufferGenerator(
   params: SetupBlocksBufferGeneratorParams,
 ) {
   const blocksBuffer: GetBlocksBinBufferItem[] = [];
-  const connection_status: ConnectionStatus =
-    await readOrInitConnectionStatus();
+  const connection_status: ConnectionStatus = await readOrInitConnectionStatus(
+    params.scanSettingsPath,
+  );
 
   const generator = blocksBufferFetchLoop(
     params.nodeUrl,
