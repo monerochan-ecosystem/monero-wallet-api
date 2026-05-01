@@ -15,9 +15,7 @@ import {
   type ConnectionStatusSync,
 } from "../connectionStatus";
 export type GetBlocksBinBufferItem = {
-  start: number;
-  end: number;
-  last_block_hash: string;
+  local_uuid: string;
   get_blocks_result_meta: GetBlocksResultMeta;
   data: Uint8Array;
 };
@@ -95,18 +93,7 @@ export async function* blocksBufferFetchLoop(
       await sleep(1000);
       continue;
     }
-
-    const bi = result_meta.block_infos;
-    const start = bi[0].block_height;
-    const end = bi.at(-1)!.block_height;
-    const block_hash = bi.at(-1)!.block_hash;
-    const bufferItem: GetBlocksBinBufferItem = {
-      start,
-      end,
-      last_block_hash: block_hash,
-      data: get_blocks_bin,
-      get_blocks_result_meta: result_meta,
-    };
+    const bufferItem = makeBlocksBufferItem(result_meta, get_blocks_bin);
     try {
       const parse_result = await updateBlocksBufferScanHeight(
         current_range,
@@ -128,9 +115,19 @@ export async function* blocksBufferFetchLoop(
             parse_result.split_height,
           );
         }
+        //pop blocks that were reorged
+        //then push new blocks
+        popBlocksBufferItemsFromSplitHeight(
+          blocks_buffer,
+          parse_result.split_height,
+        );
+        blocks_buffer.push(bufferItem);
+        yield "blocks_buffer_changed";
+      } else {
+        blocks_buffer.push(bufferItem);
+        yield "blocks_buffer_changed";
       }
-      blocks_buffer.push(bufferItem);
-      yield "blocks_buffer_changed";
+
       yield connection_status.sync;
     } catch (error) {
       //cat reorg
@@ -147,6 +144,76 @@ export async function* blocksBufferFetchLoop(
       }
     }
   }
+}
+
+export function makeBlocksBufferItem(
+  result_meta: GetBlocksResultMeta,
+  get_blocks_bin: Uint8Array,
+) {
+  const bufferItem: GetBlocksBinBufferItem = {
+    local_uuid: crypto.randomUUID(),
+    data: get_blocks_bin,
+    get_blocks_result_meta: result_meta,
+  };
+  return bufferItem;
+}
+export function popBlocksBufferItemFromIndex(
+  blocks_buffer: GetBlocksBinBufferItem[],
+  index: number,
+) {
+  if (index < 0 || index >= blocks_buffer.length) return;
+  return blocks_buffer.splice(index, 1)[0];
+}
+export function findBufferitemBySplitHeight(
+  blocks_buffer: GetBlocksBinBufferItem[],
+  split_height: BlockInfo,
+): GetBlocksBinBufferItem | undefined {
+  for (const item of blocks_buffer) {
+    const infos = item.get_blocks_result_meta.block_infos;
+    if (!infos?.length) continue;
+    const start = infos[0].block_height;
+    const end = infos.at(-1)!.block_height;
+    if (
+      start <= split_height.block_height &&
+      split_height.block_height <= end
+    ) {
+      return item;
+    }
+  }
+}
+export function findBufferItemIndexByLocalId(
+  blocks_buffer: GetBlocksBinBufferItem[],
+  local_uuid: string,
+): number | undefined {
+  return blocks_buffer.findIndex((item) => item.local_uuid === local_uuid);
+}
+export function popBlocksBufferItemsFromSplitHeight(
+  blocks_buffer: GetBlocksBinBufferItem[],
+  split_height: BlockInfo,
+): GetBlocksBinBufferItem[] {
+  const found = findBufferitemBySplitHeight(blocks_buffer, split_height);
+  if (!found) {
+    throw new CatastrophicReorgError(
+      "could not find split height in blocks buffer: " +
+        split_height.block_height,
+    );
+  }
+  const foundIndex = findBufferItemIndexByLocalId(
+    blocks_buffer,
+    found.local_uuid,
+  );
+  if (!foundIndex || foundIndex < 0) {
+    throw new CatastrophicReorgError(
+      "could not find split height in blocks buffer: " +
+        split_height.block_height,
+    );
+  }
+  // pop from this index onward, everything at or above the split
+  const removed: GetBlocksBinBufferItem[] = [];
+  for (let i = blocks_buffer.length - 1; i >= foundIndex; i--) {
+    removed.unshift(popBlocksBufferItemFromIndex(blocks_buffer, i)!);
+  }
+  return removed;
 }
 export async function doRPCrequest(
   nodeUrl: NodeUrl,
@@ -361,9 +428,10 @@ export async function handleBlocksBufferReorg(
     // have a fallback beyond the split height. without this, both anchors
     // point to the same height and the next pop past it is catastrophic.
     const oldDeepAnchor = oldRange.block_hashes.at(-1);
-    const newAnchor = oldDeepAnchor && oldDeepAnchor.block_height < anchor.block_height
-      ? oldDeepAnchor
-      : anchor;
+    const newAnchor =
+      oldDeepAnchor && oldDeepAnchor.block_height < anchor.block_height
+        ? oldDeepAnchor
+        : anchor;
     const newRange = {
       start,
       end,
