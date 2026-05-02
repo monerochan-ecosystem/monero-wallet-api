@@ -1,4 +1,5 @@
-import { ViewPair } from "../../api";
+import { ViewPair, type GetBlocksBinBufferItem } from "../../api";
+import { type WorkItem, makeWorkItem } from "./scanLoop";
 import {
   cullTooLargeScanHeight,
   getNonHaltedWallets,
@@ -106,5 +107,73 @@ export async function findWorkToBeDone(
     anchor_range,
   };
 }
-//TODO copy the helper from the scanLoop integration test here and use it in the coordinator main
-//TODO add workitembuffer and blockbuffer reconciliation functions here
+/**
+ * called when the blocks buffer generator yields "blocks_buffer_changed".
+ * removes orphaned work items whose batch is no longer in the blocks buffer,
+ * then adds new work items for blocks buffer items not yet referenced.
+ */
+export function reconcileBlocksBufferChanged(
+  blocksBuffer: GetBlocksBinBufferItem[],
+  workItemBuffer: WorkItem[],
+  scanCache?: ScanCache,
+  primaryAddress?: string,
+  from?: number,
+  to?: number,
+): void {
+  // remove work items whose batch is no longer in the blocks buffer
+  for (let i = workItemBuffer.length - 1; i >= 0; i--) {
+    const stillInBlocksBuffer = blocksBuffer.some(
+      (b) => b.local_uuid === workItemBuffer[i].batch.local_uuid,
+    );
+    if (!stillInBlocksBuffer) {
+      //TODO when we add CPU workers we should send cancel events here
+      workItemBuffer.splice(i, 1);
+    }
+  }
+
+  // add work items for blocks buffer items not yet referenced
+  if (!scanCache || !primaryAddress) return;
+  for (const batch of blocksBuffer) {
+    const alreadyReferenced = workItemBuffer.some(
+      (w) => w.batch.local_uuid === batch.local_uuid,
+    );
+    if (!alreadyReferenced) {
+      //TODO splice the work in smaller chunks
+      //TODO asign work to CPU workers, or should they pull?
+      workItemBuffer.push(
+        makeWorkItem(
+          scanCache,
+          batch,
+          primaryAddress,
+          from ?? 0,
+          to ?? batch.get_blocks_result_meta.block_infos.length,
+        ),
+      );
+    }
+  }
+}
+
+/**
+ * called when a work item at the left end of the work buffer is done.
+ * shifts done items off the left, and removes their batch from the
+ * blocks buffer if no remaining work items reference it.
+ */
+export function reconcileWorkItemDone(
+  blocksBuffer: GetBlocksBinBufferItem[],
+  workItemBuffer: WorkItem[],
+): void {
+  while (workItemBuffer.length > 0 && workItemBuffer[0].done) {
+    const removed = workItemBuffer.shift()!;
+    const stillReferenced = workItemBuffer.some(
+      (w) => w.batch.local_uuid === removed.batch.local_uuid,
+    );
+    if (!stillReferenced) {
+      const idx = blocksBuffer.findIndex(
+        (b) => b.local_uuid === removed.batch.local_uuid,
+      );
+      //TODO this really means we have to save work items scanCache to file
+      // before setting done = true
+      if (idx !== -1) blocksBuffer.splice(idx, 1);
+    }
+  }
+}
