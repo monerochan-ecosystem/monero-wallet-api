@@ -382,8 +382,8 @@ test(
       ) as ScanCache;
       expect(cacheJson.reorg_info).toBeDefined();
       if (!cacheJson.reorg_info) throw new Error("reorg_info missing");
-      expect(cacheJson.reorg_info.split_height).toBeDefined();
-      expect(typeof cacheJson.reorg_info.split_height.block_height).toBe(
+      expect(cacheJson.reorg_info.split_heights[0]).toBeDefined();
+      expect(typeof cacheJson.reorg_info.split_heights[0].block_height).toBe(
         "number",
       );
 
