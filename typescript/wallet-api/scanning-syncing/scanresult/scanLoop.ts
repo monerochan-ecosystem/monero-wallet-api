@@ -4,13 +4,8 @@ import {
   ViewPair,
   type GetBlocksBinBufferItem,
   type ScanResult,
+  type WalletConfig,
 } from "../../api";
-
-type WalletConfig = {
-  primary_address: string;
-  secret_view_key: string;
-  subaddress_index: number;
-};
 
 export type WorkItem = {
   scanCache: ScanCache;

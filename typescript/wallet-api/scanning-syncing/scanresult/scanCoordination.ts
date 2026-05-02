@@ -11,9 +11,16 @@ import {
   type CacheRange,
   type ScanCache,
 } from "./scanCache";
+export type WalletConfig = {
+  primary_address: string;
+  secret_view_key: string;
+  secret_spend_key?: string;
+  subaddress_index: number;
+};
 export type WorkToBeDone = {
   start_height: number;
   wallet_caches: ScanCache[];
+  wallet_configs: WalletConfig[];
   anchor_range?: CacheRange;
 };
 /**
@@ -41,6 +48,7 @@ export async function findWorkToBeDone(
   if (!wallets.length) return false;
   const potential_anchor_ranges: CacheRange[] = [];
   const wallet_caches: ScanCache[] = [];
+  const wallet_configs: WalletConfig[] = [];
   for (const wallet of wallets) {
     const walletSettingsWithKeys = await walletSettingsPlusKeys({
       ...wallet,
@@ -66,12 +74,19 @@ export async function findWorkToBeDone(
       );
 
     wallet_caches.push(walletCache);
+    wallet_configs.push({
+      primary_address: wallet.primary_address,
+      secret_view_key: walletSettingsWithKeys.secret_view_key,
+      secret_spend_key: walletSettingsWithKeys.secret_spend_key,
+      subaddress_index: wallet.subaddress_index || 0,
+    });
     const range = findRange(walletCache.scanned_ranges, total_start_height);
     if (!range) continue;
     potential_anchor_ranges.push(range);
   }
   if (!potential_anchor_ranges.length)
     return {
+      wallet_configs,
       wallet_caches,
       start_height: total_start_height,
     };
@@ -85,8 +100,11 @@ export async function findWorkToBeDone(
   // ( they cant they contain newer ranges then resulting start height after
   // lowest fast forward start height on all wallets )
   return {
+    wallet_configs,
     wallet_caches,
     start_height,
     anchor_range,
   };
 }
+//TODO copy the helper from the scanLoop integration test here and use it in the coordinator main
+//TODO add workitembuffer and blockbuffer reconciliation functions here
