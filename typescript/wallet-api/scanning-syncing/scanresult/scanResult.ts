@@ -1,4 +1,4 @@
-import type { BlockInfo, Output } from "../../api";
+import { CatastrophicReorgError, type BlockInfo, type Output } from "../../api";
 import { computeKeyImage, type KeyImage } from "./computeKeyImage";
 import {
   mergeRanges,
@@ -24,6 +24,12 @@ export type ProcessScanResultParams = {
   secret_spend_key?: string;
   pathPrefix?: string;
   use_master_current_range?: boolean;
+};
+export type ProcessScanResultParamsWithoutSideEffects = {
+  current_range: CacheRange;
+  secret_spend_key?: string;
+  result: ScanResult | ErrorResponse | undefined;
+  scanCache: ScanCache;
 };
 export async function processScanResult(params: ProcessScanResultParams) {
   let current_range = params.current_range;
@@ -83,6 +89,50 @@ export async function processScanResult(params: ProcessScanResultParams) {
     params.catastrophic_reorg_cb();
     throw e;
   }
+}
+export type ProcessScanResult = {
+  current_range: CacheRange;
+  changed_outputs: ChangedOutput[];
+};
+export async function processScanResultWITHOUT_SIDE_EFFECTS(
+  params: ProcessScanResultParamsWithoutSideEffects,
+): Promise<ProcessScanResult> {
+  let current_range = params.current_range;
+  const { result, scanCache: cache, secret_spend_key } = params;
+  if (!(result && "primary_address" in result))
+    return { current_range, changed_outputs: [] };
+  // const cache = await readCacheFileDefaultLocation(
+  //   result.primary_address,
+  //   pathPrefix,
+  // );
+
+  if (result && "daemon_height" in result)
+    cache.daemon_height = result.daemon_height;
+
+  if (result && "new_height" in result) {
+    const [new_range, changed_outputs] = updateScanHeight(
+      current_range,
+      result,
+      cache,
+    );
+    current_range = new_range;
+
+    changed_outputs.push(
+      ...(await detectOutputs(result, cache, secret_spend_key)),
+    );
+
+    if (secret_spend_key)
+      changed_outputs.push(...detectOwnspends(result, cache));
+
+    // write to cache
+    // await writeCacheToFile(cache, params.pathPrefix);
+
+    // await cacheChanged({
+    //   newCache: cache,
+    //   changed_outputs,
+    // });
+  }
+  return { current_range, changed_outputs: [] };
 }
 export type OnchainKeyImage = {
   key_image_hex: KeyImage;
@@ -156,7 +206,7 @@ export function updateScanHeight(
   // getblocksbin will return up to 1000 blocks at once
   // so this should never happen, except if we just popped a block (but that case is handled above in the reorg case)
   if (current_blockhash.block_height > last_block_hash_of_result.block_height)
-    throw new Error(
+    throw new CatastrophicReorgError(
       `current scan height was larger than block height of last block from latest scan result. 
        Most likely connected to faulty node / catastrophic reorg.
        current height: ${current_blockhash.block_height}, new height: ${last_block_hash_of_result.block_height}`,
