@@ -155,15 +155,12 @@ export function ensureRangeCovering(
   if (range) return range;
 
   const infos = batchMeta.block_infos;
-  const tip = infos.at(-1)!;
   const oldest = infos[0];
-  const candidateIdx = Math.max(0, infos.length - 101);
-  const candidate = infos[candidateIdx];
 
   const newRange: CacheRange = {
     start: fromHeight,
-    end: batchMeta.new_height,
-    block_hashes: [tip, candidate, oldest],
+    end: fromHeight,
+    block_hashes: [oldest, oldest, oldest],
   };
   cache.scanned_ranges.push(newRange);
   return newRange;
