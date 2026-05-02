@@ -1,4 +1,9 @@
-import { CatastrophicReorgError, type BlockInfo, type Output } from "../../api";
+import {
+  CatastrophicReorgError,
+  type BlockInfo,
+  type GetBlocksResultMeta,
+  type Output,
+} from "../../api";
 import { computeKeyImage, type KeyImage } from "./computeKeyImage";
 import {
   mergeRanges,
@@ -99,23 +104,17 @@ export async function processScanResultWITHOUT_SIDE_EFFECTS(
 ): Promise<ProcessScanResult> {
   let current_range = params.current_range;
   const { result, scanCache: cache, secret_spend_key } = params;
+  let changed_outputs: ChangedOutput[] = [];
   if (!(result && "primary_address" in result))
-    return { current_range, changed_outputs: [] };
-  // const cache = await readCacheFileDefaultLocation(
-  //   result.primary_address,
-  //   pathPrefix,
-  // );
+    return { current_range, changed_outputs };
 
   if (result && "daemon_height" in result)
     cache.daemon_height = result.daemon_height;
 
   if (result && "new_height" in result) {
-    const [new_range, changed_outputs] = updateScanHeight(
-      current_range,
-      result,
-      cache,
-    );
+    const [new_range, changed] = updateScanHeight(current_range, result, cache);
     current_range = new_range;
+    changed_outputs.push(...changed);
 
     changed_outputs.push(
       ...(await detectOutputs(result, cache, secret_spend_key)),
@@ -123,17 +122,53 @@ export async function processScanResultWITHOUT_SIDE_EFFECTS(
 
     if (secret_spend_key)
       changed_outputs.push(...detectOwnspends(result, cache));
-
-    // write to cache
-    // await writeCacheToFile(cache, params.pathPrefix);
-
-    // await cacheChanged({
-    //   newCache: cache,
-    //   changed_outputs,
-    // });
   }
-  return { current_range, changed_outputs: [] };
+  return { current_range, changed_outputs };
 }
+
+/**
+ * ensures the cache has a scanned range that covers the given height.
+ * if one exists (via findRange) it is returned unchanged.
+ * if no range covers the height, a fresh range is built from the batch's
+ * block_infos metadata: tip (last block), candidate (~100 blocks back, or
+ * oldest), oldest (first block in batch). the range is pushed into the
+ * cache's scanned_ranges and returned.
+ *
+ * called by the coordinator before passing current_range to
+ * processScanResultWITHOUT_SIDE_EFFECTS. this replaces the old behaviour
+ * of initScanCache writing a fake range on wallet creation, which could
+ * produce a false catastrophic reorg if the node was mid-reorg at the time.
+ *
+ * example:
+ *   const range = ensureRangeCovering(cache, batchMeta, fromHeight);
+ *   const { current_range, changed_outputs } =
+ *     await processScanResultWITHOUT_SIDE_EFFECTS({
+ *       current_range: range, result, scanCache: cache,
+ *     });
+ */
+export function ensureRangeCovering(
+  cache: ScanCache,
+  batchMeta: GetBlocksResultMeta,
+  fromHeight: number,
+): CacheRange {
+  let range = findRange(cache.scanned_ranges, fromHeight);
+  if (range) return range;
+
+  const infos = batchMeta.block_infos;
+  const tip = infos.at(-1)!;
+  const oldest = infos[0];
+  const candidateIdx = Math.max(0, infos.length - 101);
+  const candidate = infos[candidateIdx];
+
+  const newRange: CacheRange = {
+    start: fromHeight,
+    end: batchMeta.new_height,
+    block_hashes: [tip, candidate, oldest],
+  };
+  cache.scanned_ranges.push(newRange);
+  return newRange;
+}
+
 export type OnchainKeyImage = {
   key_image_hex: KeyImage;
   relative_index: number; // relative index of input in transaction
