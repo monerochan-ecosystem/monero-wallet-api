@@ -13,6 +13,7 @@ import {
   type GetBlocksBinRequest,
   MAINNET_GENESIS_BLOCK_HASH,
   STAGENET_GENESIS_BLOCK_HASH,
+  type ErrorResponse,
 } from "../node-interaction/binaryEndpoints";
 import {
   handleScanError,
@@ -234,12 +235,27 @@ export class ViewPair extends WasmProcessor {
     return loadGetBlocksBinResponse(this, getBlocksBinResponseBuffer);
   }
   /**
-   * Scans a single block from the previously loaded getBlocks.bin response by index.
-   * Call loadGetBlocksBinResponse first to load a response into WASM memory.
+   * scan one block from a getblocks.bin response that was loaded into wasm memory.
+   * call loadGetBlocksBinResponse first to populate the response in the wasm module.
+   * call this in a loop over blockIndex 0..meta.block_infos.length-1 to scan all blocks.
    * @param blockIndex index of the block within the loaded response (0-based)
-   * @returns scan result with outputs and key images for that one block
+   * @returns scan result with outputs and all key images for that one block.
+   *          returns ErrorResponse (`{ error: string }`) if scanning fails.
+   *          check `if ("error" in result)` before accessing outputs/key_images.
+   *
+   * error cases from the rust wasm (search these strings in rust/src/):
+   * - "Block index {} out of bounds (total blocks: {})"
+   *   blockIndex >= number of blocks in the loaded response
+   * - "No getBlocks.bin response loaded. Call loadGetBlocksBinResponse first."
+   *   forgot to call loadGetBlocksBinResponse before this method
+   * - "Error scanning miner transaction: {}"
+   *   the miner tx of the block could not be scanned
+   * - "Error scanning block: {}"
+   *   the block could not be scanned
    */
-  public getBlocksBinScanOneBlock(blockIndex: number) {
+  public getBlocksBinScanOneBlock(
+    blockIndex: number,
+  ): Promise<ScanResult | ErrorResponse> {
     return getBlocksBinScanOneBlock(this, blockIndex);
   }
   /**

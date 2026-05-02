@@ -320,6 +320,18 @@ export async function loadGetBlocksBinResponse<T extends WasmProcessor>(
  * @param processor the WASM processor
  * @param blockIndex index of the block within the loaded response (0-based)
  * @returns scan result with outputs and key images for that one block
+ *
+ * ErrorResponse type:
+ * the error messages come from the rust side in rust/src/:
+ * - "Block index {} out of bounds (total blocks: {})"
+ *   in lib.rs get_blocks_bin_scan_one_block, guards blockIndex against response.blocks.len
+ * - "No getBlocks.bin response loaded. Call loadGetBlocksBinResponse first."
+ *   in lib.rs get_blocks_bin_scan_one_block, when GLOBAL_GET_BLOCKS_BIN_RESPONSE is None
+ * - "Error scanning miner transaction: {}"
+ *   in block_parsing/mod.rs scan_block, scanner.scan_transaction failed when parsing miner tx of block
+ * - "Error scanning block: {}"
+ *   in block_parsing/mod.rs scan_block, scanner.scan(scan_block) failed
+ * all errors are returned as { error: string } (ErrorResponse type)
  */
 export async function getBlocksBinScanOneBlock<T extends WasmProcessor>(
   processor: T,
