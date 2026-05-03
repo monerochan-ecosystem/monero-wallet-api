@@ -485,8 +485,13 @@ export function newAnchorCandidates(
   if (!oldAnchor || !oldCandidateAnchor || !last)
     throw new Error("old Range malformed");
   if (shouldReplaceAnchor(oldRange, last)) {
-    const newCandidateAnchorIndex = Math.max(tipIndex, last.block_height - 100);
+    const newCandidateAnchorIndex = Math.max(
+      tipIndex,
+      block_infos.length - 101,
+    );
     const newCandidateAnchor = block_infos[newCandidateAnchorIndex];
+    if (!newCandidateAnchor)
+      throw new Error("tipIndex clamped candidate anchor index out of range");
     return { newCandidateAnchor, newAnchor: oldCandidateAnchor };
   }
   return { newCandidateAnchor: oldCandidateAnchor, newAnchor: oldAnchor };
