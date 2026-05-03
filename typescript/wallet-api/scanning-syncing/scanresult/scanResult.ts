@@ -441,3 +441,53 @@ export function spendable(
   const status = outputStatus(output, cache, current_height);
   return status.status === "spendable";
 }
+
+export function selectAnchors(
+  block_infos: BlockInfo[],
+  tipIndex: number,
+  oldRange: CacheRange,
+): CacheRange {
+  const tip = block_infos[tipIndex];
+  const last = block_infos[block_infos.length - 1];
+  const { newCandidateAnchor, newAnchor } = newAnchorCandidates(
+    oldRange,
+    block_infos,
+    tipIndex,
+  );
+  return {
+    start: tip.block_height,
+    end: last.block_height,
+    block_hashes: [last, newCandidateAnchor, newAnchor],
+    // newest, middle, oldest
+  };
+}
+export function shouldReplaceAnchor(oldRange: CacheRange, last: BlockInfo) {
+  const oldAnchor = oldRange.block_hashes.at(2);
+  if (!oldAnchor) throw new Error("old Range malformed");
+
+  if (
+    //if the old anchor is more than 200 blocks old
+    last.block_height - oldAnchor.block_height >
+    200
+  ) {
+    return true;
+  }
+}
+export function newAnchorCandidates(
+  oldRange: CacheRange,
+  block_infos: BlockInfo[],
+  tipIndex: number,
+): { newCandidateAnchor: BlockInfo; newAnchor: BlockInfo } {
+  const oldCandidateAnchor = oldRange.block_hashes.at(1);
+  const oldAnchor = oldRange.block_hashes.at(2);
+  const last = block_infos.at(-1);
+
+  if (!oldAnchor || !oldCandidateAnchor || !last)
+    throw new Error("old Range malformed");
+  if (shouldReplaceAnchor(oldRange, last)) {
+    const newCandidateAnchorIndex = Math.max(tipIndex, last.block_height - 100);
+    const newCandidateAnchor = block_infos[newCandidateAnchorIndex];
+    return { newCandidateAnchor, newAnchor: oldCandidateAnchor };
+  }
+  return { newCandidateAnchor: oldCandidateAnchor, newAnchor: oldAnchor };
+}
