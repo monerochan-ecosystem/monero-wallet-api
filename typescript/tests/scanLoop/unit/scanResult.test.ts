@@ -351,8 +351,9 @@ test("3b: without prepend 2x then prepended 1x, cache same as 3a", async () => {
     secret_spend_key: undefined,
   });
   console.log("[test 3b] after final prepended call:", fmt(cacheTest));
-  expect(cacheTest).not.toEqual(afterSecond);
-  console.log("[test 3b] final prepended call modified cache");
+  // prepended result has no new outputs for already scanned cache, should be idempotent
+  expect(cacheTest).toEqual(afterSecond);
+  console.log("[test 3b] final prepended call idempotent");
 
   const cacheRef = makeCache(100, 150, "addr1");
   const initialRef = structuredClone(cacheRef);

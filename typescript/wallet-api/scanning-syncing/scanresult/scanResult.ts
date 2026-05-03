@@ -240,12 +240,29 @@ export async function processScanResultWITHOUT_SIDE_EFFECTS(
     //const [new_range, changed] = updateScanHeight(current_range, result, cache);
     current_range = makeNewRange(new_range, cache);
 
+    const tipHeight = result.block_infos[tipIndex].block_height;
+    const filteredOutputs = result.outputs.filter(
+      (o) => o.block_height >= tipHeight,
+    );
+    const filteredKeyImages = result.all_key_images.filter(
+      (ki) => ki.block_height >= tipHeight,
+    );
+
     changed_outputs.push(
-      ...(await detectOutputs(result, cache, secret_spend_key)),
+      ...(await detectOutputs(
+        { ...result, outputs: filteredOutputs, all_key_images: filteredKeyImages },
+        cache,
+        secret_spend_key,
+      )),
     );
 
     if (secret_spend_key)
-      changed_outputs.push(...detectOwnspends(result, cache));
+      changed_outputs.push(
+        ...detectOwnspends(
+          { ...result, outputs: filteredOutputs, all_key_images: filteredKeyImages },
+          cache,
+        ),
+      );
   }
   return { current_range, changed_outputs };
 }
