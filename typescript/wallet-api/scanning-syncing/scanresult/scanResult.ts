@@ -35,6 +35,7 @@ export type ProcessScanResultParamsWithoutSideEffects = {
   secret_spend_key?: string;
   result: ScanResult | ErrorResponse | undefined;
   scanCache: ScanCache;
+  endIndex?: number;
 };
 export async function processScanResult(params: ProcessScanResultParams) {
   let current_range = params.current_range;
@@ -112,9 +113,132 @@ export async function processScanResultWITHOUT_SIDE_EFFECTS(
     cache.daemon_height = result.daemon_height;
 
   if (result && "new_height" in result) {
-    const [new_range, changed] = updateScanHeight(current_range, result, cache);
-    current_range = new_range;
-    changed_outputs.push(...changed);
+    let current_blockhash = current_range?.block_hashes.at(0);
+
+    if (!current_blockhash)
+      throw new Error(
+        "current_range passed to updateScanHeight was malformed. block_hashes is empty",
+      );
+    const oldRange = findRange(
+      cache.scanned_ranges,
+      current_blockhash.block_height,
+    );
+    if (!oldRange)
+      throw new Error(
+        `could not find scan range for height ${current_blockhash.block_height},
+       that means the blocks in the response from getBlocks.bin do not overlap
+       with the scanned ranges in the cache. This should not happen, as even if 
+       we are starting from a new start_height that has been supplied to scanWithCache,
+       it has been found as an existing range in the cache, or it has been
+       added as a new range before we started scannning.`,
+      );
+    let tipIndex = findTipIndex(result.block_infos, oldRange.block_hashes[0]);
+    if (tipIndex === "empty_blocks_array")
+      return { current_range, changed_outputs };
+    if (tipIndex === "reorg_found") {
+      let split_height_index = null;
+      for (const block_hash of oldRange.block_hashes) {
+        split_height_index = findTipIndex(result.block_infos, block_hash);
+        if (typeof split_height_index === "number") break;
+      }
+      if (typeof split_height_index !== "number")
+        throw new CatastrophicReorgError(
+          "could not locate anchors, should not try to processResult on stale workItems",
+        );
+      const split_height = result.block_infos[split_height_index];
+
+      // we found the split height & do the reorg
+      console.log(
+        "[handleReorg] SPLIT FOUND at height",
+        split_height.block_height,
+      );
+      if (!cache.reorg_info) {
+        cache.reorg_info = {
+          split_heights: [split_height],
+          removed_outputs: [],
+          reverted_spends: [],
+        };
+      } else {
+        cache.reorg_info.split_heights.push(split_height);
+      }
+
+      // First, collect reverted spends from all outputs (before any removals)
+      // so that outputs with block_height < split_height but spent_block_height >= split_height are captured
+      const reverted_outputs = Object.entries(cache.outputs).filter(
+        ([id, output]) =>
+          output.spent_block_height !== undefined &&
+          output.spent_block_height >= split_height.block_height,
+      );
+
+      const removed_outputs = Object.entries(cache.outputs).filter(
+        ([id, output]) => output.block_height >= split_height.block_height,
+      );
+      console.log(
+        "[handleReorg] removed_outputs count:",
+        removed_outputs.length,
+        "reverted count:",
+        reverted_outputs.length,
+      );
+      for (const [id, old_output_state] of removed_outputs) {
+        // 1. find key_image of output to be removed (as it was reorged)
+        const [key_image] = Object.entries(cache.own_key_images).find(
+          ([own_key_image, globalid]) => globalid === id,
+        ) || [""]; // if this is viewonly the key_image will be empty
+        cache.reorg_info.removed_outputs.push({
+          old_output_state,
+          key_image,
+          split_height,
+        });
+
+        // 2. remove from outputs and own_key_images
+        delete cache.outputs[id];
+        delete cache.own_key_images[key_image];
+        changed_outputs.push({
+          output: old_output_state,
+          change_reason: "reorged",
+        });
+      }
+
+      for (const [id, old_output_state_pointer] of reverted_outputs) {
+        const [key_image] = Object.entries(cache.own_key_images).find(
+          ([own_key_image, globalid]) => globalid === id,
+        ) || [""]; // if this is viewonly the key_image will be empty
+        const old_output_state = Object.assign({}, old_output_state_pointer);
+        cache.reorg_info.reverted_spends.push({
+          old_output_state,
+          key_image, // in this case key_image only used here, does not get removed
+          split_height,
+        });
+
+        // remove spend info from original cache (if output still exists
+        // it may have been deleted above in the removed_outputs loop)
+        if (cache.outputs[id]) {
+          delete cache.outputs[id].spent_relative_index;
+          delete cache.outputs[id].spent_in_tx_hash;
+          delete cache.outputs[id].spent_block_height;
+          delete cache.outputs[id].spent_block_timestamp;
+        }
+        changed_outputs.push({
+          output: old_output_state,
+          change_reason: "reorged_spent",
+        });
+      }
+
+      tipIndex = split_height_index;
+    }
+    const new_range = selectAnchors(
+      result.block_infos,
+      tipIndex,
+      oldRange,
+      params.endIndex,
+    );
+
+    //first check that no reorg occured by 1. finding oldrange, making sure oldrange end is in the meta blockinfos
+    // if that is not met call reorg handling code
+    //2. make sure reorg handling code works indepented of where the oldrange end is in the meta blockinfos
+    //3. make sure the anchor selection logic works independent of where the oldrange end is in the meta blockinfos
+    //const [new_range, changed] = updateScanHeight(current_range, result, cache);
+    current_range = makeNewRange(new_range, cache);
 
     changed_outputs.push(
       ...(await detectOutputs(result, cache, secret_spend_key)),
@@ -276,9 +400,9 @@ export function updateScanHeight(
         result.block_infos.slice(-100)[0] || oldRange?.block_hashes.at(0); // use  use the old scan tip as anchor candidate
     }
   }
-  // if there is no old anchor, use the one 100 blocks in, or the last block hash
-  anchor =
-    anchor || result.block_infos.slice(-100)[0] || last_block_hash_of_result;
+  // old anchor always exists because every CacheRange has 3 block_hashes
+  if (!anchor)
+    throw new Error("anchor is undefined, block_hashes for range malformed");
   // carry over the old anchor candidate or use the last block
   anchor_candidate = anchor_candidate || last_block_hash_of_result;
   const newRange = {
