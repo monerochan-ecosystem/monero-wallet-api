@@ -446,13 +446,15 @@ export function selectAnchors(
   block_infos: BlockInfo[],
   tipIndex: number,
   oldRange: CacheRange,
+  endIndex: number = block_infos.length - 1,
 ): CacheRange {
   const tip = block_infos[tipIndex];
-  const last = block_infos[block_infos.length - 1];
+  const last = block_infos[endIndex];
   const { newCandidateAnchor, newAnchor } = newAnchorCandidates(
     oldRange,
     block_infos,
     tipIndex,
+    endIndex,
   );
   return {
     start: tip.block_height,
@@ -477,6 +479,7 @@ export function newAnchorCandidates(
   oldRange: CacheRange,
   block_infos: BlockInfo[],
   tipIndex: number,
+  endIndex: number,
 ): { newCandidateAnchor: BlockInfo; newAnchor: BlockInfo } {
   const oldCandidateAnchor = oldRange.block_hashes.at(1);
   const oldAnchor = oldRange.block_hashes.at(2);
@@ -485,10 +488,7 @@ export function newAnchorCandidates(
   if (!oldAnchor || !oldCandidateAnchor || !last)
     throw new Error("old Range malformed");
   if (shouldReplaceAnchor(oldRange, last)) {
-    const newCandidateAnchorIndex = Math.max(
-      tipIndex,
-      block_infos.length - 101,
-    );
+    const newCandidateAnchorIndex = Math.max(tipIndex, endIndex - 100);
     const newCandidateAnchor = block_infos[newCandidateAnchorIndex];
     if (!newCandidateAnchor)
       throw new Error("tipIndex clamped candidate anchor index out of range");
