@@ -455,6 +455,7 @@ export function selectAnchors(
     block_infos,
     tipIndex,
     endIndex,
+    last,
   );
   return {
     start: tip.block_height,
@@ -480,10 +481,10 @@ export function newAnchorCandidates(
   block_infos: BlockInfo[],
   tipIndex: number,
   endIndex: number,
+  last: BlockInfo,
 ): { newCandidateAnchor: BlockInfo; newAnchor: BlockInfo } {
   const oldCandidateAnchor = oldRange.block_hashes.at(1);
   const oldAnchor = oldRange.block_hashes.at(2);
-  const last = block_infos.at(-1);
 
   if (!oldAnchor || !oldCandidateAnchor || !last)
     throw new Error("old Range malformed");
