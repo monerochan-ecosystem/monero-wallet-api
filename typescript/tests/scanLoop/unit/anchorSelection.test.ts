@@ -18,7 +18,7 @@
  *   works when scanning a subset of the batch via endIndex
  */
 import { test, expect } from "bun:test";
-import { selectAnchors } from "../../../dist/api";
+import { selectAnchors, findTipIndex } from "../../../dist/api";
 import type { BlockInfo, CacheRange } from "../../../dist/api";
 
 function bi(height: number, hash?: string): BlockInfo {
@@ -323,4 +323,65 @@ test("8: scan from index 101 to 142 in 1000 block batch", () => {
   );
   // old anchor at 50 should NOT be replaced since 142 - 50 = 92 < 200
   expect(result.block_hashes[2].block_height).toBe(50);
+});
+
+// findTipIndex tests
+
+// 9: tip found at index 0
+
+test("9: findTipIndex finds hash at index 0", () => {
+  const infos = makeBlockInfos(100, 50);
+  const oldTip = bi(100);
+
+  const result = findTipIndex(infos, oldTip);
+
+  console.log("[test 9] result:", result);
+  expect(result).toBe(0);
+});
+
+// 10: tip found at index 10 with prepended blocks
+
+test("10: findTipIndex finds hash at index 10 with prepended blocks", () => {
+  const infos = makeBlockInfosWithPrepend(100, 20, { count: 10, startHeight: 90 });
+  const oldTip = bi(100);
+
+  const result = findTipIndex(infos, oldTip);
+
+  console.log("[test 10] result:", result);
+  expect(result).toBe(10);
+});
+
+// 11: tip found at last index
+
+test("11: findTipIndex finds hash at last index", () => {
+  const infos = makeBlockInfos(0, 100);
+  const oldTip = bi(99);
+
+  const result = findTipIndex(infos, oldTip);
+
+  console.log("[test 11] result:", result);
+  expect(result).toBe(99);
+});
+
+// 12: hash not found returns reorg_found
+
+test("12: findTipIndex returns reorg_found when hash not in array", () => {
+  const infos = makeBlockInfos(100, 50);
+  const oldTip = bi(999, "hash_does_not_exist");
+
+  const result = findTipIndex(infos, oldTip);
+
+  console.log("[test 12] result:", result);
+  expect(result).toBe("reorg_found");
+});
+
+// 13: empty block_infos returns empty_blocks_array
+
+test("13: findTipIndex returns empty_blocks_array on empty block_infos", () => {
+  const oldTip = bi(100);
+
+  const result = findTipIndex([], oldTip);
+
+  console.log("[test 13] result:", result);
+  expect(result).toBe("empty_blocks_array");
 });

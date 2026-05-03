@@ -442,6 +442,16 @@ export function spendable(
   return status.status === "spendable";
 }
 
+export function findTipIndex(
+  block_infos: BlockInfo[],
+  oldTip: BlockInfo,
+): number | "reorg_found" | "empty_blocks_array" {
+  if (block_infos.length === 0) return "empty_blocks_array";
+  const idx = block_infos.findIndex((b) => b.block_hash === oldTip.block_hash);
+  if (idx === -1) return "reorg_found";
+  return idx;
+}
+
 export function selectAnchors(
   block_infos: BlockInfo[],
   tipIndex: number,
