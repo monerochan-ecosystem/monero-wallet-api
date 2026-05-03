@@ -130,9 +130,9 @@ export async function processScanResultWITHOUT_SIDE_EFFECTS(
  * ensures the cache has a scanned range that covers the given height.
  * if one exists (via findRange) it is returned unchanged.
  * if no range covers the height, a fresh range is built from the batch's
- * block_infos metadata: tip (last block), candidate (~100 blocks back, or
- * oldest), oldest (first block in batch). the range is pushed into the
- * cache's scanned_ranges and returned.
+ * block_infos metadata: tip (at fromHeight), candidate (fromHeight), oldest (fromHeight).
+ *  the range is pushed into the
+ * cache's scanned_ranges and returned. As we call processresults the anchors will be updated
  *
  * called by the coordinator before passing current_range to
  * processScanResultWITHOUT_SIDE_EFFECTS. this replaces the old behaviour
@@ -155,12 +155,15 @@ export function ensureRangeCovering(
   if (range) return range;
 
   const infos = batchMeta.block_infos;
-  const oldest = infos[0];
-
+  const hash_at_height = infos.find((bi) => bi.block_height === fromHeight);
+  if (!hash_at_height)
+    throw new Error(
+      `could not find hash at height for height ${fromHeight} in batchMeta block infos`,
+    );
   const newRange: CacheRange = {
     start: fromHeight,
     end: fromHeight,
-    block_hashes: [oldest, oldest, oldest],
+    block_hashes: [hash_at_height, hash_at_height, hash_at_height],
   };
   cache.scanned_ranges.push(newRange);
   return newRange;
