@@ -375,3 +375,81 @@ test("reconcileWorkItemDone shifts multiple done items in one call", () => {
   expect(workItemBuffer.length).toBe(0);
   expect(blocksBuffer.length).toBe(0);
 });
+
+// -- yank: mixed orphan/non-orphan --
+
+test("reconcileBlocksBufferChanged mixed orphans: removes only stale, leaves valid untouched", () => {
+  const batch1 = makeMockBatch("stale", 0, 10);
+  const batch2 = makeMockBatch("valid", 10, 10);
+  const blocksBuffer: GetBlocksBinBufferItem[] = [batch2];
+  const workItemBuffer: WorkItem[] = [
+    { work_uuid: "stale-1", batch: batch1, primaryAddress: "addr1", from: 0, to: 10, scanCache: makeMockCache("addr1"), done: false },
+    { work_uuid: "valid-1", batch: batch2, primaryAddress: "addr1", from: 0, to: 10, scanCache: makeMockCache("addr1"), done: false },
+  ];
+
+  console.log("  before: blocks %d (uuid: %s), work items %d (%s, %s)",
+    blocksBuffer.length, blocksBuffer[0].local_uuid,
+    workItemBuffer.length, workItemBuffer[0].work_uuid, workItemBuffer[1].work_uuid);
+
+  reconcileBlocksBufferChanged(blocksBuffer, workItemBuffer);
+
+  console.log("  after:  work items %d (uuid: %s)", workItemBuffer.length,
+    workItemBuffer.map(w => w.work_uuid).join(", "));
+
+  expect(workItemBuffer.length).toBe(1);
+  expect(workItemBuffer[0].work_uuid).toBe("valid-1");
+  expect(workItemBuffer[0].batch.local_uuid).toBe("valid");
+  expect(workItemBuffer[0].from).toBe(0);
+  expect(workItemBuffer[0].to).toBe(10);
+  expect(workItemBuffer[0].done).toBe(false);
+});
+
+// -- multi-wallet scheduling --
+
+test("two fresh wallets, both get work items for same batch", () => {
+  const batch = makeMockBatch("batch-1", 0, 10);
+  const blocksBuffer: GetBlocksBinBufferItem[] = [batch];
+  const workItemBuffer: WorkItem[] = [];
+  const cacheA = makeMockCache("addrA");
+  const cacheB = makeMockCache("addrB");
+
+  reconcileBlocksBufferChanged(blocksBuffer, workItemBuffer, cacheA, "addrA", 0, 10);
+  reconcileBlocksBufferChanged(blocksBuffer, workItemBuffer, cacheB, "addrB", 0, 10);
+
+  console.log("  after: work items %d (%s)", workItemBuffer.length,
+    workItemBuffer.map(w => `${w.primaryAddress}:${w.work_uuid}`).join(", "));
+
+  expect(workItemBuffer.length).toBe(2);
+  expect(workItemBuffer[0].primaryAddress).toBe("addrA");
+  expect(workItemBuffer[1].primaryAddress).toBe("addrB");
+  expect(workItemBuffer[0].batch.local_uuid).toBe("batch-1");
+  expect(workItemBuffer[1].batch.local_uuid).toBe("batch-1");
+});
+
+test("one wallet already scanned range, only uncovered wallet gets work item", () => {
+  const batch = makeMockBatch("batch-1", 0, 10);
+  const blocksBuffer: GetBlocksBinBufferItem[] = [batch];
+  const workItemBuffer: WorkItem[] = [];
+  const cacheA = makeMockCache("addrA");
+  cacheA.scanned_ranges = [{ start: 0, end: 10, block_hashes: [
+    { block_height: 10, block_hash: "hash10", block_timestamp: 1 },
+    { block_height: 0, block_hash: "hash0", block_timestamp: 1 },
+    { block_height: 0, block_hash: "hash0", block_timestamp: 1 },
+  ]}];
+  const cacheB = makeMockCache("addrB");
+
+  const startHeight = batch.get_blocks_result_meta.block_infos[0].block_height;
+  if (cacheA.scanned_ranges.some(r => startHeight >= r.start && startHeight <= r.end)) {
+    console.log("  skipping addrA (already scanned %d-%d)",
+      cacheA.scanned_ranges[0].start, cacheA.scanned_ranges[0].end);
+  } else {
+    reconcileBlocksBufferChanged(blocksBuffer, workItemBuffer, cacheA, "addrA", 0, 10);
+  }
+  reconcileBlocksBufferChanged(blocksBuffer, workItemBuffer, cacheB, "addrB", 0, 10);
+
+  console.log("  after: work items %d (%s)", workItemBuffer.length,
+    workItemBuffer.map(w => w.primaryAddress).join(", "));
+
+  expect(workItemBuffer.length).toBe(1);
+  expect(workItemBuffer[0].primaryAddress).toBe("addrB");
+});
