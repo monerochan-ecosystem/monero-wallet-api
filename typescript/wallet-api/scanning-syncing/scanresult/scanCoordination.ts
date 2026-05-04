@@ -5,6 +5,7 @@ import {
   getNonHaltedWallets,
   openScanSettingsFile,
   walletSettingsPlusKeys,
+  type ScanSettings,
 } from "../scanSettings";
 import {
   findRange,
@@ -25,6 +26,7 @@ export type WorkToBeDone = {
   wallet_caches: ScanCache[];
   wallet_configs: WalletConfig[];
   anchor_range: CacheRange;
+  scan_settings: ScanSettings;
 };
 /**
  * this depends only on ScanSettings.json start_height and wallet caches scanned_ranges
@@ -41,13 +43,13 @@ export async function findWorkToBeDone(
   const dir = parts.join("/");
   const prefix = dir ? `${dir}/` : "";
 
-  const scanSettings = await openScanSettingsFile(scan_settings_path);
-  if (!scanSettings) return false;
+  const scan_settings = await openScanSettingsFile(scan_settings_path);
+  if (!scan_settings) return false;
   const total_start_height = await cullTooLargeScanHeight(
-    scanSettings.node_url,
+    scan_settings.node_url,
     scan_settings_path,
   );
-  const wallets = getNonHaltedWallets(scanSettings);
+  const wallets = getNonHaltedWallets(scan_settings);
   if (!wallets.length) return false;
   const potential_anchor_ranges: CacheRange[] = [];
   const wallet_caches: ScanCache[] = [];
@@ -56,7 +58,7 @@ export async function findWorkToBeDone(
   for (const wallet of wallets) {
     const walletSettingsWithKeys = await walletSettingsPlusKeys({
       ...wallet,
-      node_url: scanSettings.node_url,
+      node_url: scan_settings.node_url,
       start_height: total_start_height,
     });
     const newWalletViewPair = await ViewPair.create(
@@ -94,7 +96,7 @@ export async function findWorkToBeDone(
   if (wallet_without_anchor_at_start_height) {
     const range_at_start = await makeCacheRangeForHeight(
       total_start_height,
-      scanSettings.node_url,
+      scan_settings.node_url,
     );
     potential_anchor_ranges.push(range_at_start);
 
@@ -119,6 +121,7 @@ export async function findWorkToBeDone(
     wallet_caches,
     start_height,
     anchor_range,
+    scan_settings,
   };
 }
 /**
@@ -283,3 +286,13 @@ export async function processScanResultForWorkItem(
   // currently as a sideeffect of the work scheduling function on fetch result aka blocks buffer changed,
   // this is already implicitly handled
 }
+export type CoordinatorEvent =
+  | { type: "blocks_buffer_changed" }
+  | { type: "connection_status"; status: any }
+  | {
+      type: "scan_ready";
+      address: string;
+      result: ScanLoopYield;
+    }
+  | { type: "all_idle" }
+  | { type: "error"; error: Error };
