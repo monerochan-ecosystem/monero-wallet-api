@@ -135,20 +135,24 @@ export function reconcileBlocksBufferChanged(
   if (!scanCache || !primaryAddress) return;
   for (const batch of blocksBuffer) {
     const alreadyReferenced = workItemBuffer.some(
-      (w) => w.batch.local_uuid === batch.local_uuid,
+      (w) =>
+        w.batch.local_uuid === batch.local_uuid &&
+        w.primaryAddress === primaryAddress,
     );
+    // TODO: better work item creation with a helper
+    // should be united tested in conjunction with processScanResultForWorkItem
     if (!alreadyReferenced) {
-      //TODO splice the work in smaller chunks
-      //TODO asign work to CPU workers, or should they pull?
-      workItemBuffer.push(
-        makeWorkItem(
-          scanCache,
-          batch,
-          primaryAddress,
-          from ?? 0,
-          to ?? batch.get_blocks_result_meta.block_infos.length,
-        ),
+      const workItem = makeWorkItem(
+        scanCache,
+        batch,
+        primaryAddress,
+        from ?? 0,
+        to ?? batch.get_blocks_result_meta.block_infos.length,
       );
+      console.log(
+        `[reconcileBlocksBufferChanged] workItem: uuid=${workItem.work_uuid.slice()} to=${workItem.to} from=${workItem.from} batchbegin_height=${batch.get_blocks_result_meta.block_infos[0].block_height} batchend_height=${batch.get_blocks_result_meta.block_infos[batch.get_blocks_result_meta.block_infos.length - 1].block_height}`,
+      );
+      workItemBuffer.push(workItem);
     }
   }
 }
@@ -176,4 +180,92 @@ export function reconcileWorkItemDone(
       if (idx !== -1) blocksBuffer.splice(idx, 1);
     }
   }
+}
+
+import {
+  type BlocksBufferLoopResult,
+  handleConnectionStatusChanges,
+  processScanResultWITHOUT_SIDE_EFFECTS,
+  writeCacheToFile,
+} from "../../api";
+import { handleScanLoopResult, type ScanLoopYield } from "./scanLoop";
+
+/**
+ * one round of the select race. takes two primed promises (blocks, scan),
+ * races them, returns winner info. the loser stays in flight.
+ */
+export async function raceStep(
+  blocksPromise: Promise<IteratorResult<BlocksBufferLoopResult>>,
+  scanPromise: Promise<IteratorResult<ScanLoopYield, void>>,
+): Promise<{
+  src: "blocks" | "scan";
+  value:
+    | IteratorResult<BlocksBufferLoopResult>
+    | IteratorResult<ScanLoopYield, void>;
+  done: boolean;
+}> {
+  const winner = await Promise.race([
+    blocksPromise.then((v) => ({ src: "blocks" as const, value: v })),
+    scanPromise.then((v) => ({ src: "scan" as const, value: v })),
+  ]);
+  const value = winner.value;
+  const done = !!winner.value.done;
+  return { src: winner.src, value, done };
+}
+
+/**
+ * handle a yield from the blocks buffer fetch loop.
+ */
+export async function handleBlocksYield(
+  value: BlocksBufferLoopResult,
+  scanSettingsPath: string,
+): Promise<{
+  isBlocksBufferChanged: boolean;
+}> {
+  if (value === "blocks_buffer_changed") {
+    return { isBlocksBufferChanged: true };
+  }
+  await handleConnectionStatusChanges(value, scanSettingsPath);
+  return { isBlocksBufferChanged: false };
+}
+
+/**
+ * process a scan result for a completed work item.
+ * updates the cache, writes to disk, marks work item done, reconciles.
+ */
+export async function processScanResultForWorkItem(
+  value: ScanLoopYield,
+  workBuffer: import("./scanLoop").WorkItem[],
+  blocksBuffer: GetBlocksBinBufferItem[],
+  pathPrefix: string,
+  secret_spend_key?: string,
+): Promise<void> {
+  if (value.type !== "Ready" || !value.result || !value.work_uuid) return;
+
+  const item = workBuffer.find((w) => w.work_uuid === value.work_uuid);
+
+  if (!item || item.done) return;
+
+  const firstBlock = item.batch.get_blocks_result_meta.block_infos[item.from];
+  const lastBlock = item.batch.get_blocks_result_meta.block_infos[item.to];
+  const cache = item.scanCache;
+
+  await processScanResultWITHOUT_SIDE_EFFECTS({
+    from_height: firstBlock.block_height,
+    to_height: lastBlock.block_height,
+    result: value.result,
+    scanCache: cache,
+    secret_spend_key,
+  });
+
+  await writeCacheToFile(cache, pathPrefix);
+  handleScanLoopResult(value, workBuffer);
+  reconcileWorkItemDone(blocksBuffer, workBuffer);
+  //because cache is tied to the workitems by reference,
+  // the following workitems will have the most recent cache
+  //TODO: if we do cpu workers we need to be sure to wait with the processing at the top of this functon
+  // until all workitems for this wallet before it (to the left of it) are done
+  //  the cpu worker loop generator will have to ensure the order of this
+  // currently as a sideeffect of the work scheduling function on fetch result aka blocks buffer changed,
+  // this is already implicitly handled
 }
