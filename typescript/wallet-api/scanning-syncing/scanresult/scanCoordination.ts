@@ -1,5 +1,19 @@
-import { ViewPair, type GetBlocksBinBufferItem } from "../../api";
-import { type WorkItem, makeWorkItem } from "./scanLoop";
+import {
+  setupBlocksBufferGenerator,
+  ViewPair,
+  type GetBlocksBinBufferItem,
+  type BlocksBufferLoopResult,
+  handleConnectionStatusChanges,
+  processScanResultWITHOUT_SIDE_EFFECTS,
+  writeCacheToFile,
+} from "../../api";
+
+import {
+  handleScanLoopResult,
+  type ScanLoopInput,
+  type ScanLoopYield,
+} from "./scanLoop";
+import { type WorkItem, makeWorkItem, scanLoop } from "./scanLoop";
 import {
   cullTooLargeScanHeight,
   getNonHaltedWallets,
@@ -193,14 +207,6 @@ export function reconcileWorkItemDone(
   }
 }
 
-import {
-  type BlocksBufferLoopResult,
-  handleConnectionStatusChanges,
-  processScanResultWITHOUT_SIDE_EFFECTS,
-  writeCacheToFile,
-} from "../../api";
-import { handleScanLoopResult, type ScanLoopYield } from "./scanLoop";
-
 /**
  * one round of the select race. takes two primed promises (blocks, scan),
  * races them, returns winner info. the loser stays in flight.
@@ -296,3 +302,152 @@ export type CoordinatorEvent =
     }
   | { type: "all_idle" }
   | { type: "error"; error: Error };
+
+/**
+ * coordinator main: async generator that drives the full scan cycle.
+ * takes only scanSettingsPath, derives everything else internally.
+ * yields events for some of the underlying generator events
+ * look at CoordinatorEvent
+ */
+export async function* coordinatorMain(
+  scanSettingsPath: string,
+  pathPrefix: string,
+): AsyncGenerator<CoordinatorEvent> {
+  const w = await findWorkToBeDone(scanSettingsPath, pathPrefix);
+  if (!w) {
+    yield {
+      type: "error",
+      error: new Error("findWorkToBeDone returned false"),
+    };
+    return;
+  }
+
+  const { generator: blocksGen, blocksBuffer } =
+    await setupBlocksBufferGenerator({
+      nodeUrl: w.scan_settings.node_url,
+      startHeight: w.start_height,
+      anchor_range: w.anchor_range,
+      scanSettingsPath,
+    });
+
+  const workBuffer: WorkItem[] = [];
+  const scanGens = new Map<
+    string,
+    AsyncGenerator<ScanLoopYield, void, ScanLoopInput>
+  >();
+  const walletCaches = new Map<string, ScanCache>();
+
+  for (let i = 0; i < w.wallet_configs.length; i++) {
+    const wc = w.wallet_configs[i];
+    walletCaches.set(wc.primary_address, w.wallet_caches[i]);
+    scanGens.set(
+      wc.primary_address,
+      scanLoop({
+        primary_address: wc.primary_address,
+        secret_view_key: wc.secret_view_key,
+        secret_spend_key: wc.secret_spend_key,
+        subaddress_index: wc.subaddress_index,
+      }),
+    );
+  }
+
+  // prime all scan generators
+  // ( technically no need to do this as loop + scan generator + workbuffer structure mean it will happen automatically)
+  for (const [, gen] of scanGens) {
+    await gen.next();
+  }
+
+  let blocksPromise = blocksGen.next();
+  const scanPromises = new Map<
+    string,
+    Promise<IteratorResult<ScanLoopYield, void>>
+  >();
+
+  while (true) {
+    const races: Promise<{
+      src: "blocks" | "scan";
+      addr?: string;
+      value: any;
+    }>[] = [blocksPromise.then((v) => ({ src: "blocks" as const, value: v }))];
+    for (const [addr, p] of scanPromises) {
+      races.push(p.then((v) => ({ src: "scan" as const, addr, value: v })));
+    }
+
+    const winner = await Promise.race(races);
+
+    if (winner.value.done) {
+      if (winner.src === "blocks") break;
+      scanPromises.delete(winner.addr!);
+      continue;
+    }
+
+    if (winner.src === "blocks") {
+      const result = winner.value.value as BlocksBufferLoopResult;
+      const { isBlocksBufferChanged } = await handleBlocksYield(
+        result,
+        scanSettingsPath,
+      );
+      if (isBlocksBufferChanged) {
+        for (const wc of w.wallet_configs) {
+          const cache = walletCaches.get(wc.primary_address);
+          if (!cache) continue;
+          reconcileBlocksBufferChanged(
+            blocksBuffer,
+            workBuffer,
+            cache,
+            wc.primary_address,
+            0,
+            blocksBuffer[0]?.get_blocks_result_meta.block_infos.length ?? 0,
+          );
+        }
+        // start scan promises for wallets that now have work
+        for (const wc of w.wallet_configs) {
+          const addr = wc.primary_address;
+          if (scanPromises.has(addr)) continue;
+          const gen = scanGens.get(addr);
+          console.log("scanGens.get(addr)", gen);
+          if (!gen) continue;
+          const item = workBuffer.find(
+            (x) => !x.done && x.primaryAddress === addr,
+          );
+          if (item) scanPromises.set(addr, gen.next(item));
+        }
+        yield { type: "blocks_buffer_changed" };
+      } else {
+        yield { type: "connection_status", status: result };
+      }
+      blocksPromise = blocksGen.next();
+    } else {
+      const addr = winner.addr!;
+      const gen = scanGens.get(addr)!;
+      const value = winner.value.value as ScanLoopYield;
+
+      if (value.type === "InProgress") {
+        scanPromises.set(addr, gen.next());
+      } else if (value.type === "Ready") {
+        const wc = w.wallet_configs.find((x) => x.primary_address === addr);
+        await processScanResultForWorkItem(
+          value,
+          workBuffer,
+          blocksBuffer,
+          pathPrefix,
+          wc?.secret_spend_key,
+        );
+        const nextItem = workBuffer.find(
+          (x) => !x.done && x.primaryAddress === addr,
+        );
+        if (nextItem) {
+          scanPromises.set(addr, gen.next(nextItem));
+        } else {
+          scanPromises.delete(addr);
+        }
+        yield { type: "scan_ready", address: addr, result: value };
+
+        // signal idle when no scans active and nothing buffered
+        if (scanPromises.size === 0 && blocksBuffer.length === 0) {
+          yield { type: "all_idle" };
+        }
+      }
+    }
+  }
+}
