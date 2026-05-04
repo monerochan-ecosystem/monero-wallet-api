@@ -161,6 +161,13 @@ export function lastRange(ranges: CacheRange[]): CacheRange | undefined {
     ranges[0],
   );
 }
+export function lastRangeThrows(ranges: CacheRange[]): CacheRange {
+  if (!ranges.length) throw new Error("ranges is empty");
+  return ranges.reduce(
+    (maxRange, current) => (current.end > maxRange.end ? current : maxRange),
+    ranges[0],
+  );
+}
 
 export function mergeRanges(ranges: CacheRange[]): CacheRange[] {
   if (ranges.length <= 1) return ranges.map((r) => ({ ...r }));
@@ -188,6 +195,14 @@ export const findRange = (
   value: number,
 ): CacheRange | null =>
   ranges.find((r) => value >= r.start && value <= r.end) ?? null;
+export function findRangeThrows(
+  ranges: CacheRange[],
+  value: number,
+): CacheRange {
+  const range = findRange(ranges, value);
+  if (!range) throw new Error(`range not found for value: ${value}`);
+  return range;
+}
 export type CacheRange = {
   start: number;
   end: number;
