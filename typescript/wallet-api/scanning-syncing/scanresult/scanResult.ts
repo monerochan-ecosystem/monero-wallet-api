@@ -105,7 +105,6 @@ export async function processScanResultWITHOUT_SIDE_EFFECTS(
   params: ProcessScanResultParamsWithoutSideEffects,
 ): Promise<ProcessScanResult> {
   const { result, scanCache: cache, secret_spend_key } = params;
-
   let changed_outputs: ChangedOutput[] = [];
   if (!(result && "primary_address" in result))
     return processResultReturnValue(cache, params, changed_outputs);
@@ -114,6 +113,8 @@ export async function processScanResultWITHOUT_SIDE_EFFECTS(
     cache.daemon_height = result.daemon_height;
 
   if (result && "new_height" in result) {
+    ensureRangeCovering(cache, result.block_infos, params.from_height);
+
     const oldRange = findRangeThrows(cache.scanned_ranges, params.from_height);
     let tipIndex = findTipIndex(result.block_infos, oldRange.block_hashes[0]);
     if (tipIndex === "empty_blocks_array")
@@ -283,7 +284,13 @@ export function processResultReturnValue(
  *  the range is pushed into the
  * cache's scanned_ranges and returned. As we call processresults the anchors will be updated
  *
- * called by the coordinator before passing current_range to
+ * called at the beginning of processScanResult, to either find the range or
+ * if it cant find one it creates one. (wallet has not covered this area before)
+ * afterwards we expect range to be there and use findRangeThrows
+ *
+ * so process scan result works now nomatter if the wallet scanned this area before
+ * or not. while still producing a reorg if it scanned before and it cant find the tip
+ *
  * processScanResultWITHOUT_SIDE_EFFECTS. this replaces the old behaviour
  * of initScanCache writing a fake range on wallet creation, which could
  * produce a false catastrophic reorg if the node was mid-reorg at the time.
@@ -297,14 +304,15 @@ export function processResultReturnValue(
  */
 export function ensureRangeCovering(
   cache: ScanCache,
-  batchMeta: GetBlocksResultMeta,
+  batchMetaInfos: BlockInfo[],
   fromHeight: number,
 ): CacheRange {
   let range = findRange(cache.scanned_ranges, fromHeight);
   if (range) return range;
 
-  const infos = batchMeta.block_infos;
-  const hash_at_height = infos.find((bi) => bi.block_height === fromHeight);
+  const hash_at_height = batchMetaInfos.find(
+    (bi) => bi.block_height === fromHeight,
+  );
   if (!hash_at_height)
     throw new Error(
       `could not find hash at height for height ${fromHeight} in batchMeta block infos`,
