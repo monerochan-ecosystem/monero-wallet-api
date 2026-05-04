@@ -142,6 +142,9 @@ export function cacheFileDefaultLocation(
   primary_address: string,
   pathPrefix?: string,
 ) {
+  if (pathPrefix && pathPrefix.endsWith("/"))
+    pathPrefix = pathPrefix.slice(0, -1);
+  if (pathPrefix) pathPrefix += "/";
   return `${pathPrefix ?? ""}${primary_address}_cache.json`;
 }
 export async function readCacheFileDefaultLocation(
