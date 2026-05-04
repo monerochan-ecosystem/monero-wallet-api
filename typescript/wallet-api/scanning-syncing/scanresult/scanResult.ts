@@ -11,6 +11,7 @@ import {
   readCacheFileDefaultLocation,
   lastRange,
   writeCacheToFile,
+  findRangeThrows,
 } from "./scanCache";
 import { type ErrorResponse } from "../../node-interaction/binaryEndpoints";
 import { handleReorg } from "./reorg";
@@ -31,11 +32,11 @@ export type ProcessScanResultParams = {
   use_master_current_range?: boolean;
 };
 export type ProcessScanResultParamsWithoutSideEffects = {
-  current_range: CacheRange;
+  from_height: number;
   secret_spend_key?: string;
   result: ScanResult | ErrorResponse | undefined;
   scanCache: ScanCache;
-  endIndex?: number;
+  to_height?: number;
 };
 export async function processScanResult(params: ProcessScanResultParams) {
   let current_range = params.current_range;
@@ -103,38 +104,20 @@ export type ProcessScanResult = {
 export async function processScanResultWITHOUT_SIDE_EFFECTS(
   params: ProcessScanResultParamsWithoutSideEffects,
 ): Promise<ProcessScanResult> {
-  let current_range = params.current_range;
   const { result, scanCache: cache, secret_spend_key } = params;
+
   let changed_outputs: ChangedOutput[] = [];
   if (!(result && "primary_address" in result))
-    return { current_range, changed_outputs };
+    return processResultReturnValue(cache, params, changed_outputs);
 
   if (result && "daemon_height" in result)
     cache.daemon_height = result.daemon_height;
 
   if (result && "new_height" in result) {
-    let current_blockhash = current_range?.block_hashes.at(0);
-
-    if (!current_blockhash)
-      throw new Error(
-        "current_range passed to updateScanHeight was malformed. block_hashes is empty",
-      );
-    const oldRange = findRange(
-      cache.scanned_ranges,
-      current_blockhash.block_height,
-    );
-    if (!oldRange)
-      throw new Error(
-        `could not find scan range for height ${current_blockhash.block_height},
-       that means the blocks in the response from getBlocks.bin do not overlap
-       with the scanned ranges in the cache. This should not happen, as even if 
-       we are starting from a new start_height that has been supplied to scanWithCache,
-       it has been found as an existing range in the cache, or it has been
-       added as a new range before we started scannning.`,
-      );
+    const oldRange = findRangeThrows(cache.scanned_ranges, params.from_height);
     let tipIndex = findTipIndex(result.block_infos, oldRange.block_hashes[0]);
     if (tipIndex === "empty_blocks_array")
-      return { current_range, changed_outputs };
+      return processResultReturnValue(cache, params, changed_outputs);
     if (tipIndex === "reorg_found") {
       let split_height_index = null;
       for (const block_hash of oldRange.block_hashes) {
@@ -226,31 +209,42 @@ export async function processScanResultWITHOUT_SIDE_EFFECTS(
 
       tipIndex = split_height_index;
     }
+    const to_height_index = result.block_infos.findIndex(
+      (b) => b.block_height === params.to_height,
+    );
     const new_range = selectAnchors(
       result.block_infos,
       tipIndex,
       oldRange,
-      params.endIndex,
+      to_height_index,
     );
+    const last_height =
+      typeof params.to_height === "number"
+        ? params.to_height
+        : result.block_infos[result.block_infos.length - 1].block_height;
 
     //first check that no reorg occured by 1. finding oldrange, making sure oldrange end is in the meta blockinfos
     // if that is not met call reorg handling code
     //2. make sure reorg handling code works indepented of where the oldrange end is in the meta blockinfos
     //3. make sure the anchor selection logic works independent of where the oldrange end is in the meta blockinfos
     //const [new_range, changed] = updateScanHeight(current_range, result, cache);
-    current_range = makeNewRange(new_range, cache);
+    makeNewRange(new_range, cache);
 
     const tipHeight = result.block_infos[tipIndex].block_height;
     const filteredOutputs = result.outputs.filter(
-      (o) => o.block_height >= tipHeight,
+      (o) => o.block_height >= tipHeight && o.block_height <= last_height,
     );
     const filteredKeyImages = result.all_key_images.filter(
-      (ki) => ki.block_height >= tipHeight,
+      (ki) => ki.block_height >= tipHeight && ki.block_height <= last_height,
     );
 
     changed_outputs.push(
       ...(await detectOutputs(
-        { ...result, outputs: filteredOutputs, all_key_images: filteredKeyImages },
+        {
+          ...result,
+          outputs: filteredOutputs,
+          all_key_images: filteredKeyImages,
+        },
         cache,
         secret_spend_key,
       )),
@@ -259,14 +253,28 @@ export async function processScanResultWITHOUT_SIDE_EFFECTS(
     if (secret_spend_key)
       changed_outputs.push(
         ...detectOwnspends(
-          { ...result, outputs: filteredOutputs, all_key_images: filteredKeyImages },
+          {
+            ...result,
+            outputs: filteredOutputs,
+            all_key_images: filteredKeyImages,
+          },
           cache,
         ),
       );
   }
-  return { current_range, changed_outputs };
+  return processResultReturnValue(cache, params, changed_outputs);
 }
 
+export function processResultReturnValue(
+  cache: ScanCache,
+  params: ProcessScanResultParamsWithoutSideEffects,
+  changed_outputs: ChangedOutput[],
+) {
+  return {
+    current_range: findRangeThrows(cache.scanned_ranges, params.from_height),
+    changed_outputs,
+  };
+}
 /**
  * ensures the cache has a scanned range that covers the given height.
  * if one exists (via findRange) it is returned unchanged.
