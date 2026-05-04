@@ -24,7 +24,7 @@ export type WorkToBeDone = {
   start_height: number;
   wallet_caches: ScanCache[];
   wallet_configs: WalletConfig[];
-  anchor_range?: CacheRange;
+  anchor_range: CacheRange;
 };
 /**
  * this depends only on ScanSettings.json start_height and wallet caches scanned_ranges
@@ -96,6 +96,8 @@ export async function findWorkToBeDone(
       total_start_height,
       scanSettings.node_url,
     );
+    potential_anchor_ranges.push(range_at_start);
+
     for (const wallet_cache of wallet_caches) {
       wallet_cache.scanned_ranges.push(range_at_start);
       // sort them correctly
@@ -103,12 +105,6 @@ export async function findWorkToBeDone(
     }
   }
 
-  if (!potential_anchor_ranges.length)
-    return {
-      wallet_configs,
-      wallet_caches,
-      start_height: total_start_height,
-    };
   const anchor_range = potential_anchor_ranges.reduce((a, b) =>
     a.end < b.end ? a : b,
   );
@@ -116,7 +112,7 @@ export async function findWorkToBeDone(
 
   //  connection settings scanned_ranges is reset on every scan
   // (done in setupBlocksBufferGenerator init)
-  // ( they cant they contain newer ranges then resulting start height after
+  // ( they cant contain newer ranges then resulting start height after
   // lowest fast forward start height on all wallets )
   return {
     wallet_configs,
