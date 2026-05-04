@@ -9,6 +9,8 @@ import {
 import {
   findRange,
   initScanCacheFile,
+  makeCacheRangeForHeight,
+  mergeRanges,
   type CacheRange,
   type ScanCache,
 } from "./scanCache";
@@ -50,6 +52,7 @@ export async function findWorkToBeDone(
   const potential_anchor_ranges: CacheRange[] = [];
   const wallet_caches: ScanCache[] = [];
   const wallet_configs: WalletConfig[] = [];
+  let wallet_without_anchor_at_start_height = false;
   for (const wallet of wallets) {
     const walletSettingsWithKeys = await walletSettingsPlusKeys({
       ...wallet,
@@ -73,7 +76,6 @@ export async function findWorkToBeDone(
         "wallet cache not found and new one could not be created for " +
           wallet.primary_address,
       );
-
     wallet_caches.push(walletCache);
     wallet_configs.push({
       primary_address: wallet.primary_address,
@@ -82,9 +84,25 @@ export async function findWorkToBeDone(
       subaddress_index: wallet.subaddress_index || 0,
     });
     const range = findRange(walletCache.scanned_ranges, total_start_height);
-    if (!range) continue;
+    if (!range) {
+      wallet_without_anchor_at_start_height = true;
+      continue;
+    }
     potential_anchor_ranges.push(range);
   }
+  //go over all wallets and make sure they have an anchor range at start_height
+  if (wallet_without_anchor_at_start_height) {
+    const range_at_start = await makeCacheRangeForHeight(
+      total_start_height,
+      scanSettings.node_url,
+    );
+    for (const wallet_cache of wallet_caches) {
+      wallet_cache.scanned_ranges.push(range_at_start);
+      // sort them correctly
+      wallet_cache.scanned_ranges = mergeRanges(wallet_cache.scanned_ranges);
+    }
+  }
+
   if (!potential_anchor_ranges.length)
     return {
       wallet_configs,

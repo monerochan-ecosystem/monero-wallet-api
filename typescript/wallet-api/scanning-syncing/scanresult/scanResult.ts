@@ -113,8 +113,6 @@ export async function processScanResultWITHOUT_SIDE_EFFECTS(
     cache.daemon_height = result.daemon_height;
 
   if (result && "new_height" in result) {
-    ensureRangeCovering(cache, result.block_infos, params.from_height);
-
     const oldRange = findRangeThrows(cache.scanned_ranges, params.from_height);
     let tipIndex = findTipIndex(result.block_infos, oldRange.block_hashes[0]);
     if (tipIndex === "empty_blocks_array")
@@ -322,6 +320,10 @@ export function ensureRangeCovering(
     end: fromHeight,
     block_hashes: [hash_at_height, hash_at_height, hash_at_height],
   };
+  console.log(`CACHE RANGES ${JSON.stringify(cache.scanned_ranges)}`);
+  console.log(
+    `ADDED NEW ENSURE RANGE COVERING ${fromHeight} ${JSON.stringify(newRange)} `,
+  );
   cache.scanned_ranges.push(newRange);
   return newRange;
 }

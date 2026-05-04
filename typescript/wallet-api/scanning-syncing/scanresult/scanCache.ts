@@ -1,13 +1,14 @@
 import { type KeyImage } from "./computeKeyImage";
 import type { ReorgInfo } from "./reorg";
-import type {
-  BlockInfo,
-  FeeEstimateResponse,
-  GetBlockHeadersRange,
-  GetBlockHeadersRangeParams,
-  Output,
-  SendRawTransactionResult,
-  ViewPair,
+import {
+  get_block_headers_range,
+  type BlockInfo,
+  type FeeEstimateResponse,
+  type GetBlockHeadersRange,
+  type GetBlockHeadersRangeParams,
+  type Output,
+  type SendRawTransactionResult,
+  type ViewPair,
 } from "../../api";
 import { atomicWrite } from "../../io/atomicWrite";
 import type { Payment } from "../../send-functionality/inputSelection";
@@ -69,6 +70,34 @@ export async function initScanCache(
   await writeCacheToFile(cache, pathPrefix);
 
   return current_range;
+}
+export async function getBlockInfoForHeight(
+  height: number,
+  node_url: string,
+): Promise<BlockInfo> {
+  const blockHeaderResponse = await get_block_headers_range(node_url, {
+    start_height: height,
+    end_height: height,
+  });
+  const header = blockHeaderResponse.headers[0];
+  return {
+    block_hash: header.hash,
+    block_height: header.height,
+    block_timestamp: header.timestamp,
+  };
+}
+
+export async function makeCacheRangeForHeight(
+  height: number,
+  node_url: string,
+): Promise<CacheRange> {
+  const hash_at_height = await getBlockInfoForHeight(height, node_url);
+  const newRange: CacheRange = {
+    start: height,
+    end: height,
+    block_hashes: [hash_at_height, hash_at_height, hash_at_height],
+  };
+  return newRange;
 }
 export async function initScanCacheFile(
   viewpair: ViewPair,
