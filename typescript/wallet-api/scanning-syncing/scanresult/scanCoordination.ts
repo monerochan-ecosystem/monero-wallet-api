@@ -142,13 +142,7 @@ export function reconcileBlocksBufferChanged(
     // TODO: better work item creation with a helper
     // should be united tested in conjunction with processScanResultForWorkItem
     if (!alreadyReferenced) {
-      const workItem = makeWorkItem(
-        scanCache,
-        batch,
-        primaryAddress,
-        from ?? 0,
-        to ?? batch.get_blocks_result_meta.block_infos.length,
-      );
+      const workItem = makeWorkItem(scanCache, batch, primaryAddress, from, to);
       console.log(
         `[reconcileBlocksBufferChanged] workItem: uuid=${workItem.work_uuid.slice()} to=${workItem.to} from=${workItem.from} batchbegin_height=${batch.get_blocks_result_meta.block_infos[0].block_height} batchend_height=${batch.get_blocks_result_meta.block_infos[batch.get_blocks_result_meta.block_infos.length - 1].block_height}`,
       );
@@ -243,10 +237,16 @@ export async function processScanResultForWorkItem(
   if (value.type !== "Ready" || !value.result || !value.work_uuid) return;
 
   const item = workBuffer.find((w) => w.work_uuid === value.work_uuid);
+  //console.log(`[processScanResultForWorkItem] item=${JSON.stringify(item)}`);
 
   if (!item || item.done) return;
 
   const firstBlock = item.batch.get_blocks_result_meta.block_infos[item.from];
+  //console.log(`
+  //  [processScanResultForWorkItem] block_infos=${JSON.stringify(item.batch.get_blocks_result_meta.block_infos)} block_infos.length=${item.batch.get_blocks_result_meta.block_infos.length} firstBlock=${firstBlock} `);
+  console.log(
+    `[processScanResultForWorkItem] block_infos.length=${item.batch.get_blocks_result_meta.block_infos.length} from=${item.from} to=${item.to}`,
+  );
   const lastBlock = item.batch.get_blocks_result_meta.block_infos[item.to];
   const cache = item.scanCache;
 

@@ -21,16 +21,27 @@ export function makeWorkItem(
   scanCache: ScanCache,
   batch: GetBlocksBinBufferItem,
   primaryAddress: string,
-  from: number,
-  to: number,
+  from?: number,
+  to?: number,
 ): WorkItem {
+  if (to && to > batch.get_blocks_result_meta.block_infos.length - 1) {
+    // we could throw here but we dont. Off by one errors shouldnt break the application
+    // and we put so much work into making processResult idempotent
+    // so a caller bug scheduling too much work just leads to slightly worse performance
+    //throw new Error("to is out of bounds");
+    to = batch.get_blocks_result_meta.block_infos.length - 1;
+  }
+  if (typeof from === "number" && from < 0) {
+    //throw new Error("from is out of bounds");
+    from = 0;
+  }
   return {
     scanCache,
     batch,
     work_uuid: crypto.randomUUID(),
     primaryAddress,
-    from,
-    to,
+    from: from ?? 0, // default is to start from the batch beginning
+    to: to ?? batch.get_blocks_result_meta.block_infos.length - 1, // default is to go to the batch end
     done: false,
   };
 }
@@ -81,7 +92,7 @@ export async function* scanLoop(
       daemon_height: item.batch.get_blocks_result_meta.daemon_height,
     };
     if (!(item.to >= item.from)) throw new Error("to must be >= from");
-    for (let i = item.from; i < item.to; i++) {
+    for (let i = item.from; i <= item.to; i++) {
       // 2.call getBlocksBinScanOneBlock
       const blockResult = await viewpair.getBlocksBinScanOneBlock(i);
       if ("error" in blockResult) throw new Error(blockResult.error);
