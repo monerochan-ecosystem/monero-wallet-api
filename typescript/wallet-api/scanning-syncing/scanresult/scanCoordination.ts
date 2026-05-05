@@ -6,6 +6,7 @@ import {
   handleConnectionStatusChanges,
   processScanResultWITHOUT_SIDE_EFFECTS,
   writeCacheToFile,
+  type BlockInfo,
 } from "../../api";
 
 import {
@@ -307,6 +308,38 @@ export type CoordinatorEvent =
   | { type: "all_idle" }
   | { type: "error"; error: Error };
 
+function logBufStatus(
+  blocksBuffer: GetBlocksBinBufferItem[],
+  workBuffer: WorkItem[],
+  scanPromises: Map<string, any>,
+  label: string,
+) {
+  const bb = blocksBuffer.map(
+    (b) =>
+      b.get_blocks_result_meta.block_infos[0]?.block_height +
+      "-" +
+      b.get_blocks_result_meta.block_infos.at(-1)?.block_height,
+  );
+  const wb = workBuffer.map(
+    (w) =>
+      (w.done ? "D" : "") +
+      w.primaryAddress.slice(0, 6) +
+      "@" +
+      w.batch.get_blocks_result_meta.block_infos[w.from]?.block_height +
+      "-" +
+      w.batch.get_blocks_result_meta.block_infos[w.to]?.block_height,
+  );
+  console.log(
+    `[buf] ${label} blocks=[${bb.join(",")}] work=[${wb.join(",")}] scans=${scanPromises.size}`,
+  );
+}
+export type ProcessResultPromise = Promise<ScanLoopYield>;
+export type ProcessResultBuffer = ProcessResultPromise[];
+export type WalletSyncInfo = {
+  wallet_config: WalletConfig;
+  cache: ScanCache;
+  result_promises: ProcessResultBuffer;
+};
 /**
  * coordinator main: async generator that drives the full scan cycle.
  * takes only scanSettingsPath, derives everything else internally.
@@ -415,8 +448,10 @@ export async function* coordinatorMain(
           );
           if (item) scanPromises.set(addr, gen.next(item));
         }
+        logBufStatus(blocksBuffer, workBuffer, scanPromises, "after_blocks");
         yield { type: "blocks_buffer_changed" };
       } else {
+        logBufStatus(blocksBuffer, workBuffer, scanPromises, "fetch_conn");
         yield { type: "connection_status", status: result };
       }
       blocksPromise = blocksGen.next();
@@ -445,6 +480,7 @@ export async function* coordinatorMain(
           scanPromises.delete(addr);
         }
         const updatedCache = walletCaches.get(addr);
+        logBufStatus(blocksBuffer, workBuffer, scanPromises, "after_scan");
         yield {
           type: "scan_ready",
           address: addr,
@@ -460,4 +496,12 @@ export async function* coordinatorMain(
       }
     }
   }
+}
+export function workToBeDoneForThisWalletAndBatch(
+  scan_cache: ScanCache,
+  batch_meta_block_infos: BlockInfo[],
+) {
+  //TODO
+  //throw error if there is no work to be done for all wallets
+  // so findwork can be called again
 }

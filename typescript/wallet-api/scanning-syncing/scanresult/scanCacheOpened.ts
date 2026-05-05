@@ -11,13 +11,12 @@ import {
   prepareInput,
   sumPayments,
   type Payment,
-  type PreparedInput,
 } from "../../send-functionality/inputSelection";
 import type {
   Input,
   SendError,
 } from "../../send-functionality/transactionBuilding";
-import { createWebworker } from "../backgroundWorker";
+import { createWebworker, type WorkerSet } from "../backgroundWorker";
 import { spendable } from "./scanResult";
 import {
   openScanSettingsFile,
@@ -757,7 +756,7 @@ export class ScanCacheOpened {
     scanned_ranges: [],
     primary_address: "",
   };
-  private worker?: Worker = undefined;
+  private worker?: WorkerSet = undefined;
   private last_eta_height: number | null = null;
   private last_eta_timestamp: number | null = null;
 
