@@ -219,11 +219,7 @@ async function generateBlocks(address: string, count: number): Promise<void> {
 }
 
 async function killLeftoverMonerod(): Promise<void> {
-  const p = Bun.spawn(["pkill", "-9", "monerod"], {
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  await p.exited;
+  await Bun.$`pgrep monerod && kill -9 $(pgrep monerod) 2>/dev/null; echo "monerod processes remaining: $(pgrep monerod | wc -l)"`;
 }
 
 async function cleanupReorgDir(): Promise<void> {
