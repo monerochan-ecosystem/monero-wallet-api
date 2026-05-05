@@ -15,7 +15,7 @@ export type SetupBlocksBufferGeneratorParams = {
   anchor_range?: CacheRange;
   stopSync?: AbortSignal;
   maxBufferItems?: number;
-  scanSettingsPath: string;
+  scanSettingsPath?: string;
 };
 export async function setupBlocksBufferGenerator(
   params: SetupBlocksBufferGeneratorParams,
@@ -40,7 +40,7 @@ export async function setupBlocksBufferGenerator(
 
 export async function handleConnectionStatusChanges(
   event: BlocksBufferLoopResult,
-  scanSettingsPath: string,
+  scanSettingsPath?: string,
 ) {
   if (event === "blocks_buffer_changed") return;
   if ("status" in event) {

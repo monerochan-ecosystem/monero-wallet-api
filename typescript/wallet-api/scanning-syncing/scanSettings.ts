@@ -448,3 +448,20 @@ export async function doesScanSettingsFileExist(
     return false;
   }
 }
+/**
+ * Either 1. the consumer explicitly sets a pathprefix, we extract it from the scan_settings_path
+ * or we pick the default which is nothing
+ * @param scan_settings_path optional scan settings path
+ * @param pathPrefix optional path prefix
+ * @returns definite path prefix
+ */
+export function getPathPrefix(
+  scan_settings_path: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
+  pathPrefix?: string,
+) {
+  const parts = scan_settings_path.split("/");
+  const basename = parts.pop()!;
+  const dir = parts.join("/");
+  const prefix = dir ? `${dir}/` : "";
+  return pathPrefix ?? prefix;
+}

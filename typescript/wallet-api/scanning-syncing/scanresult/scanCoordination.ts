@@ -17,7 +17,9 @@ import { type WorkItem, makeWorkItem, scanLoop } from "./scanLoop";
 import {
   cullTooLargeScanHeight,
   getNonHaltedWallets,
+  getPathPrefix,
   openScanSettingsFile,
+  SCAN_SETTINGS_STORE_NAME_DEFAULT,
   walletSettingsPlusKeys,
   type ScanSettings,
 } from "../scanSettings";
@@ -49,7 +51,7 @@ export type WorkToBeDone = {
  * @param scan_settings_path
  */
 export async function findWorkToBeDone(
-  scan_settings_path: string,
+  scan_settings_path: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
   pathPrefix?: string,
 ): Promise<WorkToBeDone | false> {
   const parts = scan_settings_path.split("/");
@@ -235,7 +237,7 @@ export async function raceStep(
  */
 export async function handleBlocksYield(
   value: BlocksBufferLoopResult,
-  scanSettingsPath: string,
+  scanSettingsPath?: string,
 ): Promise<{
   isBlocksBufferChanged: boolean;
 }> {
@@ -299,6 +301,8 @@ export type CoordinatorEvent =
       type: "scan_ready";
       address: string;
       result: ScanLoopYield;
+      newCache: ScanCache;
+      changed_outputs: { output: any; change_reason: string }[];
     }
   | { type: "all_idle" }
   | { type: "error"; error: Error };
@@ -310,8 +314,8 @@ export type CoordinatorEvent =
  * look at CoordinatorEvent
  */
 export async function* coordinatorMain(
-  scanSettingsPath: string,
-  pathPrefix: string,
+  scanSettingsPath?: string,
+  pathPrefix?: string,
 ): AsyncGenerator<CoordinatorEvent> {
   const w = await findWorkToBeDone(scanSettingsPath, pathPrefix);
   if (!w) {
@@ -397,7 +401,6 @@ export async function* coordinatorMain(
             cache,
             wc.primary_address,
             0,
-            blocksBuffer[0]?.get_blocks_result_meta.block_infos.length ?? 0,
           );
         }
         // start scan promises for wallets that now have work
@@ -430,7 +433,7 @@ export async function* coordinatorMain(
           value,
           workBuffer,
           blocksBuffer,
-          pathPrefix,
+          getPathPrefix(scanSettingsPath, pathPrefix),
           wc?.secret_spend_key,
         );
         const nextItem = workBuffer.find(
@@ -441,7 +444,14 @@ export async function* coordinatorMain(
         } else {
           scanPromises.delete(addr);
         }
-        yield { type: "scan_ready", address: addr, result: value };
+        const updatedCache = walletCaches.get(addr);
+        yield {
+          type: "scan_ready",
+          address: addr,
+          result: value,
+          newCache: updatedCache ?? ({} as ScanCache),
+          changed_outputs: [],
+        };
 
         // signal idle when no scans active and nothing buffered
         if (scanPromises.size === 0 && blocksBuffer.length === 0) {

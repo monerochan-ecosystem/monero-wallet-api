@@ -109,9 +109,9 @@ export async function updateSyncETA(
   return { last_height: current_scan_height, last_timestamp: Date.now() };
 }
 
-export function connectionStatusFilePath(scan_settings_path?: string) {
-  if (!scan_settings_path)
-    scan_settings_path = SCAN_SETTINGS_STORE_NAME_DEFAULT;
+export function connectionStatusFilePath(
+  scan_settings_path: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
+) {
   const parts = scan_settings_path.split("/");
   const basename = parts.pop()!;
   const dir = parts.join("/");
