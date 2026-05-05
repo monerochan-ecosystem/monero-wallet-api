@@ -70,7 +70,9 @@ export async function* blocksBufferFetchLoop(
         node_url: node_url,
         timestamp: new Date().toISOString(),
       };
+      yield connection_status.last_packet;
       await sleep(1000);
+      continue;
     }
     console.log("[blocksBufferFetchLoop] fetching from current_range...");
     const get_blocks_bin = await doRPCrequest(nodeUrl, current_range, stopSync);
