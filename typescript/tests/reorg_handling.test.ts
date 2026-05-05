@@ -586,7 +586,7 @@ test(
         },
       });
 
-      await generateBlocks(address, 5);
+      await generateBlocks(address, 300);
       await syncedPromise;
     } finally {
       if (wallets1) wallets1.stopWorker();
