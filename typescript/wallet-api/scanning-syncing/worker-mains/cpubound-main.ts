@@ -3,7 +3,6 @@ import {
   type ScanLoopInput,
   type ScanLoopYield,
 } from "../scanresult/scanLoop";
-import type { WalletConfig } from "../scanresult/scanCoordination";
 
 /**
  * handle a single scan work item dispatched from the coordinator.
