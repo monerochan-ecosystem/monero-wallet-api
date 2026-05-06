@@ -194,7 +194,10 @@ export function reconcileWorkItemDone(
   blocksBuffer: GetBlocksBinBufferItem[],
   workItemBuffer: WorkItem[],
 ): void {
-  while (workItemBuffer.length > 0 && workItemBuffer[0].done) {
+  while (
+    workItemBuffer.length > 0 &&
+    workItemBuffer[0].status === "process_result_done"
+  ) {
     const removed = workItemBuffer.shift()!;
     const stillReferenced = workItemBuffer.some(
       (w) => w.batch.local_uuid === removed.batch.local_uuid,
@@ -262,10 +265,14 @@ export async function processScanResultForWorkItem(
 ): Promise<void> {
   if (value.type !== "Ready" || !value.result || !value.work_uuid) return;
 
-  const item = workBuffer.find((w) => w.work_uuid === value.work_uuid);
+  const item = await handleScanLoopResult(value, workBuffer);
   //console.log(`[processScanResultForWorkItem] item=${JSON.stringify(item)}`);
 
-  if (!item || item.done) return;
+  if (!item || item.status !== "scanwork_done")
+    throw new Error(
+      "[processScanResultForWorkItem] item not found or not scanwork not done. item_status=" +
+        item?.status,
+    );
 
   const firstBlock = item.batch.get_blocks_result_meta.block_infos[item.from];
   //console.log(`
@@ -285,7 +292,7 @@ export async function processScanResultForWorkItem(
   });
 
   await writeCacheToFile(cache, pathPrefix);
-  handleScanLoopResult(value, workBuffer);
+  item.status = "process_result_done";
   reconcileWorkItemDone(blocksBuffer, workBuffer);
   //because cache is tied to the workitems by reference,
   // the following workitems will have the most recent cache
@@ -322,7 +329,7 @@ function logBufStatus(
   );
   const wb = workBuffer.map(
     (w) =>
-      (w.done ? "D" : "") +
+      w.status +
       w.primaryAddress.slice(0, 6) +
       "@" +
       w.batch.get_blocks_result_meta.block_infos[w.from]?.block_height +
@@ -413,10 +420,18 @@ export async function* coordinatorMain(
     const winner = await Promise.race(races);
 
     if (winner.value.done) {
+      console.log("[coordinatorMain] winner done, src=" + winner.src);
       if (winner.src === "blocks") break;
       scanPromises.delete(winner.addr!);
       continue;
     }
+
+    console.log(
+      "[coordinatorMain] winner=" +
+        winner.src +
+        " addr=" +
+        String(winner.addr ?? "").slice(0, 8),
+    );
 
     if (winner.src === "blocks") {
       const result = winner.value.value as BlocksBufferLoopResult;
@@ -444,7 +459,7 @@ export async function* coordinatorMain(
           console.log("scanGens.get(addr)", gen);
           if (!gen) continue;
           const item = workBuffer.find(
-            (x) => !x.done && x.primaryAddress === addr,
+            (x) => x.status === "fresh" && x.primaryAddress === addr,
           );
           if (item) scanPromises.set(addr, gen.next(item));
         }
@@ -472,7 +487,8 @@ export async function* coordinatorMain(
           wc?.secret_spend_key,
         );
         const nextItem = workBuffer.find(
-          (x) => !x.done && x.primaryAddress === addr,
+          (x) =>
+            x.status !== "process_result_done" && x.primaryAddress === addr,
         );
         if (nextItem) {
           scanPromises.set(addr, gen.next(nextItem));

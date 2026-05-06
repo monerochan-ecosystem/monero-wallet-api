@@ -14,7 +14,11 @@ export type WorkItem = {
   primaryAddress: string;
   from: number;
   to: number;
-  done: boolean;
+  status:
+    | "fresh"
+    | "scanwork_in_progress"
+    | "scanwork_done"
+    | "process_result_done";
   result?: ScanResult;
 };
 export function makeWorkItem(
@@ -42,7 +46,7 @@ export function makeWorkItem(
     primaryAddress,
     from: from ?? 0, // default is to start from the batch beginning
     to: to ?? batch.get_blocks_result_meta.block_infos.length - 1, // default is to go to the batch end
-    done: false,
+    status: "fresh",
   };
 }
 
@@ -150,14 +154,15 @@ export async function* scanLoop(
 export async function handleScanLoopResult(
   loop_event: ScanLoopYield,
   work_buffer: WorkItem[],
-) {
+): Promise<WorkItem | undefined> {
   if (loop_event.type === "Ready" && loop_event.work_uuid) {
     const work_item = work_buffer.find(
       (w) => w.work_uuid === loop_event.work_uuid,
     );
     if (work_item) {
       work_item.result = loop_event.result;
-      work_item.done = true;
+      work_item.status = "scanwork_done";
+      return work_item;
     }
   }
 }
