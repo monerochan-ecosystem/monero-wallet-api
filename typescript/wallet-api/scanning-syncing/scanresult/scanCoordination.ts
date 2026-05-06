@@ -410,13 +410,6 @@ export async function* coordinatorMain(
 
     const winner = await Promise.race(races);
 
-    if (winner.value.done) {
-      console.log("[coordinatorMain] winner done, src=" + winner.src);
-      if (winner.src === "blocks") break;
-      scanPromises.delete(winner.addr!);
-      continue;
-    }
-
     console.log(
       "[coordinatorMain] winner=" +
         winner.src +
