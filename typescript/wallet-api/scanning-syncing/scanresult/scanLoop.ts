@@ -47,7 +47,7 @@ export function makeWorkItem(
     status: "fresh",
   };
 }
-
+export type ScanLoopIteratorResult = IteratorYieldResult<ScanLoopYield>;
 export type ScanLoopInput = WorkItem | "cancel" | undefined;
 export type ScanLoopYield = {
   type: "Ready" | "InProgress";
@@ -61,12 +61,6 @@ export async function* scanLoop(
   let work_uuid: string | undefined;
   let workitem_batch_uuid: string | undefined;
   let loaded_batch_uuid: string | undefined;
-  //0. set up viewpair on generator creation
-  const viewpair = await ViewPair.create(
-    wallet.primary_address,
-    wallet.secret_view_key,
-    wallet.subaddress_index,
-  );
 
   while (true) {
     const item: ScanLoopInput = yield {
@@ -76,12 +70,16 @@ export async function* scanLoop(
     };
     if (item === "cancel" || item === undefined) continue;
     work_uuid = String(item.work_uuid);
-    // 1.call loadGetBlocksBinResponse if batch hasnt been loaded yet
+    // 1.call loadGetBlocksBinResponse
     workitem_batch_uuid = String(item.batch.local_uuid);
-    if (workitem_batch_uuid !== loaded_batch_uuid) {
-      await viewpair.loadGetBlocksBinResponse(item.batch.data);
-      loaded_batch_uuid = workitem_batch_uuid;
-    }
+    const viewpair = await ViewPair.create(
+      item.walletConfig.primary_address,
+      item.walletConfig.secret_view_key,
+      item.walletConfig.subaddress_index,
+    );
+    await viewpair.loadGetBlocksBinResponse(item.batch.data);
+    loaded_batch_uuid = workitem_batch_uuid;
+
     const first_block_meta = item.batch.get_blocks_result_meta.block_infos[0];
     if (!first_block_meta) throw new Error("no first block meta");
     scanResult = undefined;
