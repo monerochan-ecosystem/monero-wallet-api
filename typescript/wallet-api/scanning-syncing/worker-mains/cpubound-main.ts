@@ -96,7 +96,9 @@ export type CpuWorkerMessage = CpuBoundError | CpuWorkerResult;
 export function sendFromCpuWorker(port: MessagePort, msg: CpuWorkerMessage) {
   port.postMessage(msg);
 }
-export function sendToCpuWorker(port: MessagePort, msg: CpuBoundWorkItem) {}
+export function sendToCpuWorker(port: MessagePort, msg: CpuBoundWorkItem) {
+  port.postMessage(msg);
+}
 /**
  * dispatch a work item to a CPU worker via its MessagePort.
  * same return type as scanLoop, but wallet depdendent input
