@@ -361,36 +361,26 @@ export async function* coordinatorMain(
   scanSettingsPath?: string,
   pathPrefix?: string,
 ): AsyncGenerator<CoordinatorEvent> {
-  const w = await findWorkToBeDone(scanSettingsPath, pathPrefix);
-  if (!w) {
-    yield {
-      type: "error",
-      error: new Error("findWorkToBeDone returned false"),
-    };
-    return;
-  }
+  const ctx = await setupCoordinator(scanSettingsPath, pathPrefix);
+  if (!ctx)
+    throw new Error("[coordinatorMain] findWorkToBeDone returned false");
+  const work_to_be_done = ctx.work_to_be_done;
+  const blocksBuffer = ctx.blocksBuffer;
+  const workBuffer = ctx.workBuffer;
+  const blocksGenerator = ctx.blocksGenerator;
+  let blocksPromise = blocksGenerator.next();
 
-  const { generator: blocksGen, blocksBuffer } =
-    await setupBlocksBufferGenerator({
-      nodeUrl: w.scan_settings.node_url,
-      startHeight: w.start_height,
-      anchor_range: w.anchor_range,
-      scanSettingsPath,
-    });
-
-  const workBuffer: WorkItem[] = [];
   const scanGens = new Map<
     string,
     AsyncGenerator<ScanLoopYield, void, ScanLoopInput>
   >();
 
-  let blocksPromise = blocksGen.next();
   const scanPromises = new Map<
     string,
     Promise<IteratorResult<ScanLoopYield, void>>
   >();
 
-  for (const wc of w.wallet_configs) {
+  for (const wc of work_to_be_done.wallet_configs) {
     scanGens.set(
       wc.primary_address,
       scanLoop({
@@ -441,11 +431,11 @@ export async function* coordinatorMain(
         scanSettingsPath,
       );
       if (isBlocksBufferChanged) {
-        for (const wc of w.wallet_configs) {
+        for (const wc of work_to_be_done.wallet_configs) {
           reconcileBlocksBufferChanged(blocksBuffer, workBuffer, wc, 0);
         }
         // start scan promises for wallets that now have work
-        for (const wc of w.wallet_configs) {
+        for (const wc of work_to_be_done.wallet_configs) {
           const addr = wc.primary_address;
           if (scanPromises.has(addr)) continue;
           const gen = scanGens.get(addr);
@@ -467,7 +457,7 @@ export async function* coordinatorMain(
         logBufStatus(blocksBuffer, workBuffer, scanPromises, "fetch_conn");
         yield { type: "connection_status", status: result };
       }
-      blocksPromise = blocksGen.next();
+      blocksPromise = blocksGenerator.next();
     } else {
       const addr = winner.addr!;
       const gen = scanGens.get(addr)!;
@@ -476,7 +466,9 @@ export async function* coordinatorMain(
       if (value.type === "InProgress") {
         scanPromises.set(addr, gen.next());
       } else if (value.type === "Ready") {
-        const wc = w.wallet_configs.find((x) => x.primary_address === addr);
+        const wc = work_to_be_done.wallet_configs.find(
+          (x) => x.primary_address === addr,
+        );
         if (!wc)
           throw new Error(
             "[coordinatorMain] wallet config not found on process result",
@@ -514,6 +506,38 @@ export async function* coordinatorMain(
       }
     }
   }
+}
+export async function setupCoordinator(
+  scanSettingsPath?: string,
+  pathPrefix?: string,
+) {
+  const work_to_be_done = await findWorkToBeDone(scanSettingsPath, pathPrefix);
+  if (!work_to_be_done) return false;
+  const { generator: blocksGenerator, blocksBuffer } =
+    await setupBlocksBufferGenerator({
+      nodeUrl: work_to_be_done.scan_settings.node_url,
+      startHeight: work_to_be_done.start_height,
+      anchor_range: work_to_be_done.anchor_range,
+      scanSettingsPath,
+    });
+
+  const workBuffer: WorkItem[] = [];
+  const walletSyncInfos = new Map<string, WalletSyncInfo>();
+
+  for (const wc of work_to_be_done.wallet_configs) {
+    walletSyncInfos.set(wc.primary_address, {
+      wallet_config: wc,
+      result_promises: [],
+    });
+  }
+
+  return {
+    blocksGenerator,
+    workBuffer,
+    blocksBuffer,
+    walletSyncInfos,
+    work_to_be_done,
+  };
 }
 export function workToBeDoneForThisWalletAndBatch(
   scan_cache: ScanCache,
