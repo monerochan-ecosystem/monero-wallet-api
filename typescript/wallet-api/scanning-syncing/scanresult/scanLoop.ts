@@ -5,11 +5,11 @@ import {
   type GetBlocksBinBufferItem,
   type ScanResult,
   type WalletConfig,
+  type WalletConfigPlusCache,
 } from "../../api";
 
 export type WorkItem = {
-  scanCache: ScanCache;
-  walletConfig: WalletConfig;
+  walletConfig: WalletConfigPlusCache;
   batch: GetBlocksBinBufferItem;
   work_uuid: string;
   from: number;
@@ -22,8 +22,7 @@ export type WorkItem = {
   result?: ScanResult;
 };
 export function makeWorkItem(
-  scanCache: ScanCache,
-  walletConfig: WalletConfig,
+  walletConfig: WalletConfigPlusCache,
   batch: GetBlocksBinBufferItem,
   from?: number,
   to?: number,
@@ -40,7 +39,6 @@ export function makeWorkItem(
     from = 0;
   }
   return {
-    scanCache,
     walletConfig,
     batch,
     work_uuid: crypto.randomUUID(),

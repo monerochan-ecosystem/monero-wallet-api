@@ -155,8 +155,7 @@ export async function findWorkToBeDone(
 export function reconcileBlocksBufferChanged(
   blocksBuffer: GetBlocksBinBufferItem[],
   workItemBuffer: WorkItem[],
-  scanCache: ScanCache,
-  walletConfig: WalletConfig,
+  walletConfig: WalletConfigPlusCache,
   from?: number,
   to?: number,
 ): void {
@@ -181,7 +180,7 @@ export function reconcileBlocksBufferChanged(
     // TODO: better work item creation with a helper
     // should be united tested in conjunction with processScanResultForWorkItem
     if (!alreadyReferenced) {
-      const workItem = makeWorkItem(scanCache, walletConfig, batch, from, to);
+      const workItem = makeWorkItem(walletConfig, batch, from, to);
       console.log(
         `[reconcileBlocksBufferChanged] workItem: uuid=${workItem.work_uuid.slice()} to=${workItem.to} from=${workItem.from} batchbegin_height=${batch.get_blocks_result_meta.block_infos[0].block_height} batchend_height=${batch.get_blocks_result_meta.block_infos[batch.get_blocks_result_meta.block_infos.length - 1].block_height}`,
       );
@@ -286,7 +285,7 @@ export async function processScanResultForWorkItem(
     `[processScanResultForWorkItem] block_infos.length=${item.batch.get_blocks_result_meta.block_infos.length} from=${item.from} to=${item.to}`,
   );
   const lastBlock = item.batch.get_blocks_result_meta.block_infos[item.to];
-  const cache = item.scanCache;
+  const cache = item.walletConfig.cache;
 
   await processScanResultWITHOUT_SIDE_EFFECTS({
     from_height: firstBlock.block_height,
@@ -354,8 +353,9 @@ export type WalletSyncInfo = {
 /**
  * coordinator main: async generator that drives the full scan cycle.
  * takes only scanSettingsPath, derives everything else internally.
- * yields events for some of the underlying generator events
- * look at CoordinatorEvent
+ * yields events for some of the underlying generator events,
+ * look at CoordinatorEvent, processing not decoupled from cpu bound scan work,
+ * as this single threaded, there is no point
  */
 export async function* coordinatorMain(
   scanSettingsPath?: string,
@@ -446,7 +446,7 @@ export async function* coordinatorMain(
         for (const wc of w.wallet_configs) {
           const cache = walletCaches.get(wc.primary_address);
           if (!cache) continue;
-          reconcileBlocksBufferChanged(blocksBuffer, workBuffer, cache, wc, 0);
+          reconcileBlocksBufferChanged(blocksBuffer, workBuffer, wc, 0);
         }
         // start scan promises for wallets that now have work
         for (const wc of w.wallet_configs) {
