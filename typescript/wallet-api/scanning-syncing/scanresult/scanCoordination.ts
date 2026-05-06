@@ -461,7 +461,11 @@ export async function* coordinatorMain(
           const item = workBuffer.find(
             (x) => x.status === "fresh" && x.primaryAddress === addr,
           );
-          if (item) scanPromises.set(addr, gen.next(item));
+
+          if (item) {
+            item.status = "scanwork_in_progress";
+            scanPromises.set(addr, gen.next(item));
+          }
         }
         logBufStatus(blocksBuffer, workBuffer, scanPromises, "after_blocks");
         yield { type: "blocks_buffer_changed" };
