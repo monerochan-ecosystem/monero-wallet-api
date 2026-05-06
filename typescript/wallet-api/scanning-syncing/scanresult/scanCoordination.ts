@@ -149,8 +149,8 @@ export async function findWorkToBeDone(
 export function reconcileBlocksBufferChanged(
   blocksBuffer: GetBlocksBinBufferItem[],
   workItemBuffer: WorkItem[],
-  scanCache?: ScanCache,
-  primaryAddress?: string,
+  scanCache: ScanCache,
+  walletConfig: WalletConfig,
   from?: number,
   to?: number,
 ): void {
@@ -166,17 +166,16 @@ export function reconcileBlocksBufferChanged(
   }
 
   // add work items for blocks buffer items not yet referenced
-  if (!scanCache || !primaryAddress) return;
   for (const batch of blocksBuffer) {
     const alreadyReferenced = workItemBuffer.some(
       (w) =>
         w.batch.local_uuid === batch.local_uuid &&
-        w.primaryAddress === primaryAddress,
+        w.walletConfig.primary_address === walletConfig.primary_address,
     );
     // TODO: better work item creation with a helper
     // should be united tested in conjunction with processScanResultForWorkItem
     if (!alreadyReferenced) {
-      const workItem = makeWorkItem(scanCache, batch, primaryAddress, from, to);
+      const workItem = makeWorkItem(scanCache, walletConfig, batch, from, to);
       console.log(
         `[reconcileBlocksBufferChanged] workItem: uuid=${workItem.work_uuid.slice()} to=${workItem.to} from=${workItem.from} batchbegin_height=${batch.get_blocks_result_meta.block_infos[0].block_height} batchend_height=${batch.get_blocks_result_meta.block_infos[batch.get_blocks_result_meta.block_infos.length - 1].block_height}`,
       );
@@ -330,7 +329,7 @@ function logBufStatus(
   const wb = workBuffer.map(
     (w) =>
       w.status +
-      w.primaryAddress.slice(0, 6) +
+      w.walletConfig.primary_address.slice(0, 6) +
       "@" +
       w.batch.get_blocks_result_meta.block_infos[w.from]?.block_height +
       "-" +
@@ -443,13 +442,7 @@ export async function* coordinatorMain(
         for (const wc of w.wallet_configs) {
           const cache = walletCaches.get(wc.primary_address);
           if (!cache) continue;
-          reconcileBlocksBufferChanged(
-            blocksBuffer,
-            workBuffer,
-            cache,
-            wc.primary_address,
-            0,
-          );
+          reconcileBlocksBufferChanged(blocksBuffer, workBuffer, cache, wc, 0);
         }
         // start scan promises for wallets that now have work
         for (const wc of w.wallet_configs) {
@@ -459,7 +452,8 @@ export async function* coordinatorMain(
           console.log("scanGens.get(addr)", gen);
           if (!gen) continue;
           const item = workBuffer.find(
-            (x) => x.status === "fresh" && x.primaryAddress === addr,
+            (x) =>
+              x.status === "fresh" && x.walletConfig.primary_address === addr,
           );
 
           if (item) {
@@ -492,7 +486,8 @@ export async function* coordinatorMain(
         );
         const nextItem = workBuffer.find(
           (x) =>
-            x.status !== "process_result_done" && x.primaryAddress === addr,
+            x.status !== "process_result_done" &&
+            x.walletConfig.primary_address === addr,
         );
         if (nextItem) {
           scanPromises.set(addr, gen.next(nextItem));

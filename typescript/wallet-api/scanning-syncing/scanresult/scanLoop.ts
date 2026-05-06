@@ -9,9 +9,9 @@ import {
 
 export type WorkItem = {
   scanCache: ScanCache;
+  walletConfig: WalletConfig;
   batch: GetBlocksBinBufferItem;
   work_uuid: string;
-  primaryAddress: string;
   from: number;
   to: number;
   status:
@@ -23,8 +23,8 @@ export type WorkItem = {
 };
 export function makeWorkItem(
   scanCache: ScanCache,
+  walletConfig: WalletConfig,
   batch: GetBlocksBinBufferItem,
-  primaryAddress: string,
   from?: number,
   to?: number,
 ): WorkItem {
@@ -41,9 +41,9 @@ export function makeWorkItem(
   }
   return {
     scanCache,
+    walletConfig,
     batch,
     work_uuid: crypto.randomUUID(),
-    primaryAddress,
     from: from ?? 0, // default is to start from the batch beginning
     to: to ?? batch.get_blocks_result_meta.block_infos.length - 1, // default is to go to the batch end
     status: "fresh",
