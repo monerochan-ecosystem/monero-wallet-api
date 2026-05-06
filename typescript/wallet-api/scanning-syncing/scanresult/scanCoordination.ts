@@ -149,27 +149,16 @@ export async function findWorkToBeDone(
 }
 /**
  * called when the blocks buffer generator yields "blocks_buffer_changed".
- * removes orphaned work items whose batch is no longer in the blocks buffer,
- * then adds new work items for blocks buffer items not yet referenced.
+ * adds new work items for blocks buffer items not yet referenced.
+ * per wallet
  */
-export function reconcileBlocksBufferChanged(
+export function makeWorkItemsFromBlocksBuffer(
   blocksBuffer: GetBlocksBinBufferItem[],
   workItemBuffer: WorkItem[],
   walletConfig: WalletConfigPlusCache,
   from?: number,
   to?: number,
 ): void {
-  // remove work items whose batch is no longer in the blocks buffer
-  for (let i = workItemBuffer.length - 1; i >= 0; i--) {
-    const stillInBlocksBuffer = blocksBuffer.some(
-      (b) => b.local_uuid === workItemBuffer[i].batch.local_uuid,
-    );
-    if (!stillInBlocksBuffer) {
-      //TODO when we add CPU workers we should send cancel events here
-      workItemBuffer.splice(i, 1);
-    }
-  }
-
   // add work items for blocks buffer items not yet referenced
   for (const batch of blocksBuffer) {
     const alreadyReferenced = workItemBuffer.some(
@@ -188,13 +177,13 @@ export function reconcileBlocksBufferChanged(
     }
   }
 }
-export function reconcileBlocksBufferForAllWallets(
+export function makeWorkItemsForAllWallets(
   wallet_configs: WalletConfigPlusCache[],
   blocksBuffer: GetBlocksBinBufferItem[],
   workBuffer: WorkItem[],
 ) {
   for (const wc of wallet_configs) {
-    reconcileBlocksBufferChanged(blocksBuffer, workBuffer, wc, 0);
+    makeWorkItemsFromBlocksBuffer(blocksBuffer, workBuffer, wc, 0);
   }
 }
 
@@ -433,7 +422,7 @@ export async function* coordinatorMain(
         scanSettingsPath,
       );
       if (isBlocksBufferChanged) {
-        reconcileBlocksBufferForAllWallets(
+        makeWorkItemsForAllWallets(
           work_to_be_done.wallet_configs,
           blocksBuffer,
           workBuffer,
