@@ -342,12 +342,6 @@ function logBufStatus(
     `[buf] ${label} blocks=[${bb.join(",")}] work=[${wb.join(",")}] scans=${scanPromises.size}`,
   );
 }
-export type ProcessResultPromise = Promise<ScanLoopYield>;
-export type ProcessResultBuffer = ProcessResultPromise[];
-export type WalletSyncInfo = {
-  wallet_config: WalletConfigPlusCache;
-  result_promises: ProcessResultBuffer;
-};
 /**
  * coordinator main: async generator that drives the full scan cycle.
  * takes only scanSettingsPath, derives everything else internally.
@@ -515,20 +509,11 @@ export async function setupCoordinator(
     });
 
   const workBuffer: WorkItem[] = [];
-  const walletSyncInfos = new Map<string, WalletSyncInfo>();
-
-  for (const wc of work_to_be_done.wallet_configs) {
-    walletSyncInfos.set(wc.primary_address, {
-      wallet_config: wc,
-      result_promises: [],
-    });
-  }
 
   return {
     blocksGenerator,
     workBuffer,
     blocksBuffer,
-    walletSyncInfos,
     work_to_be_done,
   };
 }
