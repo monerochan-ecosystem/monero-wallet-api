@@ -383,10 +383,14 @@ export async function* coordinatorMain(
     string,
     AsyncGenerator<ScanLoopYield, void, ScanLoopInput>
   >();
-  const walletCaches = new Map<string, ScanCache>();
+
+  let blocksPromise = blocksGen.next();
+  const scanPromises = new Map<
+    string,
+    Promise<IteratorResult<ScanLoopYield, void>>
+  >();
 
   for (const wc of w.wallet_configs) {
-    walletCaches.set(wc.primary_address, wc.cache);
     scanGens.set(
       wc.primary_address,
       scanLoop({
@@ -403,12 +407,6 @@ export async function* coordinatorMain(
   for (const [, gen] of scanGens) {
     await gen.next();
   }
-
-  let blocksPromise = blocksGen.next();
-  const scanPromises = new Map<
-    string,
-    Promise<IteratorResult<ScanLoopYield, void>>
-  >();
 
   while (true) {
     const races: Promise<{
@@ -444,8 +442,6 @@ export async function* coordinatorMain(
       );
       if (isBlocksBufferChanged) {
         for (const wc of w.wallet_configs) {
-          const cache = walletCaches.get(wc.primary_address);
-          if (!cache) continue;
           reconcileBlocksBufferChanged(blocksBuffer, workBuffer, wc, 0);
         }
         // start scan promises for wallets that now have work
@@ -481,6 +477,10 @@ export async function* coordinatorMain(
         scanPromises.set(addr, gen.next());
       } else if (value.type === "Ready") {
         const wc = w.wallet_configs.find((x) => x.primary_address === addr);
+        if (!wc)
+          throw new Error(
+            "[coordinatorMain] wallet config not found on process result",
+          );
         await processScanResultForWorkItem(
           value,
           workBuffer,
@@ -498,13 +498,12 @@ export async function* coordinatorMain(
         } else {
           scanPromises.delete(addr);
         }
-        const updatedCache = walletCaches.get(addr);
         logBufStatus(blocksBuffer, workBuffer, scanPromises, "after_scan");
         yield {
           type: "scan_ready",
           address: addr,
           result: value,
-          newCache: updatedCache ?? ({} as ScanCache),
+          newCache: wc.cache,
           changed_outputs: [],
         };
 
