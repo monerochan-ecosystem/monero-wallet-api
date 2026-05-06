@@ -21,15 +21,13 @@ const handleMessage = async (e: MessageEvent) => {
       cpuPort = e.ports[0];
       if (cpuPort) {
         cpuPort.onmessage = async (pe: MessageEvent) => {
-          if (pe.data.type === "scan") {
-            if (current_cpu_work_uuid)
-              throw new Error(
-                "[cpubound] cpu busy, contract says you need to wait for result, this is a bug.",
-              );
-            current_cpu_work_uuid = pe.data.work_uuid;
-            await handleCpuboundScan(pe.data, cpuPort);
-            current_cpu_work_uuid = undefined;
-          }
+          if (current_cpu_work_uuid)
+            throw new Error(
+              "[cpubound] cpu busy, contract says you need to wait for result, this is a bug.",
+            );
+          current_cpu_work_uuid = pe.data.work_uuid;
+          await handleCpuboundScan(pe.data, cpuPort);
+          current_cpu_work_uuid = undefined;
         };
       }
     } else if (msg.role === "coordinator") {

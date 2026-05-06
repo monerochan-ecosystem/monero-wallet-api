@@ -1,7 +1,7 @@
 import {
   scanLoop,
+  type ScanLoopInput,
   type ScanLoopYield,
-  type WorkItem,
 } from "../scanresult/scanLoop";
 import type { WalletConfig } from "../scanresult/scanCoordination";
 
@@ -13,15 +13,23 @@ import type { WalletConfig } from "../scanresult/scanCoordination";
  * wrapped in a mutex in the worker main (see worker.ts)
  */
 export async function handleCpuboundScan(
-  msg: CpuBoundWorkItem,
+  msg: ScanLoopInput,
   port?: MessagePort,
 ) {
+  if (!msg) {
+    console.log("[cpubound] no content msg! ( ScanLoopInput = undefined )");
+    return;
+  }
+  if (msg === "cancel") {
+    console.log("[cpubound] cancel msg! ( ScanLoopInput = cancel )");
+    return;
+  }
   console.log(
     "[cpubound] got scan msg, walletConfig=" +
       msg.walletConfig?.primary_address?.slice(0, 6),
   );
   const walletConfig = msg.walletConfig;
-  const workItem = msg.workItem;
+  const workItem = msg;
   if (!port) {
     console.log("[cpubound] no port!");
     return;
@@ -78,12 +86,7 @@ export async function handleCpuboundScan(
     } catch (_) {}
   }
 }
-export type CpuWorkInput = CpuBoundWorkItem | undefined;
-export type CpuBoundWorkItem = {
-  type: "scan";
-  walletConfig: WalletConfig;
-  workItem: WorkItem;
-};
+
 export type CpuBoundError = {
   type: "ERROR";
   payload: string;
@@ -96,7 +99,7 @@ export type CpuWorkerMessage = CpuBoundError | CpuWorkerResult;
 export function sendFromCpuWorker(port: MessagePort, msg: CpuWorkerMessage) {
   port.postMessage(msg);
 }
-export function sendToCpuWorker(port: MessagePort, msg: CpuBoundWorkItem) {
+export function sendToCpuWorker(port: MessagePort, msg: ScanLoopInput) {
   port.postMessage(msg);
 }
 /**
@@ -106,7 +109,7 @@ export function sendToCpuWorker(port: MessagePort, msg: CpuBoundWorkItem) {
  */
 export async function* iterateCpuWorker(
   port: MessagePort,
-): AsyncGenerator<ScanLoopYield, void, CpuWorkInput> {
+): AsyncGenerator<ScanLoopYield, void, ScanLoopInput> {
   while (true) {
     const input = yield { type: "Ready" };
     if (input) {
