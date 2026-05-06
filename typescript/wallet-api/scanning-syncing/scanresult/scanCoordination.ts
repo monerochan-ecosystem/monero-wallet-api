@@ -188,6 +188,15 @@ export function reconcileBlocksBufferChanged(
     }
   }
 }
+export function reconcileBlocksBufferForAllWallets(
+  wallet_configs: WalletConfigPlusCache[],
+  blocksBuffer: GetBlocksBinBufferItem[],
+  workBuffer: WorkItem[],
+) {
+  for (const wc of wallet_configs) {
+    reconcileBlocksBufferChanged(blocksBuffer, workBuffer, wc, 0);
+  }
+}
 
 /**
  * called when a work item at the left end of the work buffer is done.
@@ -424,9 +433,11 @@ export async function* coordinatorMain(
         scanSettingsPath,
       );
       if (isBlocksBufferChanged) {
-        for (const wc of work_to_be_done.wallet_configs) {
-          reconcileBlocksBufferChanged(blocksBuffer, workBuffer, wc, 0);
-        }
+        reconcileBlocksBufferForAllWallets(
+          work_to_be_done.wallet_configs,
+          blocksBuffer,
+          workBuffer,
+        );
         // start scan promises for wallets that now have work
         for (const wc of work_to_be_done.wallet_configs) {
           const addr = wc.primary_address;
