@@ -38,10 +38,16 @@ export type WalletConfig = {
   secret_spend_key?: string;
   subaddress_index: number;
 };
+export type WalletConfigPlusCache = {
+  primary_address: string;
+  secret_view_key: string;
+  secret_spend_key?: string;
+  subaddress_index: number;
+  cache: ScanCache;
+};
 export type WorkToBeDone = {
   start_height: number;
-  wallet_caches: ScanCache[];
-  wallet_configs: WalletConfig[];
+  wallet_configs: WalletConfigPlusCache[];
   anchor_range: CacheRange;
   scan_settings: ScanSettings;
 };
@@ -70,7 +76,7 @@ export async function findWorkToBeDone(
   if (!wallets.length) return false;
   const potential_anchor_ranges: CacheRange[] = [];
   const wallet_caches: ScanCache[] = [];
-  const wallet_configs: WalletConfig[] = [];
+  const wallet_configs: WalletConfigPlusCache[] = [];
   let wallet_without_anchor_at_start_height = false;
   for (const wallet of wallets) {
     const walletSettingsWithKeys = await walletSettingsPlusKeys({
@@ -101,6 +107,7 @@ export async function findWorkToBeDone(
       secret_view_key: walletSettingsWithKeys.secret_view_key,
       secret_spend_key: walletSettingsWithKeys.secret_spend_key,
       subaddress_index: wallet.subaddress_index || 0,
+      cache: walletCache,
     });
     const range = findRange(walletCache.scanned_ranges, total_start_height);
     if (!range) {
@@ -135,7 +142,6 @@ export async function findWorkToBeDone(
   // lowest fast forward start height on all wallets )
   return {
     wallet_configs,
-    wallet_caches,
     start_height,
     anchor_range,
     scan_settings,
@@ -342,8 +348,7 @@ function logBufStatus(
 export type ProcessResultPromise = Promise<ScanLoopYield>;
 export type ProcessResultBuffer = ProcessResultPromise[];
 export type WalletSyncInfo = {
-  wallet_config: WalletConfig;
-  cache: ScanCache;
+  wallet_config: WalletConfigPlusCache;
   result_promises: ProcessResultBuffer;
 };
 /**
@@ -380,9 +385,8 @@ export async function* coordinatorMain(
   >();
   const walletCaches = new Map<string, ScanCache>();
 
-  for (let i = 0; i < w.wallet_configs.length; i++) {
-    const wc = w.wallet_configs[i];
-    walletCaches.set(wc.primary_address, w.wallet_caches[i]);
+  for (const wc of w.wallet_configs) {
+    walletCaches.set(wc.primary_address, wc.cache);
     scanGens.set(
       wc.primary_address,
       scanLoop({
