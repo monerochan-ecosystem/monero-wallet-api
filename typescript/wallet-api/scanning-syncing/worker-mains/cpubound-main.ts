@@ -34,7 +34,6 @@ export async function handleCpuboundScan(
     return;
   }
 
-  try {
     const gen = scanLoop(walletConfig);
     await gen.next(); // prime: create viewpair, hit initial yield
     console.log(
@@ -51,10 +50,7 @@ export async function handleCpuboundScan(
     while (!result.done && result.value.type === "InProgress") {
       blockCount++;
       if (blockCount % 10 === 0) {
-        sendFromCpuWorker(port, {
-          type: "scan_result",
-          result: result.value,
-        });
+      sendFromCpuWorker(port, result.value);
       }
       result = await gen.next();
     }
@@ -68,87 +64,54 @@ export async function handleCpuboundScan(
 
     // result should be Ready with the completed scan
     if (!result.done && result.value.type === "Ready") {
-      sendFromCpuWorker(port, {
-        type: "scan_result",
-        result: result.value,
-      });
+    sendFromCpuWorker(port, result.value);
       console.log("[cpubound] sent scan_ready");
     }
     // now we end, but in practice we wait for a new message
-  } catch (err: unknown) {
-    console.log("[cpubound] error: " + String(err));
-    try {
-      sendFromCpuWorker(port, {
-        type: "ERROR",
-        payload: String(err),
-      });
-    } catch (_) {}
-  }
 }
 
-export type CpuBoundError = {
-  type: "ERROR";
-  payload: string;
-};
-export type CpuWorkerResult = {
-  type: "scan_result";
-  result: ScanLoopYield;
-};
-export type CpuWorkerMessage = CpuBoundError | CpuWorkerResult;
-export function sendFromCpuWorker(port: MessagePort, msg: CpuWorkerMessage) {
+export function sendFromCpuWorker(port: MessagePort, msg: ScanLoopYield) {
   port.postMessage(msg);
 }
 export function sendToCpuWorker(port: MessagePort, msg: ScanLoopInput) {
   port.postMessage(msg);
 }
+
+export type DelegatedScanLoop = AsyncGenerator<
+  ScanLoopYield,
+  void,
+  ScanLoopInput
+>;
 /**
  * dispatch a work item to a CPU worker via its MessagePort.
  * same return type as scanLoop, but wallet depdendent input
  * (scanloop sets wallet once in the setup phase)
  */
-export async function* iterateCpuWorker(
-  port: MessagePort,
-): AsyncGenerator<ScanLoopYield, void, ScanLoopInput> {
+export async function* delegatedScanLoop(port: MessagePort): DelegatedScanLoop {
+  const messages: ScanLoopYield[] = [];
+  let msg_promise_resolve: (
+    value: ScanLoopYield | PromiseLike<ScanLoopYield>,
+  ) => void;
+  let msg_promise: Promise<ScanLoopYield> = new Promise((resolve) => {
+    msg_promise_resolve = resolve;
+  });
+  const onmessage = (event: MessageEvent) => {
+    messages.push(event.data);
+    const msg = messages.shift();
+    if (msg) {
+      msg_promise_resolve(msg as ScanLoopYield);
+    }
+  };
+  port.onmessage = onmessage;
   while (true) {
     const input = yield { type: "Ready" };
     if (input) {
       sendToCpuWorker(port, input);
     }
-    const result = await awaitCpuWorkerResult(port);
+    const result = await msg_promise;
+    msg_promise = new Promise((resolve) => {
+      msg_promise_resolve = resolve;
+    });
     yield result;
   }
-}
-
-export function awaitMessageOnPort(port: MessagePort) {
-  return new Promise((resolve, reject) => {
-    const handler = (event: MessageEvent) => {
-      port.removeEventListener("message", handler);
-      resolve(event.data);
-    };
-    port.addEventListener("message", handler);
-  });
-}
-
-export async function awaitCpuWorkerResult(
-  port: MessagePort,
-): Promise<ScanLoopYield> {
-  const result = await awaitMessageOnPort(port);
-  if (
-    result &&
-    typeof result === "object" &&
-    "type" in result &&
-    "payload" in result &&
-    result.type === "ERROR"
-  ) {
-    throw new Error(String(result.payload));
-  } else if (
-    result &&
-    typeof result === "object" &&
-    "type" in result &&
-    "result" in result &&
-    result.type === "scan_result"
-  ) {
-    return result.result as ScanLoopYield;
-  }
-  throw new Error("unreachable, awaitCpuWorkerResult promise rejected");
 }
