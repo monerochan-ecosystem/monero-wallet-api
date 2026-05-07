@@ -170,9 +170,20 @@ export function makeWorkItemsFromBlocksBuffer(
         w.batch.local_uuid === batch.local_uuid &&
         w.walletConfig.primary_address === walletConfig.primary_address,
     );
-    // TODO: better work item creation with a helper
-    // should be united tested in conjunction with processScanResultForWorkItem
     if (!alreadyReferenced) {
+      const begin_height =
+        batch.get_blocks_result_meta.block_infos[0].block_height;
+      const end_height =
+        batch.get_blocks_result_meta.block_infos[
+          batch.get_blocks_result_meta.block_infos.length - 1
+        ].block_height;
+      // skip batches fully covered by an existing scanned range
+      if (
+        walletConfig.cache.scanned_ranges.some(
+          (r) => r.start <= begin_height && r.end >= end_height,
+        )
+      )
+        continue;
       const workItem = makeWorkItem(walletConfig, batch, from, to);
       console.log(
         `[reconcileBlocksBufferChanged] workItem: uuid=${workItem.work_uuid.slice()} to=${workItem.to} from=${workItem.from} batchbegin_height=${batch.get_blocks_result_meta.block_infos[0].block_height} batchend_height=${batch.get_blocks_result_meta.block_infos[batch.get_blocks_result_meta.block_infos.length - 1].block_height}`,
