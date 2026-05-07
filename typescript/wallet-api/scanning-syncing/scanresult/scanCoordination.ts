@@ -125,9 +125,13 @@ export async function findWorkToBeDone(
     potential_anchor_ranges.push(range_at_start);
 
     for (const wallet_cache of wallet_caches) {
+      // only add the range to wallets that don't already have one
+      if (!findRange(wallet_cache.scanned_ranges, total_start_height)) {
       wallet_cache.scanned_ranges.push(range_at_start);
-      // sort them correctly
-      wallet_cache.scanned_ranges = mergeRanges(wallet_cache.scanned_ranges);
+        wallet_cache.scanned_ranges = mergeRanges(
+          wallet_cache.scanned_ranges,
+        );
+      }
     }
   }
 
