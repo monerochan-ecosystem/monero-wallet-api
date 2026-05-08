@@ -818,6 +818,7 @@ export async function scheduleWorkOnCpuPorts(
   let fresh_work_index = 0;
   for (const port_status of empty_ports) {
     const item = fresh_work[fresh_work_index];
+    fresh_work_index++;
     if (!item) return;
     let resolve_port: (value: ScanLoopYield) => void;
     let resolve_workstart: () => void;
