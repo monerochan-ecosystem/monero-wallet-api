@@ -133,9 +133,3 @@ export function sendFromCpuWorker(port: MessagePort, msg: ScanLoopYield) {
 export function sendToCpuWorker(port: MessagePort, msg: ScanLoopInput) {
   port.postMessage(msg);
 }
-
-export type DelegatedScanLoop = AsyncGenerator<
-  ScanLoopYield,
-  void,
-  ScanLoopInput
->;
