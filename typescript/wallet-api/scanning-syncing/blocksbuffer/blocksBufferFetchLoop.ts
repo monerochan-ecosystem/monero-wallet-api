@@ -20,6 +20,8 @@ export type GetBlocksBinBufferItem = {
   data: Uint8Array;
 };
 export const MAX_BLOCKS_BUFFER_SIZE = 10;
+export type BlocksBufferIteratorResult =
+  IteratorYieldResult<BlocksBufferLoopResult>;
 export type BlocksBufferLoopResult =
   | ConnectionSatusLastPacket
   | ConnectionStatusSync
@@ -71,7 +73,7 @@ export async function* blocksBufferFetchLoop(
         timestamp: new Date().toISOString(),
       };
       yield connection_status.last_packet;
-      await sleep(1000);
+      await sleep(5000);
       continue;
     }
     console.log("[blocksBufferFetchLoop] fetching from current_range...");
