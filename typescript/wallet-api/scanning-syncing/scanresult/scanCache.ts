@@ -1,5 +1,4 @@
 import { type KeyImage } from "./computeKeyImage";
-import type { ReorgInfo } from "./reorg";
 import {
   get_block_headers_range,
   type BlockInfo,
@@ -263,6 +262,16 @@ export type ScanCache = {
   subaddresses?: Subaddress[];
   reorg_info?: ReorgInfo;
   daemon_height: number;
+};
+export type ReorgInfo = {
+  split_heights: BlockInfo[];
+  removed_outputs: ReorgedOutput[]; // Copies of detached outputs for logging
+  reverted_spends: ReorgedOutput[]; // Outputs that became unspent again
+};
+export type ReorgedOutput = {
+  old_output_state: Output;
+  key_image: KeyImage;
+  split_height: BlockInfo;
 };
 export type TxLog = {
   inputs_index: string[];

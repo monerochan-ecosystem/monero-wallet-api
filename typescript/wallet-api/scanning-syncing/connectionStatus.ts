@@ -1,5 +1,9 @@
-import { atomicWrite, type BlockInfo, type CacheRange } from "../api";
-import type { ReorgInfo } from "./scanresult/reorg";
+import {
+  atomicWrite,
+  type BlockInfo,
+  type CacheRange,
+  type ReorgInfo,
+} from "../api";
 import { SCAN_SETTINGS_STORE_NAME_DEFAULT } from "./scanSettings";
 export type ConnectionStatusOptions =
   | "OK"
