@@ -576,7 +576,7 @@ test(
         no_stats: true,
         notifyMasterChanged: async (params) => {
           const last = params.newCache.scanned_ranges.at(-1);
-          if (last && last.end >= 5) {
+          if (last && last.end >= 300) {
             resolveSynced();
           }
         },
@@ -619,5 +619,5 @@ test(
       await stopNode(proc2);
     }
   },
-  { timeout: 120000 },
+  { timeout: 30000 },
 );
