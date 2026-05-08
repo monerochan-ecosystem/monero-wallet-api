@@ -312,7 +312,7 @@ beforeAll(
 // );
 
 test(
-  "pop blocks mid-session, cache stays intact with reorged outputs and reorg_info",
+  "a: pop blocks mid-session, cache stays intact with reorged outputs and reorg_info",
   async () => {
     await cleanupReorgDir();
     const kp = JSON.parse(await Bun.file(KEYPAIRS_PATH).text()) as Keypair[];
@@ -397,7 +397,7 @@ test(
 );
 
 test(
-  "reorg after tx between wallets shows removed outputs and reverted spends",
+  "b: reorg after tx between wallets shows removed outputs and reverted spends",
   async () => {
     await cleanupReorgDir();
     const kp = JSON.parse(await Bun.file(KEYPAIRS_PATH).text()) as Keypair[];
@@ -543,7 +543,7 @@ test(
 );
 
 test(
-  "reorg after restarting with a fresh chain shows catastrophic_reorg",
+  "c: reorg after restarting with a fresh chain shows catastrophic_reorg",
   async () => {
     await cleanupReorgDir();
     const kp = JSON.parse(await Bun.file(KEYPAIRS_PATH).text()) as Keypair[];
