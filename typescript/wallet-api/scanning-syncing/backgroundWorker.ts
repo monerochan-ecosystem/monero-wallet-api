@@ -1,41 +1,9 @@
-import { get_info, ViewPair } from "../api";
 import { LOCAL_NODE_DEFAULT_URL } from "../node-interaction/nodeUrl";
-import {
-  type CacheChangedCallback,
-  type CacheChangedCallbackParameters,
-} from "./scanresult/scanCache";
-import {
-  openNonHaltedWallets,
-  readNodeUrlFromScanSettings,
-  walletSettingsPlusKeys,
-} from "./scanSettings";
+import { type CacheChangedCallbackParameters } from "./scanresult/scanCache";
+import { readNodeUrlFromScanSettings } from "./scanSettings";
 import { workerMainCode } from "./worker-entrypoints/worker";
 
 const CPU_POOL_SIZE = 4;
-
-export async function scanWallets(
-  cacheChanged: CacheChangedCallback = (params) => console.log(params),
-  stopSync?: AbortSignal,
-  scan_settings_path?: string,
-  pathPrefix?: string,
-) {
-  const nonHaltedWallets = await openNonHaltedWallets(scan_settings_path);
-  const masterWalletSettings = nonHaltedWallets[0];
-  if (!masterWalletSettings) return;
-  const masterWithKeys = await walletSettingsPlusKeys(masterWalletSettings);
-  const masterViewPair = await ViewPair.create(
-    masterWalletSettings.primary_address,
-    masterWithKeys.secret_view_key,
-    masterWalletSettings.subaddress_index,
-    masterWalletSettings.node_url,
-  );
-  await masterViewPair.scan(
-    cacheChanged,
-    stopSync,
-    scan_settings_path,
-    pathPrefix,
-  );
-}
 
 export type WorkerSet = {
   fetchWorker: Worker;

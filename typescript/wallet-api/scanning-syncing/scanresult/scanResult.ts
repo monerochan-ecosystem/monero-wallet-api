@@ -14,7 +14,6 @@ import {
   findRangeThrows,
 } from "./scanCache";
 import { type ErrorResponse } from "../../node-interaction/binaryEndpoints";
-import { handleReorg } from "./reorg";
 import type {
   CacheChangedCallback,
   CacheRange,
@@ -38,65 +37,7 @@ export type ProcessScanResultParamsWithoutSideEffects = {
   scanCache: ScanCache;
   to_height?: number;
 };
-export async function processScanResult(params: ProcessScanResultParams) {
-  let current_range = params.current_range;
-  const {
-    result,
-    cacheChanged,
-    secret_spend_key,
-    pathPrefix,
-    use_master_current_range,
-  } = params;
-  if (!(result && "primary_address" in result)) return current_range;
-  const cache = await readCacheFileDefaultLocation(
-    result.primary_address,
-    pathPrefix,
-  );
-  if (!cache)
-    throw new Error(
-      `cache not found for primary address: ${result.primary_address} and path prefix: ${pathPrefix}`,
-    );
-  if (result && "daemon_height" in result)
-    cache.daemon_height = result.daemon_height;
-  if (use_master_current_range) {
-    const last = lastRange(cache.scanned_ranges);
-    if (last) {
-      last.block_hashes = current_range.block_hashes;
-      last.end = current_range.end;
-    } else {
-      cache.scanned_ranges.push(current_range);
-    }
-  }
-  try {
-    if (result && "new_height" in result) {
-      const [new_range, changed_outputs] = updateScanHeight(
-        current_range,
-        result,
-        cache,
-      );
-      current_range = new_range;
 
-      changed_outputs.push(
-        ...(await detectOutputs(result, cache, secret_spend_key)),
-      );
-
-      if (secret_spend_key)
-        changed_outputs.push(...detectOwnspends(result, cache));
-
-      // write to cache
-      await writeCacheToFile(cache, params.pathPrefix);
-
-      await cacheChanged({
-        newCache: cache,
-        changed_outputs,
-      });
-    }
-    return current_range;
-  } catch (e) {
-    params.catastrophic_reorg_cb();
-    throw e;
-  }
-}
 export type ProcessScanResult = {
   current_range: CacheRange;
   changed_outputs: ChangedOutput[];
@@ -274,59 +215,6 @@ export function processResultReturnValue(
     changed_outputs,
   };
 }
-/**
- * ensures the cache has a scanned range that covers the given height.
- * if one exists (via findRange) it is returned unchanged.
- * if no range covers the height, a fresh range is built from the batch's
- * block_infos metadata: tip (at fromHeight), candidate (fromHeight), oldest (fromHeight).
- *  the range is pushed into the
- * cache's scanned_ranges and returned. As we call processresults the anchors will be updated
- *
- * called at the beginning of processScanResult, to either find the range or
- * if it cant find one it creates one. (wallet has not covered this area before)
- * afterwards we expect range to be there and use findRangeThrows
- *
- * so process scan result works now nomatter if the wallet scanned this area before
- * or not. while still producing a reorg if it scanned before and it cant find the tip
- *
- * processScanResultWITHOUT_SIDE_EFFECTS. this replaces the old behaviour
- * of initScanCache writing a fake range on wallet creation, which could
- * produce a false catastrophic reorg if the node was mid-reorg at the time.
- *
- * example:
- *   const range = ensureRangeCovering(cache, batchMeta, fromHeight);
- *   const { current_range, changed_outputs } =
- *     await processScanResultWITHOUT_SIDE_EFFECTS({
- *       current_range: range, result, scanCache: cache,
- *     });
- */
-export function ensureRangeCovering(
-  cache: ScanCache,
-  batchMetaInfos: BlockInfo[],
-  fromHeight: number,
-): CacheRange {
-  let range = findRange(cache.scanned_ranges, fromHeight);
-  if (range) return range;
-
-  const hash_at_height = batchMetaInfos.find(
-    (bi) => bi.block_height === fromHeight,
-  );
-  if (!hash_at_height)
-    throw new Error(
-      `could not find hash at height for height ${fromHeight} in batchMeta block infos`,
-    );
-  const newRange: CacheRange = {
-    start: fromHeight,
-    end: fromHeight,
-    block_hashes: [hash_at_height, hash_at_height, hash_at_height],
-  };
-  console.log(`CACHE RANGES ${JSON.stringify(cache.scanned_ranges)}`);
-  console.log(
-    `ADDED NEW ENSURE RANGE COVERING ${fromHeight} ${JSON.stringify(newRange)} `,
-  );
-  cache.scanned_ranges.push(newRange);
-  return newRange;
-}
 
 export type OnchainKeyImage = {
   key_image_hex: KeyImage;
@@ -358,96 +246,7 @@ export type ScanResultCallback =
   | ((
       result: ScanResult | ErrorResponse | EmptyScanResult,
     ) => Promise<FastForward | void>); // accept async callbacks
-export function updateScanHeight(
-  current_range: CacheRange,
-  result: ScanResult,
-  cache: ScanCache,
-): [CacheRange, ChangedOutput[]] {
-  let last_block_hash_of_result = result.block_infos.at(-1);
-  let current_blockhash = current_range?.block_hashes.at(0);
-  if (!current_blockhash)
-    throw new Error(
-      "current_range passed to updateScanHeight was malformed. block_hashes is empty",
-    );
-  if (!last_block_hash_of_result) return [current_range, []]; // block_infos empty, no change (we are at tip and there was no new block)
-  // if last blockhash is undefined it means there was not reorg, we are at tip, block_infos is empty ( no new blocks )
 
-  const oldRange = findRange(
-    cache.scanned_ranges,
-    current_blockhash.block_height,
-  );
-  if (!oldRange)
-    throw new Error(
-      `could not find scan range for height ${current_blockhash.block_height},
-       that means the blocks in the response from getBlocks.bin do not overlap
-       with the scanned ranges in the cache. This should not happen, as even if 
-       we are starting from a new start_height that has been supplied to scanWithCache,
-       it has been found as an existing range in the cache, or it has been
-       added as a new range before we started scannning.`,
-    );
-  // now we need to find the block_infos of old range in the new geblocksbin response result block_infos
-  // if we cant find the new range, there was a reorg and we need to clean all outputs after that and log what happened
-  let first_block_hash = result.block_infos.at(0);
-  if (!first_block_hash) return [current_range, []]; // should never happen, if there is last_block_hash there should be first_block_hash
-
-  // if the first block hash in the response is not the same as the last block hash in the old range, there was a reorg
-  if (!(first_block_hash.block_hash === current_blockhash.block_hash)) {
-    return handleReorg(current_range, result, cache, oldRange);
-  }
-  // scan only happens in one direction,
-  // to scan earlier ranges: abort and recall with smaller start_height
-
-  // getblocksbin will return up to 1000 blocks at once
-  // so this should never happen, except if we just popped a block (but that case is handled above in the reorg case)
-  if (current_blockhash.block_height > last_block_hash_of_result.block_height)
-    throw new CatastrophicReorgError(
-      `current scan height was larger than block height of last block from latest scan result. 
-       Most likely connected to faulty node / catastrophic reorg.
-       current height: ${current_blockhash.block_height}, new height: ${last_block_hash_of_result.block_height}`,
-    );
-
-  // guard against degenerate single-block ranges
-  if (
-    current_blockhash.block_height === last_block_hash_of_result.block_height
-  ) {
-    oldRange.end = last_block_hash_of_result.block_height;
-    oldRange.block_hashes[0] = last_block_hash_of_result;
-    return [oldRange, []];
-  }
-
-  // 1. add new scanned range
-  let anchor: BlockInfo | undefined = undefined;
-  let anchor_candidate: BlockInfo | undefined = undefined;
-  if (oldRange.block_hashes.length >= 3) {
-    const old_anchor = oldRange.block_hashes.at(-1);
-    const old_anchor_candidate = oldRange.block_hashes.at(-2);
-    anchor = old_anchor;
-    anchor_candidate = old_anchor_candidate;
-
-    if (
-      // if the old range has an anchor, and the anchor is more than 200 blocks old
-      typeof old_anchor?.block_height === "number" &&
-      current_blockhash.block_height - old_anchor.block_height > 200
-    ) {
-      anchor = old_anchor_candidate; // use the anchor_candidate as anchor
-      // new anchor_candidate: is the one 100 blocks in, or the old scan tip
-      anchor_candidate =
-        result.block_infos.slice(-100)[0] || oldRange?.block_hashes.at(0); // use  use the old scan tip as anchor candidate
-    }
-  }
-  // old anchor always exists because every CacheRange has 3 block_hashes
-  if (!anchor)
-    throw new Error("anchor is undefined, block_hashes for range malformed");
-  // carry over the old anchor candidate or use the last block
-  anchor_candidate = anchor_candidate || last_block_hash_of_result;
-  const newRange = {
-    start: current_blockhash.block_height,
-    end: last_block_hash_of_result.block_height,
-    block_hashes: [last_block_hash_of_result, anchor_candidate, anchor],
-  };
-
-  return [makeNewRange(newRange, cache), []];
-}
 export function makeNewRange(newRange: CacheRange, cache: ScanCache) {
   cache.scanned_ranges.push(newRange);
 
