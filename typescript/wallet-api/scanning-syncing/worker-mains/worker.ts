@@ -1,5 +1,5 @@
 import { coordinatorMainWorker } from "./coordinator-main";
-import { handleCpuboundScan } from "./cpubound-main";
+import { handleCpuboundScan, handleCpuboundScanTry } from "./cpubound-main";
 
 self.onerror = (e) => self.postMessage({ type: "ERROR", payload: e });
 self.addEventListener("unhandledrejection", (e) =>
@@ -9,7 +9,6 @@ self.addEventListener("unhandledrejection", (e) =>
 let SCAN_SETTINGS_PATH: string | undefined;
 let PATH_PREFIX: string | undefined;
 let cpuPort: MessagePort | undefined;
-let current_cpu_work_uuid: string | undefined;
 
 const handleMessage = async (e: MessageEvent) => {
   const msg = e.data;
@@ -20,14 +19,10 @@ const handleMessage = async (e: MessageEvent) => {
     if (msg.role === "cpubound") {
       cpuPort = e.ports[0];
       if (cpuPort) {
-        cpuPort.onmessage = async (pe: MessageEvent) => {
-          if (current_cpu_work_uuid)
-            throw new Error(
-              "[cpubound] cpu busy, contract says you need to wait for result, this is a bug.",
-            );
-          current_cpu_work_uuid = pe.data.work_uuid;
-          await handleCpuboundScan(pe.data, cpuPort);
-          current_cpu_work_uuid = undefined;
+        cpuPort.onmessage = (pe: MessageEvent) => {
+          console.log("[cpubound] new workitem msg received");
+
+          handleCpuboundScan(pe.data, cpuPort);
         };
       }
     } else if (msg.role === "coordinator") {
@@ -43,7 +38,15 @@ const handleMessage = async (e: MessageEvent) => {
     }
   }
 };
-self.onmessage = handleMessage;
+function handleMessageTry(e: MessageEvent) {
+  try {
+    handleMessage(e);
+  } catch (error) {
+    console.error("[worker] error:", error);
+    self.postMessage({ type: "ERROR", payload: error });
+  }
+}
+self.onmessage = handleMessageTry;
 
 // signal main thread that onmessage handler is installed
 self.postMessage({ type: "WORKER_READY" });

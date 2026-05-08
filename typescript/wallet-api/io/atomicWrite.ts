@@ -5,6 +5,7 @@ export async function atomicWrite(
   targetPath: string,
   data: string | Blob | ArrayBuffer | SharedArrayBuffer | TypedArray | Response,
 ): Promise<number> {
+  //console.log("[atomicWrite] writing to", targetPath);
   // in the browser we don't have rename + indexedDB writes are atomic in any case
   if (areWeInTheBrowser) return await Bun.write(targetPath, data as BunFile);
   const { rename } = await import("node:fs/promises");
