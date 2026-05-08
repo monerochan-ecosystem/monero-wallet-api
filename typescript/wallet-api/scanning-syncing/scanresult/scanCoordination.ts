@@ -317,6 +317,67 @@ export async function processScanResultForWorkItem(
   // currently as a sideeffect of the work scheduling function on fetch result aka blocks buffer changed,
   // this is already implicitly handled
 }
+/**
+ * process a scan result for a completed work item.
+ * updates the cache, writes to disk, marks work item done, reconciles blockbuffer with this.
+ */
+export async function processWorkItem(
+  item: WorkItem,
+  workBuffer: WorkItem[],
+  blocksBuffer: GetBlocksBinBufferItem[],
+  pathPrefix: string,
+  secret_spend_key?: string,
+): Promise<ProcessScanResult> {
+  if (item.status !== "scanwork_done")
+    throw new Error(
+      "[processWorkItem] item not found or not scanwork not done. item_status=" +
+        item?.status,
+    );
+
+  const firstBlock = item.batch.get_blocks_result_meta.block_infos[item.from];
+
+  // console.log(
+  //   `[processWorkItem] block_infos.length=${item.batch.get_blocks_result_meta.block_infos.length} from=${item.from} to=${item.to}`,
+  // );
+  const lastBlock = item.batch.get_blocks_result_meta.block_infos[item.to];
+  // console.log(
+  //   "[processWorkItem] ",
+  //   item.walletConfig.primary_address.slice(0, 6),
+  //   "@",
+  //   firstBlock.block_height,
+  //   "-",
+  //   lastBlock.block_height,
+  // );
+
+  const cache = item.walletConfig.cache;
+  let res;
+  try {
+    res = await processScanResultWITHOUT_SIDE_EFFECTS({
+      from_height: firstBlock.block_height,
+      to_height: lastBlock.block_height,
+      result: item.result,
+      scanCache: cache,
+      secret_spend_key,
+    });
+    // console.log("[processWorkItem] res=", res);
+  } catch (error) {
+    console.error("[processWorkItem] error=", error);
+  }
+
+  await writeCacheToFile(cache, pathPrefix);
+  item.status = "process_result_done";
+  //console.log(`[processWorkItem] process_result_done item=${JSON.stringify(item)}`);
+  // remove from blocksbuffer if no more work items reference it
+  reconcileWorkItemDone(blocksBuffer, workBuffer);
+  //because cache is tied to the workitems by reference,
+  // the following workitems will have the most recent cache
+  // if we do cpu workers we need to be sure to wait with the processing at the top of this functon
+  // until all workitems for this wallet before it (to the left of it) are done
+  //  the cpu worker loop generator will have to ensure the order of this
+  // currently as a sideeffect of the work scheduling function on fetch result aka blocks buffer changed,
+  // this is already implicitly handled
+  return res as ProcessScanResult;
+}
 export type CoordinatorEvent =
   | { type: "blocks_buffer_changed" }
   | { type: "connection_status"; status: any }
