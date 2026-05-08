@@ -41,12 +41,14 @@ export type ScanSettings = {
   node_url: string;
   start_height: number | null;
   merchant_confirmations?: number | null;
+  cpu_worker_count?: number;
 };
 export type ScanSettingsOpened = {
   wallets: (ScanSettingOpened | undefined)[]; // ts should treat arrays like this by default. (value|undefined)[]
   node_url: string;
   start_height: number | null;
   merchant_confirmations?: number | null;
+  cpu_worker_count?: number;
 };
 /**
  * Writes scan settings to the default or specified storage file in json.

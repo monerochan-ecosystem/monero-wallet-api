@@ -1,6 +1,6 @@
 import { LOCAL_NODE_DEFAULT_URL } from "../node-interaction/nodeUrl";
 import { type CacheChangedCallbackParameters } from "./scanresult/scanCache";
-import { readNodeUrlFromScanSettings } from "./scanSettings";
+import { openScanSettingsFile } from "./scanSettings";
 import { workerMainCode } from "./worker-entrypoints/worker";
 
 const CPU_POOL_SIZE = 4;
@@ -18,19 +18,24 @@ export async function createWebworker(
   handle_error?: (error: unknown) => void,
 ): Promise<WorkerSet | undefined> {
   try {
-    const node_url =
-      (await readNodeUrlFromScanSettings(scan_settings_path)) ||
-      LOCAL_NODE_DEFAULT_URL;
+    const scanSettings = await openScanSettingsFile(scan_settings_path);
+
+    const node_url = scanSettings?.node_url || LOCAL_NODE_DEFAULT_URL;
+    const cpu_worker_count =
+      typeof scanSettings?.cpu_worker_count !== "undefined"
+        ? scanSettings?.cpu_worker_count
+        : CPU_POOL_SIZE;
 
     // spawn CPU workers
     const cpuWorkers: Worker[] = [];
     const cpuPorts: MessagePort[] = [];
-    for (let i = 0; i < CPU_POOL_SIZE; i++) {
+    for (let i = 0; i < cpu_worker_count; i++) {
       const channel = new MessageChannel();
       const cpuWorker = await startWebworkerReady();
-      cpuWorker.postMessage({ type: "setup", role: "cpubound" }, [
-        channel.port1,
-      ]);
+      cpuWorker.postMessage(
+        { type: "setup", role: "cpubound", cpu_worker_id: i },
+        [channel.port1],
+      );
       cpuWorker.onerror = (e) => {
         if (handle_error)
           handle_error(

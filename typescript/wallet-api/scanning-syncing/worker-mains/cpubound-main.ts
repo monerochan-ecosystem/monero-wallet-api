@@ -109,9 +109,6 @@ export async function handleCpuboundScan(
     }
     await sleep(10); // make sure the loop is not tight
   }
-  // when blocks a small on regtest, we get a race withou this + the sleep in scheduleWorkOnCpuPorts
-  // TODO: try and see if ready ping pong can replace this
-  //await sleep(700);
 
   console.log(
     "[cpubound] scan done " +
