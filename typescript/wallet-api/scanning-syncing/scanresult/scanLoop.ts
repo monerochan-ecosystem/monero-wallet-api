@@ -40,7 +40,10 @@ export function makeWorkItem(
   }
   return {
     walletConfig,
-    batch,
+    batch: {
+      ...batch,
+      data: new Uint8Array(batch.data),
+    },
     work_uuid: crypto.randomUUID(),
     from: from ?? 0, // default is to start from the batch beginning
     to: to ?? batch.get_blocks_result_meta.block_infos.length - 1, // default is to go to the batch end
