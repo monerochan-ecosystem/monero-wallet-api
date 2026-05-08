@@ -3,9 +3,10 @@ import { mkdir, rm } from "node:fs/promises";
 import {
   writeScanSettings,
   openWallets,
+  NodeUrl,
   type ManyScanCachesOpened,
-} from "../dist/api";
-import { type Keypair } from "../wallet-api/keypairs-seeds/keypairs";
+} from "../../../dist/api";
+import { type Keypair } from "../../../wallet-api/keypairs-seeds/keypairs";
 
 const MONERONODE_DIR = "tests/moneronode";
 const TEST_DATA_DIR = "test-data/tx_sending";
@@ -223,7 +224,6 @@ test(
       if (!cache) throw new Error("no cache");
 
       // get the node url from wallet
-      const { NodeUrl } = await import("../dist/api");
 
       const node = await NodeUrl.create(NODE_URL);
       const distribution = await node.getOutputDistribution();

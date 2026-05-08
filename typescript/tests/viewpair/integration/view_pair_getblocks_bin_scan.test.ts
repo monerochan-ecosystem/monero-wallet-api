@@ -1,11 +1,11 @@
 import { test, beforeAll } from "bun:test";
-import { ViewPair } from "../wallet-api/api";
+import { ViewPair } from "../../../wallet-api/api";
 import {
   makeTestKeyPair,
   type Keypair,
-} from "../wallet-api/keypairs-seeds/keypairs";
+} from "../../../wallet-api/keypairs-seeds/keypairs";
 import { mkdir, rm } from "node:fs/promises";
-import type { GetBlocksResultMeta } from "../wallet-api/node-interaction/binaryEndpoints";
+import type { GetBlocksResultMeta } from "../../../wallet-api/node-interaction/binaryEndpoints";
 
 const TEST_DATA_DIR = "test-data/view_pair_getblocks_bin_scan";
 
@@ -87,7 +87,13 @@ test(
     const scanResults = [];
     for (let i = 0; i < meta.block_infos.length; i++) {
       const result = await viewPair.getBlocksBinScanOneBlock(i);
-      if ("error" in result) throw new Error("error scanning block " + i + ": " + (result as { error: string }).error);
+      if ("error" in result)
+        throw new Error(
+          "error scanning block " +
+            i +
+            ": " +
+            (result as { error: string }).error,
+        );
       scanResults.push({
         block_index: i,
         block_height: meta.block_infos[i].block_height,

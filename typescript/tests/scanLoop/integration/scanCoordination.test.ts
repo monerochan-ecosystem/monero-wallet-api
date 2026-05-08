@@ -117,7 +117,7 @@ test("a: two wallets, no prior scan, anchor_range undefined", async () => {
   const w = await findWorkToBeDone(`${dir}/ScanSettings.json`, `${dir}/`);
   expect(w).not.toBe(false);
   if (!w) return;
-  expect(w.wallet_caches.length).toBe(2);
+  expect(w.wallet_configs.length).toBe(2);
   expect(w.anchor_range).toBeUndefined();
   expect(w.start_height).toBeGreaterThan(0);
   console.log(
@@ -142,7 +142,7 @@ test("b: single wallet with generator pipeline", async () => {
   let w = await findWorkToBeDone(`${dir}/ScanSettings.json`, `${dir}/`);
   expect(w).not.toBe(false);
   if (!w) return;
-  expect(w.wallet_caches.length).toBe(1);
+  expect(w.wallet_configs.length).toBe(1);
   expect(w.anchor_range).toBeUndefined();
   console.log(
     `[b] first call: anchor ${w.anchor_range?.start}-${w.anchor_range?.end}, start ${w.start_height}`,
