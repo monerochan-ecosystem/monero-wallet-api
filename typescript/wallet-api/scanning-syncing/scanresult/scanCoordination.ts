@@ -771,18 +771,15 @@ export async function* coordinatorMainMultithreaded(
     logBufStatus(blocksBuffer, workBuffer, freePorts, "after_winner");
 
     for (const wallet of work_to_be_done.wallet_configs) {
-      let first_for_wallet: WorkItem | undefined;
-      while (true) {
-        first_for_wallet = workBuffer.find(
-          (x) =>
-            x.walletConfig.primary_address === wallet.primary_address &&
-            x.status !== "process_result_done",
-        );
-        if (typeof first_for_wallet === "undefined") break;
-        if (first_for_wallet.status !== "scanwork_done") break;
+      const workitems_for_wallet = workBuffer.filter(
+        (x) => x.walletConfig.primary_address === wallet.primary_address,
+      );
+      for (const to_be_processed of workitems_for_wallet) {
+        if (to_be_processed.status === "process_result_done") continue;
+        if (to_be_processed.status !== "scanwork_done") break;
 
         const res = await processWorkItem(
-          first_for_wallet,
+          to_be_processed,
           workBuffer,
           blocksBuffer,
           getPathPrefix(scanSettingsPath, pathPrefix),
@@ -794,8 +791,8 @@ export async function* coordinatorMainMultithreaded(
           address: wallet.primary_address,
           result: {
             type: "Ready",
-            work_uuid: first_for_wallet.work_uuid,
-            result: first_for_wallet.result,
+            work_uuid: to_be_processed.work_uuid,
+            result: to_be_processed.result,
           },
           newCache: wallet.cache,
           changed_outputs: res.changed_outputs,
