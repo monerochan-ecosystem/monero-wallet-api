@@ -813,76 +813,73 @@ export async function scheduleWorkOnCpuPorts(
   ports: PortStatus[],
   work_buffer: WorkItem[],
 ) {
-  for (const port_status of ports) {
-    if (port_status.promise === null) {
-      const item = work_buffer.find((x) => x.status === "fresh");
-      if (!item) return;
-      let resolve_port: (value: ScanLoopYield) => void;
-      let resolve_workstart: () => void;
-      const workstart_promsie = new Promise<void>((resolve) => {
-        resolve_workstart = resolve;
-      });
-      const onmessage = (event: MessageEvent) => {
-        const msg = event.data as
-          | ScanLoopYield
-          | { type: "WORKSTART"; work_uuid: string };
-        // handle the result here:
-        console.log("[scheduleWorkOnCpuPorts] onmessage result", msg);
-        if (msg.work_uuid !== item.work_uuid) {
-          console.log(
-            "[scheduleWorkOnCpuPorts] wrong work_uuid in msg msg.work_uuid=",
-            msg.work_uuid,
-            "item.work_uuid=",
-            item.work_uuid,
-          );
-          throw new Error("[scheduleWorkOnCpuPorts] wrong work_uuid in msg");
-        }
-        if (msg.type === "WORKSTART") {
-          resolve_workstart();
-          return;
-        }
-        item.result = msg.result;
-        item.status = "scanwork_done";
-        port_status.promise = null;
-        resolve_port(msg);
-      };
-      port_status.port.onmessage = onmessage;
-      item.status = "scanwork_in_progress";
-      console.log(
-        "[scheduleWorkOnCpuPorts] scheduling work item",
-        item.work_uuid,
-      );
-      port_status.promise = new Promise<ScanLoopYield>((resolve) => {
-        resolve_port = resolve;
-      });
-      const strippedItem = {
-        ...item,
-        walletConfig: {
-          primary_address: item.walletConfig.primary_address,
-          secret_view_key: item.walletConfig.secret_view_key,
-          //secret_spend_key: item.walletConfig.secret_spend_key, only needed for processResult to make ownkeyimages
-          subaddress_index: item.walletConfig.subaddress_index,
-        },
-      };
-      let workstart_promise: Promise<void> = workstart_promsie;
-      for (let attempt = 1; ; attempt++) {
-        sendToCpuWorker(port_status.port, strippedItem as ScanLoopInput);
-        try {
-          await Promise.race([
-            workstart_promise,
-            sleep(1000).then(() => Promise.reject(new Error("timeout"))),
-          ]);
-          break;
-        } catch {
-          console.log(
-            "[scheduleWorkOnCpuPorts] resend attempt",
-            attempt,
-            item.work_uuid,
-          );
-          workstart_promise = new Promise<void>((resolve) => {
-            resolve_workstart = resolve;
-          });
-        }
+  const fresh_work = work_buffer.filter((x) => x.status === "fresh");
+  const empty_ports = ports.filter((x) => x.promise === null);
+  let fresh_work_index = 0;
+  for (const port_status of empty_ports) {
+    const item = fresh_work[fresh_work_index];
+    if (!item) return;
+    let resolve_port: (value: ScanLoopYield) => void;
+    let resolve_workstart: () => void;
+    const workstart_promise = new Promise<void>((resolve) => {
+      resolve_workstart = resolve;
+    });
+    const onmessage = (event: MessageEvent) => {
+      const msg = event.data as
+        | ScanLoopYield
+        | { type: "WORKSTART"; work_uuid: string };
+      // handle the result here:
+      console.log("[scheduleWorkOnCpuPorts] onmessage result", msg);
+      if (msg.work_uuid !== item.work_uuid) {
+        console.log(
+          "[scheduleWorkOnCpuPorts] wrong work_uuid in msg msg.work_uuid=",
+          msg.work_uuid,
+          "item.work_uuid=",
+          item.work_uuid,
+        );
+        throw new Error("[scheduleWorkOnCpuPorts] wrong work_uuid in msg");
+      }
+      if (msg.type === "WORKSTART") {
+        resolve_workstart();
+        return;
+      }
+      item.result = msg.result;
+      item.status = "scanwork_done";
+      port_status.promise = null;
+      resolve_port(msg);
+    };
+    port_status.port.onmessage = onmessage;
+    item.status = "scanwork_in_progress";
+    console.log(
+      "[scheduleWorkOnCpuPorts] scheduling work item",
+      item.work_uuid,
+    );
+    port_status.promise = new Promise<ScanLoopYield>((resolve) => {
+      resolve_port = resolve;
+    });
+    const strippedItem = {
+      ...item,
+      walletConfig: {
+        primary_address: item.walletConfig.primary_address,
+        secret_view_key: item.walletConfig.secret_view_key,
+        //secret_spend_key: item.walletConfig.secret_spend_key, only needed for processResult to make ownkeyimages
+        subaddress_index: item.walletConfig.subaddress_index,
+      },
+    };
+    for (let attempt = 1; ; attempt++) {
+      sendToCpuWorker(port_status.port, strippedItem as ScanLoopInput);
+      try {
+        await Promise.race([
+          workstart_promise,
+          sleep(1000).then(() => Promise.reject(new Error("timeout"))),
+        ]);
+        break;
+      } catch {
+        console.log(
+          "[scheduleWorkOnCpuPorts] resend attempt",
+          attempt,
+          item.work_uuid,
+        );
       }
     }
   }
