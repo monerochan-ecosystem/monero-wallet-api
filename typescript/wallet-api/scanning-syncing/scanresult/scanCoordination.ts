@@ -760,7 +760,7 @@ export async function* coordinatorMainMultithreaded(
         //todo pass new blocksbuffer items after simplified blocksbuffer fetch loop
         makeWorkItemsForAllWallets(
           work_to_be_done.wallet_configs,
-          blocksBuffer,
+          [result as GetBlocksBinBufferItem],
           workBuffer,
         );
         yield { type: "blocks_buffer_changed" };
