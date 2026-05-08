@@ -42,7 +42,7 @@ export async function handleConnectionStatusChanges(
   event: BlocksBufferLoopResult,
   scanSettingsPath?: string,
 ) {
-  if (event === "blocks_buffer_changed") return;
+  if ("local_uuid" in event && typeof event.local_uuid === "string") return;
   if ("status" in event) {
     await readWriteConnectionStatusFile((cs2) => {
       cs2.last_packet = event;

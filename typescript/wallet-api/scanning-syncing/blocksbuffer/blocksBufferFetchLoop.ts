@@ -26,7 +26,7 @@ export type BlocksBufferLoopResult =
   | ConnectionSatusLastPacket
   | ConnectionStatusSync
   // | ConnectionStatus
-  | "blocks_buffer_changed";
+  | GetBlocksBinBufferItem;
 // runs forever, fetching blocks from the node.
 // handles scan level reorg detection and catastrophic reorg
 export async function* blocksBufferFetchLoop(
@@ -119,19 +119,25 @@ export async function* blocksBufferFetchLoop(
             parse_result.split_height,
           );
         }
+        //WE DONT DO THIS. its an elegant little thing that causes trouble
+        // as a result we would have to track for each wallet what workitems
+        // have been processed already
+        // the logic for what has been done becomes much more complex
+        // when we dont know what exactly was added
+        // NVM got it to work with workToBeDoneForBatch to work without passing explicit blocks
         // pop blocks at/above the split height if there are any
         // (buffer may be empty on a fresh generator start)
-        if (blocks_buffer.length > 0) {
-          popBlocksBufferItemsFromSplitHeight(
-            blocks_buffer,
-            parse_result.split_height,
-          );
-        }
+        // if (blocks_buffer.length > 0) {
+        //   popBlocksBufferItemsFromSplitHeight(
+        //     blocks_buffer,
+        //     parse_result.split_height,
+        //   );
+        // }
         blocks_buffer.push(bufferItem);
-        yield "blocks_buffer_changed";
+        yield bufferItem;
       } else {
         blocks_buffer.push(bufferItem);
-        yield "blocks_buffer_changed";
+        yield bufferItem;
       }
       //TODO: only write this to disk after blocks_buffer_changed has been handled by wallets.
       //look for same comment in blocksBufferCoordination.ts

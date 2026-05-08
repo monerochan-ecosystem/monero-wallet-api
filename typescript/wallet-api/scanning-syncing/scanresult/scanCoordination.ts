@@ -9,6 +9,8 @@ import {
   type BlocksBufferIteratorResult,
   type ProcessScanResult,
   sleep,
+  type BlockInfo,
+  findTipIndex,
 } from "../../api";
 
 import {
@@ -28,6 +30,7 @@ import {
 } from "../scanSettings";
 import {
   findRange,
+  findRangeThrows,
   initScanCacheFile,
   makeCacheRangeForHeight,
   mergeRanges,
@@ -152,6 +155,64 @@ export async function findWorkToBeDone(
     scan_settings,
   };
 }
+export function workToBeDoneForBatch(
+  cache: ScanCache,
+  batch_meta_infos: BlockInfo[],
+): "skip" | { from: number } {
+  const begin_height = batch_meta_infos[0].block_height;
+  const end_height = batch_meta_infos[batch_meta_infos.length - 1].block_height;
+  console.log("[workToBeDoneForBatch]", begin_height, end_height);
+  const foundRange = findRange(cache.scanned_ranges, begin_height);
+  console.log("[workToBeDoneForBatch] foundRange", foundRange);
+  if (foundRange) {
+    const fullycovered = cache.scanned_ranges.find(
+      (r) => r.start <= begin_height && r.end >= end_height,
+    );
+    if (fullycovered) {
+      // THIS IS OLD WORK OR CAT REORG OR NORMAL REORG
+      const tip = fullycovered.block_hashes.at(0);
+      if (!tip)
+        throw new Error(
+          "[workToBeDoneForBatch] tip not found, malformed range that covers the work to be done for this batch",
+        );
+      if (findTipIndex(batch_meta_infos, tip) === "reorg_found") {
+        // THIS MIGHT BE A CAT REORG or old range, or a normal reorg
+        const candidate = fullycovered.block_hashes.at(1);
+        const anchor = fullycovered.block_hashes.at(-1);
+        if (!candidate || !anchor)
+          throw new Error(
+            "[workToBeDoneForBatch] could not find candidate or anchor, malformed range that covers the work to be done for this batch",
+          );
+        const candidateIndex = findTipIndex(batch_meta_infos, candidate);
+
+        const anchorIndex = findTipIndex(batch_meta_infos, anchor);
+        // CAT REORG or SKIP OLD RANGE
+        if (candidateIndex === "reorg_found" && anchorIndex === "reorg_found") {
+          console.log("[workToBeDoneForBatch] old range");
+          // we have to rely on the scan level cat reorg detection.
+          // no way to distinguish really old work prior to the anchors from a cat reorg at this point
+
+          return "skip"; // this could also be a cat reorg, but we can't distinguish here
+        }
+        console.log("[workToBeDoneForBatch] reorg found");
+        return { from: 0 }; // THIS IS A NORMAL REORG, redo work
+      } else {
+        return "skip"; // NORMAL CASE, found tip in fully covered range
+      }
+    } else {
+      // NORMAL CASE directly in front of tip
+      // not fully covered. normal case of scheduling directly in front of the tip
+      // tip might be in a bit, but the extra complexity is not worth the small performance difference
+      // findTip should solve this in the processWorkItem step
+      return { from: 0 }; // NORMAL case of scheduling directly in front of the tip
+    }
+  } else {
+    // NORMAL case of scheduling work ahead of the already processed ranges, with gap so we can do CPU work in parallel
+    // didnt see this range might be ahead and will be processed in order after the prioor badges are processed
+    return { from: 0 };
+  }
+}
+
 /**
  * called when the blocks buffer generator yields "blocks_buffer_changed".
  * adds new work items for blocks buffer items not yet referenced.
@@ -172,19 +233,38 @@ export function makeWorkItemsFromBlocksBuffer(
         w.walletConfig.primary_address === walletConfig.primary_address,
     );
     if (!alreadyReferenced) {
-      const begin_height =
-        batch.get_blocks_result_meta.block_infos[0].block_height;
-      const end_height =
-        batch.get_blocks_result_meta.block_infos[
-          batch.get_blocks_result_meta.block_infos.length - 1
-        ].block_height;
-      // skip batches fully covered by an existing scanned range
-      if (
-        walletConfig.cache.scanned_ranges.some(
-          (r) => r.start <= begin_height && r.end >= end_height,
-        )
-      )
+      // const begin_height =
+      //   batch.get_blocks_result_meta.block_infos[0].block_height;
+      // const end_height =
+      //   batch.get_blocks_result_meta.block_infos[
+      //     batch.get_blocks_result_meta.block_infos.length - 1
+      //   ].block_height;
+      // console.log(walletConfig.cache.scanned_ranges);
+      // console.log(begin_height);
+
+      // // skip batches fully covered by an existing scanned range
+      // if (
+      //   walletConfig.cache.scanned_ranges.some(
+      //     (r) => r.start <= begin_height && r.end >= end_height,
+      //   )
+      // ) {
+      //   throw new Error(
+      //     "skip" +
+      //       begin_height +
+      //       " end_height" +
+      //       end_height +
+      //       " " +
+      //       walletConfig.primary_address.slice(0, 6),
+      //   );
+      //   continue;
+      // }
+      const workToBeDone = workToBeDoneForBatch(
+        walletConfig.cache,
+        batch.get_blocks_result_meta.block_infos,
+      );
+      if (workToBeDone === "skip") {
         continue;
+      }
       const workItem = makeWorkItem(walletConfig, batch, from, to);
       console.log(
         `[reconcileBlocksBufferChanged] workItem: uuid=${workItem.work_uuid.slice()} to=${workItem.to} from=${workItem.from} batchbegin_height=${batch.get_blocks_result_meta.block_infos[0].block_height} batchend_height=${batch.get_blocks_result_meta.block_infos[batch.get_blocks_result_meta.block_infos.length - 1].block_height}`,
@@ -199,7 +279,7 @@ export function makeWorkItemsForAllWallets(
   workBuffer: WorkItem[],
 ) {
   for (const wc of wallet_configs) {
-    makeWorkItemsFromBlocksBuffer(blocksBuffer, workBuffer, wc, 0);
+    makeWorkItemsFromBlocksBuffer(blocksBuffer, workBuffer, wc);
   }
 }
 
@@ -269,7 +349,7 @@ export async function handleBlocksYield(
 ): Promise<{
   isBlocksBufferChanged: boolean;
 }> {
-  if (value === "blocks_buffer_changed") {
+  if ("local_uuid" in value && typeof value.local_uuid === "string") {
     return { isBlocksBufferChanged: true };
   }
   await handleConnectionStatusChanges(value, scanSettingsPath);
@@ -676,6 +756,7 @@ export async function* coordinatorMainMultithreaded(
         scanSettingsPath,
       );
       if (isBlocksBufferChanged) {
+        //todo pass new blocksbuffer items after simplified blocksbuffer fetch loop
         makeWorkItemsForAllWallets(
           work_to_be_done.wallet_configs,
           blocksBuffer,
