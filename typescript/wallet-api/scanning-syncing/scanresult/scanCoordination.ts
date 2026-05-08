@@ -10,7 +10,7 @@ import {
 } from "../../api";
 
 import {
-  handleScanLoopResult,
+  markWorkItemAsDone,
   type ScanLoopInput,
   type ScanLoopYield,
 } from "./scanLoop";
@@ -128,9 +128,7 @@ export async function findWorkToBeDone(
       // only add the range to wallets that don't already have one
       if (!findRange(wallet_cache.scanned_ranges, total_start_height)) {
       wallet_cache.scanned_ranges.push(range_at_start);
-        wallet_cache.scanned_ranges = mergeRanges(
-          wallet_cache.scanned_ranges,
-        );
+        wallet_cache.scanned_ranges = mergeRanges(wallet_cache.scanned_ranges);
       }
     }
   }
@@ -275,14 +273,14 @@ export async function handleBlocksYield(
  */
 export async function processScanResultForWorkItem(
   value: ScanLoopYield,
-  workBuffer: import("./scanLoop").WorkItem[],
+  workBuffer: WorkItem[],
   blocksBuffer: GetBlocksBinBufferItem[],
   pathPrefix: string,
   secret_spend_key?: string,
 ): Promise<void> {
   if (value.type !== "Ready" || !value.result || !value.work_uuid) return;
 
-  const item = await handleScanLoopResult(value, workBuffer);
+  const item = await markWorkItemAsDone(value, workBuffer);
   //console.log(`[processScanResultForWorkItem] item=${JSON.stringify(item)}`);
 
   if (!item || item.status !== "scanwork_done")

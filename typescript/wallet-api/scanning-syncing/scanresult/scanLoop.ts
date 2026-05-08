@@ -147,10 +147,10 @@ export async function* scanLoop(
   }
 }
 
-//theoretically handleScanLoopResult could be done in the generator as WorkItem is passed in by reference
+//theoretically markWorkItemAsDone could be done in the generator as WorkItem is passed in by reference
 // but: eventually this has to be done accross CPU worker boundaries
 // so we act on the yielded scan result
-export async function handleScanLoopResult(
+export async function markWorkItemAsDone(
   loop_event: ScanLoopYield,
   work_buffer: WorkItem[],
 ): Promise<WorkItem | undefined> {
