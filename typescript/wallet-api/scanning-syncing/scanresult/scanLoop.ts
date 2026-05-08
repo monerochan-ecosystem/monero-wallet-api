@@ -42,7 +42,7 @@ export function makeWorkItem(
     walletConfig,
     batch: {
       ...batch,
-      data: new Uint8Array(batch.data),
+      data: batch.data.slice(),
     },
     work_uuid: crypto.randomUUID(),
     from: from ?? 0, // default is to start from the batch beginning

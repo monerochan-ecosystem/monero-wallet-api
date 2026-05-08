@@ -603,17 +603,13 @@ export async function setupCoordinator(
 }
 export type PortStatus = {
   port: MessagePort;
-  promise?: Promise<ScanLoopYield>;
+  promise: Promise<ScanLoopYield> | null;
 };
 export type BlocksBufferRacer = {
   src: "blocks";
   value: BlocksBufferIteratorResult;
 };
-export type ScanLoopRacer = {
-  src: "scan";
-  value: ScanLoopYield;
-  port_status: PortStatus;
-};
+export type ScanLoopRacer = ScanLoopYield;
 export type Racers = BlocksBufferRacer | ScanLoopRacer;
 /**
  * coordinator main (multithreaded): dispatches scan work to CPU workers
@@ -649,6 +645,7 @@ export async function* coordinatorMainMultithreaded(
   for (const port of cpuPorts) {
     const ps: PortStatus = {
       port,
+      promise: null,
     };
 
     freePorts.push(ps);
@@ -660,13 +657,8 @@ export async function* coordinatorMainMultithreaded(
     await scheduleWorkOnCpuPorts(freePorts, workBuffer);
     const scan_promises = freePorts
       .filter((ps) => ps.promise)
-      .map((ps) =>
-        ps.promise!.then((v) => ({
-          src: "scan" as const,
-          value: v,
-          port_status: ps,
-        })),
-      );
+      .map((ps) => ps.promise!);
+
     const races: Promise<Racers>[] = [
       ...scan_promises,
       blocksPromise.then((v) => ({
@@ -677,7 +669,7 @@ export async function* coordinatorMainMultithreaded(
     console.log("[coordinatorMainMultithreaded] races", races);
     const winner = await Promise.race(races);
     //console.log("[coordinatorMainMultithreaded] cpu ports status", freePorts);
-    if (winner.src === "blocks") {
+    if ("src" in winner && winner.src === "blocks") {
       const result = winner.value.value;
       const { isBlocksBufferChanged } = await handleBlocksYield(
         result,
@@ -697,23 +689,6 @@ export async function* coordinatorMainMultithreaded(
     }
     logBufStatus(blocksBuffer, workBuffer, freePorts, "after_winner");
 
-    if (winner.src === "scan") {
-      // console.log("[coordinatorMainMultithreaded] winnerscan ", winner);
-      if (winner.value.type === "Ready") {
-        console.log("[coordinatorMainMultithreaded] winner", winner);
-
-        const inWorkBuffer = workBuffer.find(
-          (item) => item.work_uuid === winner.value.work_uuid,
-        );
-        if (!inWorkBuffer)
-          throw new Error(
-            "[coordinatorMainMultithreaded] winning work item not found in work buffer",
-          );
-        inWorkBuffer.result = structuredClone(winner.value.result);
-        inWorkBuffer.status = "scanwork_done";
-        winner.port_status.promise = undefined;
-      }
-    }
     for (const wallet of work_to_be_done.wallet_configs) {
       let first_for_wallet: WorkItem | undefined;
       while (true) {
@@ -753,12 +728,36 @@ export async function scheduleWorkOnCpuPorts(
   work_buffer: WorkItem[],
 ) {
   for (const port_status of ports) {
-    if (!port_status.promise) {
+    if (port_status.promise === null) {
       const item = work_buffer.find((x) => x.status === "fresh");
       if (!item) return;
       let resolve_port: (value: ScanLoopYield) => void;
+      let resolve_workstart: () => void;
+      const workstart_promsie = new Promise<void>((resolve) => {
+        resolve_workstart = resolve;
+      });
       const onmessage = (event: MessageEvent) => {
-        const msg = event.data as ScanLoopYield;
+        const msg = event.data as
+          | ScanLoopYield
+          | { type: "WORKSTART"; work_uuid: string };
+        // handle the result here:
+        console.log("[scheduleWorkOnCpuPorts] onmessage result", msg);
+        if (msg.work_uuid !== item.work_uuid) {
+          console.log(
+            "[scheduleWorkOnCpuPorts] wrong work_uuid in msg msg.work_uuid=",
+            msg.work_uuid,
+            "item.work_uuid=",
+            item.work_uuid,
+          );
+          throw new Error("[scheduleWorkOnCpuPorts] wrong work_uuid in msg");
+        }
+        if (msg.type === "WORKSTART") {
+          resolve_workstart();
+          return;
+        }
+        item.result = msg.result;
+        item.status = "scanwork_done";
+        port_status.promise = null;
         resolve_port(msg);
       };
       port_status.port.onmessage = onmessage;
@@ -770,8 +769,35 @@ export async function scheduleWorkOnCpuPorts(
       port_status.promise = new Promise<ScanLoopYield>((resolve) => {
         resolve_port = resolve;
       });
-      await sleep(700);
-      sendToCpuWorker(port_status.port, item);
+      const strippedItem = {
+        ...item,
+        walletConfig: {
+          primary_address: item.walletConfig.primary_address,
+          secret_view_key: item.walletConfig.secret_view_key,
+          //secret_spend_key: item.walletConfig.secret_spend_key, only needed for processResult to make ownkeyimages
+          subaddress_index: item.walletConfig.subaddress_index,
+        },
+      };
+      let workstart_promise: Promise<void> = workstart_promsie;
+      for (let attempt = 1; ; attempt++) {
+        sendToCpuWorker(port_status.port, strippedItem as ScanLoopInput);
+        try {
+          await Promise.race([
+            workstart_promise,
+            sleep(1000).then(() => Promise.reject(new Error("timeout"))),
+          ]);
+          break;
+        } catch {
+          console.log(
+            "[scheduleWorkOnCpuPorts] resend attempt",
+            attempt,
+            item.work_uuid,
+          );
+          workstart_promise = new Promise<void>((resolve) => {
+            resolve_workstart = resolve;
+          });
+        }
+      }
     }
   }
 }

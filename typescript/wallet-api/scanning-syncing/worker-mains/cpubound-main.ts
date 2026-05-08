@@ -9,16 +9,16 @@ let callcounter = 0;
 export async function handleCpuboundScan(
   msg: ScanLoopInput,
   port?: MessagePort,
-) {
+): Promise<ScanLoopYield> {
   callcounter++;
   console.log("[cpubound] callcounter=" + callcounter);
   if (!msg) {
     console.log("[cpubound] no content msg! ( ScanLoopInput = undefined )");
-    return;
+    throw new Error("[cpubound] no content msg! ( ScanLoopInput = undefined )");
   }
   if (msg === "cancel") {
     console.log("[cpubound] cancel msg! ( ScanLoopInput = cancel )");
-    return;
+    throw new Error("[cpubound] no content msg! ( ScanLoopInput = undefined )");
   }
   console.log(
     "[cpubound] got scan msg, walletConfig=" +
@@ -28,7 +28,7 @@ export async function handleCpuboundScan(
   const item = msg;
   if (!port) {
     console.log("[cpubound] no port!");
-    return;
+    throw new Error("[cpubound] no port");
   }
 
   console.log(
@@ -111,16 +111,27 @@ export async function handleCpuboundScan(
   }
   // when blocks a small on regtest, we get a race withou this + the sleep in scheduleWorkOnCpuPorts
   // TODO: try and see if ready ping pong can replace this
-  await sleep(700);
-  sendFromCpuWorker(port, {
+  //await sleep(700);
+
+  console.log(
+    "[cpubound] scan done " +
+      blockCount +
+      " " +
+      walletConfig.primary_address.slice(0, 6),
+    "@",
+    heighfrom,
+    "-",
+    heightto,
+  );
+  return {
     type: "Ready",
     work_uuid: item.work_uuid,
     result: scanResult,
-  });
+  };
 }
 export function handleCpuboundScanTry(msg: ScanLoopInput, port?: MessagePort) {
   try {
-    handleCpuboundScan(msg, port);
+    return handleCpuboundScan(msg, port);
   } catch (err) {
     console.error("[cpubound] error", err);
     throw err;
