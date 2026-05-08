@@ -451,6 +451,7 @@ export async function processWorkItem(
     // console.log("[processWorkItem] res=", res);
   } catch (error) {
     console.error("[processWorkItem] error=", error);
+    throw error;
   }
 
   await writeCacheToFile(cache, pathPrefix);
@@ -774,10 +775,17 @@ export async function* coordinatorMainMultithreaded(
       const workitems_for_wallet = workBuffer.filter(
         (x) => x.walletConfig.primary_address === wallet.primary_address,
       );
-      for (const to_be_processed of workitems_for_wallet) {
-        if (to_be_processed.status === "process_result_done") continue;
-        if (to_be_processed.status !== "scanwork_done") break;
-
+      const processable: WorkItem[] = [];
+      for (const w of workitems_for_wallet) {
+        if (w.status === "scanwork_done") {
+          processable.push(w);
+        } else if (w.status === "process_result_done") {
+          continue;
+        } else {
+          break;
+        }
+      }
+      for (const to_be_processed of processable) {
         const res = await processWorkItem(
           to_be_processed,
           workBuffer,
