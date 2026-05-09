@@ -167,7 +167,7 @@ export function workToBeDoneForBatch(
   console.log("[workToBeDoneForBatch] foundRange", foundRange);
   if (foundRange) {
     const fullycovered = cache.scanned_ranges.find(
-      (r) => r.start <= begin_height && r.end >= end_height,
+      (r) => r.start <= begin_height && r.end > end_height,
     );
 
     if (fullycovered) {
@@ -177,7 +177,8 @@ export function workToBeDoneForBatch(
         throw new Error(
           "[workToBeDoneForBatch] tip not found, malformed range that covers the work to be done for this batch",
         );
-      if (findTipIndex(batch_meta_infos, tip) === "reorg_found") {
+      const tipIndex = findTipIndex(batch_meta_infos, tip);
+      if (tipIndex === "reorg_found") {
         // THIS MIGHT BE A CAT REORG or old range, or a normal reorg
         const candidate = fullycovered.block_hashes.at(1);
         const anchor = fullycovered.block_hashes.at(-1);
@@ -197,6 +198,10 @@ export function workToBeDoneForBatch(
           return "skip"; // this could also be a cat reorg, but we can't distinguish here
         }
         console.log("[workToBeDoneForBatch] reorg found");
+        // if this range end is prior to the block height of the tip,
+        //  if(fullycovered.end > )
+        return "skip";
+        // this might or might not be a reorg,
         return { from: 0 }; // THIS IS A NORMAL REORG, redo work
       } else {
         return "skip"; // NORMAL CASE, found tip in fully covered range
@@ -220,7 +225,7 @@ export function workToBeDoneForBatch(
     }
   } else {
     // NORMAL case of scheduling work ahead of the already processed ranges, with gap so we can do CPU work in parallel
-    // didnt see this range might be ahead and will be processed in order after the prioor badges are processed
+    // didnt see this range might be ahead and will be processed in order after the prior batches are processed
     return { from: 0 };
   }
 }
