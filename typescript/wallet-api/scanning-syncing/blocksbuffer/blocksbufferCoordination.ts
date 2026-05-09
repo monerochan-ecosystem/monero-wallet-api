@@ -8,6 +8,7 @@ import {
   readOrInitConnectionStatus,
   type CacheRange,
 } from "../../api";
+import { log } from "../../io/logging";
 
 export type SetupBlocksBufferGeneratorParams = {
   nodeUrl: string;
@@ -48,7 +49,7 @@ export async function handleConnectionStatusChanges(
       cs2.last_packet = event;
     }, scanSettingsPath);
     if (event.status === "catastrophic_reorg") {
-      console.log("[blocksbufferCoordinator] catastrophic reorg, stopping");
+      log("handleConnectionStatusChanges", "catastrophic reorg, stopping");
       throw new CatastrophicReorgError(
         "[blocksbufferCoordinator] catastrophic reorg, stopping",
       );

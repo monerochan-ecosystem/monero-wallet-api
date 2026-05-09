@@ -14,6 +14,7 @@ import {
   type ConnectionStatus,
   type ConnectionStatusSync,
 } from "../connectionStatus";
+import { log } from "../../io/logging";
 export type GetBlocksBinBufferItem = {
   local_uuid: string;
   get_blocks_result_meta: GetBlocksResultMeta;
@@ -40,7 +41,7 @@ export async function* blocksBufferFetchLoop(
 ): AsyncGenerator<BlocksBufferLoopResult> {
   connection_status = structuredClone(connection_status);
   const nodeUrl = await NodeUrl.create(node_url);
-  console.log("[blocksBufferFetchLoop] NodeUrl created, fetching info...");
+  log("blocksBufferFetchLoop", "NodeUrl created, fetching info...");
 
   start_height = await reduceStartHeightToTip(start_height, nodeUrl.node_url);
   // initialise ranges on first call
@@ -76,14 +77,13 @@ export async function* blocksBufferFetchLoop(
       await sleep(5000);
       continue;
     }
-    console.log("[blocksBufferFetchLoop] fetching from current_range...");
+    log("blocksBufferFetchLoop", "fetching from current_range...");
     const get_blocks_bin = await doRPCrequest(nodeUrl, current_range, stopSync);
 
     const result_meta = await nodeUrl.loadGetBlocksBinResponse(get_blocks_bin);
-    console.log(
-      "[blocksBufferFetchLoop] response: " +
-        result_meta.block_infos.length +
-        " blocks",
+    log(
+      "blocksBufferFetchLoop",
+      "response: " + result_meta.block_infos.length + " blocks",
     );
     connection_status.last_packet = {
       status: "OK",
@@ -478,11 +478,11 @@ export async function reduceStartHeightToTip(
   if (start_height > getInfo.height - 1) {
     const oldStartHeight = start_height;
     start_height = getInfo.height - 1;
-    console.log(
-      "[reduceStartHeightToTip] start height was larger than daemon height, setting start_height=" +
+    log("reduceStartHeightToTip", [
+      "start height was larger than daemon height, setting start_height=" +
         start_height,
       " oldStartHeight=" + oldStartHeight,
-    );
+    ]);
   }
 
   return start_height;

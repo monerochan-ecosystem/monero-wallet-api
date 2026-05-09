@@ -1,6 +1,7 @@
 import { get_info } from "../api";
 import { atomicWrite } from "../io/atomicWrite";
 import { refreshEnvIndexedDB } from "../io/indexedDB";
+import type { LogSetting, PossibleLogs } from "../io/logging";
 import { LOCAL_NODE_DEFAULT_URL } from "../node-interaction/nodeUrl";
 
 export const SCAN_SETTINGS_STORE_NAME_DEFAULT = "ScanSettings.json";
@@ -42,6 +43,9 @@ export type ScanSettings = {
   start_height: number | null;
   merchant_confirmations?: number | null;
   cpu_worker_count?: number;
+  logs?: LogSetting;
+  logs_include?: PossibleLogs[];
+  logs_exclude?: PossibleLogs[];
 };
 export type ScanSettingsOpened = {
   wallets: (ScanSettingOpened | undefined)[]; // ts should treat arrays like this by default. (value|undefined)[]
@@ -49,6 +53,9 @@ export type ScanSettingsOpened = {
   start_height: number | null;
   merchant_confirmations?: number | null;
   cpu_worker_count?: number;
+  logs?: LogSetting;
+  logs_include?: PossibleLogs[];
+  logs_exclude?: PossibleLogs[];
 };
 /**
  * Writes scan settings to the default or specified storage file in json.

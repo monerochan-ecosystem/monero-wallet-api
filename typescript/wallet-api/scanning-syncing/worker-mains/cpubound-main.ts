@@ -1,4 +1,5 @@
 import { sleep, ViewPair, type ScanResult } from "../../api";
+import { log } from "../../io/logging";
 import { type ScanLoopInput, type ScanLoopYield } from "../scanresult/scanLoop";
 
 /**
@@ -11,28 +12,30 @@ export async function handleCpuboundScan(
   port?: MessagePort,
 ): Promise<ScanLoopYield> {
   callcounter++;
-  console.log("[cpubound] callcounter=" + callcounter);
+  log("handleCpuboundScan", "callcounter=" + callcounter);
   if (!msg) {
-    console.log("[cpubound] no content msg! ( ScanLoopInput = undefined )");
+    log("handleCpuboundScan", "no content msg! ( ScanLoopInput = undefined )");
     throw new Error("[cpubound] no content msg! ( ScanLoopInput = undefined )");
   }
   if (msg === "cancel") {
-    console.log("[cpubound] cancel msg! ( ScanLoopInput = cancel )");
+    log("handleCpuboundScan", "cancel msg! ( ScanLoopInput = cancel )");
     throw new Error("[cpubound] no content msg! ( ScanLoopInput = undefined )");
   }
-  console.log(
-    "[cpubound] got scan msg, walletConfig=" +
+  log(
+    "handleCpuboundScan",
+    "got scan msg, walletConfig=" +
       msg.walletConfig?.primary_address?.slice(0, 6),
   );
   const walletConfig = msg.walletConfig;
   const item = msg;
   if (!port) {
-    console.log("[cpubound] no port!");
+    log("handleCpuboundScan", "no port!");
     throw new Error("[cpubound] no port");
   }
 
-  console.log(
-    "[cpubound] primed, feeding workItem uuid=" +
+  log(
+    "handleCpuboundScan",
+    "primed, feeding workItem uuid=" +
       (item && typeof item === "object"
         ? item.work_uuid?.slice(0, 8)
         : "cancel"),
@@ -96,8 +99,8 @@ export async function handleCpuboundScan(
     // the reconciliation workitembuffer -> blocksbuffer is done on every workitembuffer marked done at the end of the workbuffer (left end)
     blockCount++;
     if (blockCount % 10 === 0) {
-      console.log(
-        "[cpubound] scanned " +
+      log("handleCpuboundScan", [
+        "scanned " +
           blockCount +
           " " +
           walletConfig.primary_address.slice(0, 6),
@@ -105,21 +108,18 @@ export async function handleCpuboundScan(
         heighfrom,
         "-",
         heightto,
-      );
+      ]);
     }
     await sleep(10); // make sure the loop is not tight
   }
 
-  console.log(
-    "[cpubound] scan done " +
-      blockCount +
-      " " +
-      walletConfig.primary_address.slice(0, 6),
+  log("handleCpuboundScan", [
+    "scan done " + blockCount + " " + walletConfig.primary_address.slice(0, 6),
     "@",
     heighfrom,
     "-",
     heightto,
-  );
+  ]);
   return {
     type: "Ready",
     work_uuid: item.work_uuid,

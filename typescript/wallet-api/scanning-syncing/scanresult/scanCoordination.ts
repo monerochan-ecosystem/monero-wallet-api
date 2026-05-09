@@ -38,6 +38,7 @@ import {
   type ScanCache,
 } from "./scanCache";
 import { sendToCpuWorker } from "../worker-mains/cpubound-main";
+import { log } from "../../io/logging";
 export type WalletConfig = {
   primary_address: string;
   secret_view_key: string;
@@ -133,7 +134,7 @@ export async function findWorkToBeDone(
     for (const wallet_cache of wallet_caches) {
       // only add the range to wallets that don't already have one
       if (!findRange(wallet_cache.scanned_ranges, total_start_height)) {
-        // console.log("inserting range_at_start", range_at_start);
+        log("findWorkToBeDone", "inserting range_at_start");
         wallet_cache.scanned_ranges.push(range_at_start);
         wallet_cache.scanned_ranges = mergeRanges(wallet_cache.scanned_ranges);
       }
@@ -162,9 +163,9 @@ export function workToBeDoneForBatch(
 ): "skip" | { from: number } {
   const begin_height = batch_meta_infos[0].block_height;
   const end_height = batch_meta_infos[batch_meta_infos.length - 1].block_height;
-  console.log("[workToBeDoneForBatch]", begin_height, end_height);
+  log("workToBeDoneForBatch", [begin_height, end_height]);
   const foundRange = findRange(cache.scanned_ranges, begin_height);
-  console.log("[workToBeDoneForBatch] foundRange", foundRange);
+  log("workToBeDoneForBatch", ["foundRange", foundRange]);
   if (foundRange) {
     const fullycovered = cache.scanned_ranges.find(
       (r) => r.start <= begin_height && r.end > end_height,
@@ -181,13 +182,13 @@ export function workToBeDoneForBatch(
         );
       const tipindex = findTipIndex(batch_meta_infos, tip);
       if (tipindex === "reorg_found") {
-        console.log("[workToBeDoneForBatch] reorg found");
+        log("workToBeDoneForBatch", "reorg found");
 
         return { from: 0 };
       } else if (tipindex === "empty_blocks_array") {
         return "skip";
       }
-      console.log("[workToBeDoneForBatch] tipindex", tipindex);
+      log("workToBeDoneForBatch", ["tipindex", tipindex]);
       return { from: tipindex }; // NORMAL case of scheduling directly in front of the tip
     }
   } else {
@@ -217,31 +218,6 @@ export function makeWorkItemsFromBlocksBuffer(
         w.walletConfig.primary_address === walletConfig.primary_address,
     );
     if (!alreadyReferenced) {
-      // const begin_height =
-      //   batch.get_blocks_result_meta.block_infos[0].block_height;
-      // const end_height =
-      //   batch.get_blocks_result_meta.block_infos[
-      //     batch.get_blocks_result_meta.block_infos.length - 1
-      //   ].block_height;
-      // console.log(walletConfig.cache.scanned_ranges);
-      // console.log(begin_height);
-
-      // // skip batches fully covered by an existing scanned range
-      // if (
-      //   walletConfig.cache.scanned_ranges.some(
-      //     (r) => r.start <= begin_height && r.end >= end_height,
-      //   )
-      // ) {
-      //   throw new Error(
-      //     "skip" +
-      //       begin_height +
-      //       " end_height" +
-      //       end_height +
-      //       " " +
-      //       walletConfig.primary_address.slice(0, 6),
-      //   );
-      //   continue;
-      // }
       const workToBeDone = workToBeDoneForBatch(
         walletConfig.cache,
         batch.get_blocks_result_meta.block_infos,
@@ -250,9 +226,9 @@ export function makeWorkItemsFromBlocksBuffer(
         continue;
       }
       const workItem = makeWorkItem(walletConfig, batch, from, to);
-      console.log(
-        `[reconcileBlocksBufferChanged] workItem: uuid=${workItem.work_uuid.slice()} to=${workItem.to} from=${workItem.from} batchbegin_height=${batch.get_blocks_result_meta.block_infos[0].block_height} batchend_height=${batch.get_blocks_result_meta.block_infos[batch.get_blocks_result_meta.block_infos.length - 1].block_height}`,
-      );
+      log("makeWorkItemsFromBlocksBuffer", [
+        `uuid=${workItem.work_uuid.slice()} to=${workItem.to} from=${workItem.from} batchbegin_height=${batch.get_blocks_result_meta.block_infos[0].block_height} batchend_height=${batch.get_blocks_result_meta.block_infos[batch.get_blocks_result_meta.block_infos.length - 1].block_height}`,
+      ]);
       workItemBuffer.push(workItem);
     }
   }
@@ -276,9 +252,9 @@ export function reconcileWorkItemDone(
   blocksBuffer: GetBlocksBinBufferItem[],
   workItemBuffer: WorkItem[],
 ): void {
-  // console.log(
-  //   `[reconcileWorkItemDone] workItemBuffer.length=${workItemBuffer.length} , blocksBuffer.length=${blocksBuffer.length}`,
-  // );
+  log("reconcileWorkItemDone", [
+    `workItemBuffer.length=${workItemBuffer.length} , blocksBuffer.length=${blocksBuffer.length}`,
+  ]);
   while (
     workItemBuffer.length > 0 &&
     workItemBuffer[0].status === "process_result_done"
@@ -287,9 +263,9 @@ export function reconcileWorkItemDone(
     const stillReferenced = workItemBuffer.some(
       (w) => w.batch.local_uuid === removed.batch.local_uuid,
     );
-    // console.log(
-    //   `[reconcileWorkItemDone] workItem: ${removed.work_uuid.slice()} removed. stillReferenced=${stillReferenced}`,
-    // );
+    log("reconcileWorkItemDone", [
+      `workItem: ${removed.work_uuid.slice()} removed. stillReferenced=${stillReferenced}`,
+    ]);
     if (!stillReferenced) {
       const idx = blocksBuffer.findIndex(
         (b) => b.local_uuid === removed.batch.local_uuid,
@@ -354,7 +330,7 @@ export async function processScanResultForWorkItem(
   if (value.type !== "Ready" || !value.result || !value.work_uuid) return;
 
   const item = await markWorkItemAsDone(value, workBuffer);
-  //console.log(`[processScanResultForWorkItem] item=${JSON.stringify(item)}`);
+  log("processScanResultForWorkItem", `item_work_uuid=${item?.work_uuid}`);
 
   if (!item || item.status !== "scanwork_done")
     throw new Error(
@@ -363,11 +339,12 @@ export async function processScanResultForWorkItem(
     );
 
   const firstBlock = item.batch.get_blocks_result_meta.block_infos[item.from];
-  //console.log(`
-  //  [processScanResultForWorkItem] block_infos=${JSON.stringify(item.batch.get_blocks_result_meta.block_infos)} block_infos.length=${item.batch.get_blocks_result_meta.block_infos.length} firstBlock=${firstBlock} `);
-  console.log(
-    `[processScanResultForWorkItem] block_infos.length=${item.batch.get_blocks_result_meta.block_infos.length} from=${item.from} to=${item.to}`,
-  );
+  log("processScanResultForWorkItem", [
+    `block_infos.length=${item.batch.get_blocks_result_meta.block_infos.length} firstBlock=${firstBlock?.block_height} firstBlockHash=${firstBlock?.block_hash?.slice(0, 8)}`,
+  ]);
+  log("processScanResultForWorkItem", [
+    `block_infos.length=${item.batch.get_blocks_result_meta.block_infos.length} from=${item.from} to=${item.to}`,
+  ]);
   const lastBlock = item.batch.get_blocks_result_meta.block_infos[item.to];
   const cache = item.walletConfig.cache;
 
@@ -419,18 +396,17 @@ export async function processWorkItem(
   }
   const firstBlock = item.batch.get_blocks_result_meta.block_infos[item.from];
 
-  // console.log(
-  //   `[processWorkItem] block_infos.length=${item.batch.get_blocks_result_meta.block_infos.length} from=${item.from} to=${item.to}`,
-  // );
+  log("processWorkItem", [
+    `block_infos.length=${item.batch.get_blocks_result_meta.block_infos.length} from=${item.from} to=${item.to}`,
+  ]);
   const lastBlock = item.batch.get_blocks_result_meta.block_infos[item.to];
-  // console.log(
-  //   "[processWorkItem] ",
-  //   item.walletConfig.primary_address.slice(0, 6),
-  //   "@",
-  //   firstBlock.block_height,
-  //   "-",
-  //   lastBlock.block_height,
-  // );
+  log("processWorkItem", [
+    item.walletConfig.primary_address.slice(0, 6),
+    "@",
+    firstBlock.block_height,
+    "-",
+    lastBlock.block_height,
+  ]);
 
   let res;
   try {
@@ -441,7 +417,7 @@ export async function processWorkItem(
       scanCache: cache,
       secret_spend_key,
     });
-    // console.log("[processWorkItem] res=", res);
+    log("processWorkItem", ["res=", res]);
   } catch (error) {
     console.error("[processWorkItem] error=", error);
     throw error;
@@ -449,7 +425,7 @@ export async function processWorkItem(
 
   await writeCacheToFile(cache, pathPrefix);
   item.status = "process_result_done";
-  //console.log(`[processWorkItem] process_result_done item=${JSON.stringify(item)}`);
+  log("processWorkItem", `process_result_done work_uuid=${item?.work_uuid}`);
   // remove from blocksbuffer if no more work items reference it
   reconcileWorkItemDone(blocksBuffer, workBuffer);
   //because cache is tied to the workitems by reference,
@@ -496,9 +472,9 @@ function logBufStatus(
       w.batch.get_blocks_result_meta.block_infos[w.to]?.block_height,
   );
 
-  console.log(
-    `[buf] ${label} blocks=[${bb.join(",")}] work=[${wb.join(",")}] `,
-  );
+  log("logBufStatus", [
+    `[buf] ${label} blocks=[${bb.join(",")}] work=[${wb.join(",")}]`,
+  ]);
 }
 /**
  * coordinator main: async generator that drives the full scan cycle.
@@ -560,12 +536,9 @@ export async function* coordinatorMain(
 
     const winner = await Promise.race(races);
 
-    console.log(
-      "[coordinatorMain] winner=" +
-        winner.src +
-        " addr=" +
-        String(winner.addr ?? "").slice(0, 8),
-    );
+    log("coordinatorMain", [
+      "winner=" + winner.src + " addr=" + String(winner.addr ?? "").slice(0, 8),
+    ]);
 
     if (winner.src === "blocks") {
       const result = winner.value.value as BlocksBufferLoopResult;
@@ -584,7 +557,7 @@ export async function* coordinatorMain(
           const addr = wc.primary_address;
           if (scanPromises.has(addr)) continue;
           const gen = scanGens.get(addr);
-          console.log("scanGens.get(addr)", gen);
+          log("coordinatorMain", ["scanGens.get(addr)", gen]);
           if (!gen) continue;
           const item = workBuffer.find(
             (x) =>
@@ -712,7 +685,7 @@ export async function* coordinatorMainMultithreaded(
     // throw new Error(
     //   "[coordinatorMain Multithreaded] cpuPorts empty, there must be at least cpu worker",
     // );
-    console.log("[coordinatorMainMultithreaded] fallback to single-threaded");
+    log("coordinatorMainMultithreaded", "fallback to single-threaded");
     yield* coordinatorMain(scanSettingsPath, pathPrefix);
     return;
   }
@@ -740,7 +713,7 @@ export async function* coordinatorMainMultithreaded(
   let race_count = 0;
   while (true) {
     race_count++;
-    console.log("[coordinatorMainMultithreaded] race_count", race_count);
+    log("coordinatorMainMultithreaded", ["race_count", race_count]);
     await scheduleWorkOnCpuPorts(freePorts, workBuffer);
     const scan_promises = freePorts
       .filter((ps) => ps.promise)
@@ -753,9 +726,9 @@ export async function* coordinatorMainMultithreaded(
         value: v as BlocksBufferIteratorResult,
       })),
     ];
-    console.log("[coordinatorMainMultithreaded] races", races);
+    log("coordinatorMainMultithreaded", ["races", races]);
     const winner = await Promise.race(races);
-    //console.log("[coordinatorMainMultithreaded] cpu ports status", freePorts);
+    log("coordinatorMainMultithreaded", "cpu ports status");
     if ("src" in winner && winner.src === "blocks") {
       const result = winner.value.value;
       const { isBlocksBufferChanged } = await handleBlocksYield(
@@ -801,7 +774,7 @@ export async function* coordinatorMainMultithreaded(
         getPathPrefix(scanSettingsPath, pathPrefix),
         wallet.secret_spend_key,
       );
-      //  console.log("[coordinatorMainMultithreaded] processWorkItem result", res);
+      //  log("coordinatorMainMultithreaded", "processWorkItem result");
       yield {
         type: "scan_ready",
         address: wallet.primary_address,
@@ -837,14 +810,14 @@ export async function scheduleWorkOnCpuPorts(
         | ScanLoopYield
         | { type: "WORKSTART"; work_uuid: string };
       // handle the result here:
-      console.log("[scheduleWorkOnCpuPorts] onmessage result", msg);
+      log("scheduleWorkOnCpuPorts", ["onmessage result", msg]);
       if (msg.work_uuid !== item.work_uuid) {
-        console.log(
-          "[scheduleWorkOnCpuPorts] wrong work_uuid in msg msg.work_uuid=",
+        log("scheduleWorkOnCpuPorts", [
+          "wrong work_uuid in msg msg.work_uuid=",
           msg.work_uuid,
           "item.work_uuid=",
           item.work_uuid,
-        );
+        ]);
         throw new Error("[scheduleWorkOnCpuPorts] wrong work_uuid in msg");
       }
       if (msg.type === "WORKSTART") {
@@ -852,7 +825,7 @@ export async function scheduleWorkOnCpuPorts(
         return;
       }
       if (item.status !== "scanwork_in_progress") {
-        console.log("[scheduleWorkOnCpuPorts] wrong status in msg");
+        log("scheduleWorkOnCpuPorts", "wrong status in msg");
         throw new Error("[scheduleWorkOnCpuPorts] wrong status in msg");
       }
       item.result = msg.result;
@@ -862,10 +835,7 @@ export async function scheduleWorkOnCpuPorts(
     };
     port_status.port.onmessage = onmessage;
     item.status = "scanwork_in_progress";
-    console.log(
-      "[scheduleWorkOnCpuPorts] scheduling work item",
-      item.work_uuid,
-    );
+    log("scheduleWorkOnCpuPorts", ["scheduling work item", item.work_uuid]);
     port_status.promise = new Promise<ScanLoopYield>((resolve) => {
       resolve_port = resolve;
     });
@@ -887,11 +857,11 @@ export async function scheduleWorkOnCpuPorts(
         ]);
         break;
       } catch {
-        console.log(
-          "[scheduleWorkOnCpuPorts] resend attempt",
+        log("scheduleWorkOnCpuPorts", [
+          "resend attempt",
           attempt,
           item.work_uuid,
-        );
+        ]);
       }
     }
   }
