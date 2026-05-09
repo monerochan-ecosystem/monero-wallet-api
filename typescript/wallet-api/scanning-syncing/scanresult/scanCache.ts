@@ -211,8 +211,10 @@ export function mergeRanges(ranges: CacheRange[]): CacheRange[] {
     // If last range overlaps or touches current range
     if (curr.start <= last.end) {
       // Extend last range to cover both (take max end value)
-      last.end = Math.max(last.end, curr.end);
-      last.block_hashes = curr.block_hashes;
+      if (curr.end > last.end) {
+        last.end = curr.end;
+        last.block_hashes = curr.block_hashes;
+      }
     } else {
       // No overlap: add current range as new merged interval
       merged.push(curr);
