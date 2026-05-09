@@ -30,8 +30,8 @@ import {
 } from "../scanSettings";
 import {
   findRange,
-  findRangeThrows,
   initScanCacheFile,
+  lastRange,
   makeCacheRangeForHeight,
   mergeRanges,
   type CacheRange,
@@ -133,6 +133,7 @@ export async function findWorkToBeDone(
     for (const wallet_cache of wallet_caches) {
       // only add the range to wallets that don't already have one
       if (!findRange(wallet_cache.scanned_ranges, total_start_height)) {
+        // console.log("inserting range_at_start", range_at_start);
         wallet_cache.scanned_ranges.push(range_at_start);
         wallet_cache.scanned_ranges = mergeRanges(wallet_cache.scanned_ranges);
       }
@@ -168,6 +169,7 @@ export function workToBeDoneForBatch(
     const fullycovered = cache.scanned_ranges.find(
       (r) => r.start <= begin_height && r.end >= end_height,
     );
+
     if (fullycovered) {
       // THIS IS OLD WORK OR CAT REORG OR NORMAL REORG
       const tip = fullycovered.block_hashes.at(0);
@@ -432,7 +434,17 @@ export async function processWorkItem(
       "[processWorkItem] item not found or not scanwork not done. item_status=" +
         item?.status,
     );
-
+  const cache = item.walletConfig.cache;
+  const last_in_cache = lastRange(cache.scanned_ranges)?.block_hashes.at(0);
+  if (typeof last_in_cache !== "undefined") {
+    const actual_tip_index = findTipIndex(
+      item.batch.get_blocks_result_meta.block_infos,
+      last_in_cache,
+    );
+    if (typeof actual_tip_index === "number") {
+      item.from = actual_tip_index;
+    }
+  }
   const firstBlock = item.batch.get_blocks_result_meta.block_infos[item.from];
 
   // console.log(
@@ -448,7 +460,6 @@ export async function processWorkItem(
   //   lastBlock.block_height,
   // );
 
-  const cache = item.walletConfig.cache;
   let res;
   try {
     res = await processScanResultWITHOUT_SIDE_EFFECTS({
@@ -684,14 +695,28 @@ export async function setupCoordinator(
     });
 
   const workBuffer: WorkItem[] = [];
+  const walletSyncInfos: WalletSyncInfo[] = [];
+  for (const wallet of work_to_be_done.wallet_configs) {
+    walletSyncInfos.push({
+      walletConfig: wallet,
+      work_buffer: [],
+      already_referenced: new Set(),
+    });
+  }
 
   return {
+    walletSyncInfos,
     blocksGenerator,
     workBuffer,
     blocksBuffer,
     work_to_be_done,
   };
 }
+export type WalletSyncInfo = {
+  walletConfig: WalletConfig;
+  work_buffer: WorkItem[];
+  already_referenced: Set<string>;
+};
 export type PortStatus = {
   port: MessagePort;
   promise: Promise<ScanLoopYield> | null;
@@ -795,27 +820,28 @@ export async function* coordinatorMainMultithreaded(
           break;
         }
       }
-      for (const to_be_processed of processable) {
-        const res = await processWorkItem(
-          to_be_processed,
-          workBuffer,
-          blocksBuffer,
-          getPathPrefix(scanSettingsPath, pathPrefix),
-          wallet.secret_spend_key,
-        );
-        //  console.log("[coordinatorMainMultithreaded] processWorkItem result", res);
-        yield {
-          type: "scan_ready",
-          address: wallet.primary_address,
-          result: {
-            type: "Ready",
-            work_uuid: to_be_processed.work_uuid,
-            result: to_be_processed.result,
-          },
-          newCache: wallet.cache,
-          changed_outputs: res.changed_outputs,
-        };
-      }
+      const to_be_processed = processable[0];
+      if (!to_be_processed) continue;
+
+      const res = await processWorkItem(
+        to_be_processed,
+        workBuffer,
+        blocksBuffer,
+        getPathPrefix(scanSettingsPath, pathPrefix),
+        wallet.secret_spend_key,
+      );
+      //  console.log("[coordinatorMainMultithreaded] processWorkItem result", res);
+      yield {
+        type: "scan_ready",
+        address: wallet.primary_address,
+        result: {
+          type: "Ready",
+          work_uuid: to_be_processed.work_uuid,
+          result: to_be_processed.result,
+        },
+        newCache: wallet.cache,
+        changed_outputs: res.changed_outputs,
+      };
     }
   }
 }
@@ -853,6 +879,10 @@ export async function scheduleWorkOnCpuPorts(
       if (msg.type === "WORKSTART") {
         resolve_workstart();
         return;
+      }
+      if (item.status !== "scanwork_in_progress") {
+        console.log("[scheduleWorkOnCpuPorts] wrong status in msg");
+        throw new Error("[scheduleWorkOnCpuPorts] wrong status in msg");
       }
       item.result = msg.result;
       item.status = "scanwork_done";
