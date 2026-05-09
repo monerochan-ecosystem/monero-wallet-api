@@ -169,43 +169,8 @@ export function workToBeDoneForBatch(
     const fullycovered = cache.scanned_ranges.find(
       (r) => r.start <= begin_height && r.end > end_height,
     );
-
     if (fullycovered) {
-      // THIS IS OLD WORK OR CAT REORG OR NORMAL REORG
-      const tip = fullycovered.block_hashes.at(0);
-      if (!tip)
-        throw new Error(
-          "[workToBeDoneForBatch] tip not found, malformed range that covers the work to be done for this batch",
-        );
-      const tipIndex = findTipIndex(batch_meta_infos, tip);
-      if (tipIndex === "reorg_found") {
-        // THIS MIGHT BE A CAT REORG or old range, or a normal reorg
-        const candidate = fullycovered.block_hashes.at(1);
-        const anchor = fullycovered.block_hashes.at(-1);
-        if (!candidate || !anchor)
-          throw new Error(
-            "[workToBeDoneForBatch] could not find candidate or anchor, malformed range that covers the work to be done for this batch",
-          );
-        const candidateIndex = findTipIndex(batch_meta_infos, candidate);
-
-        const anchorIndex = findTipIndex(batch_meta_infos, anchor);
-        // CAT REORG or SKIP OLD RANGE
-        if (candidateIndex === "reorg_found" && anchorIndex === "reorg_found") {
-          console.log("[workToBeDoneForBatch] old range");
-          // we have to rely on the scan level cat reorg detection.
-          // no way to distinguish really old work prior to the anchors from a cat reorg at this point
-
-          return "skip"; // this could also be a cat reorg, but we can't distinguish here
-        }
-        console.log("[workToBeDoneForBatch] reorg found");
-        // if this range end is prior to the block height of the tip,
-        //  if(fullycovered.end > )
-        return "skip";
-        // this might or might not be a reorg,
-        return { from: 0 }; // THIS IS A NORMAL REORG, redo work
-      } else {
-        return "skip"; // NORMAL CASE, found tip in fully covered range
-      }
+      return "skip";
     } else {
       // NORMAL CASE directly in front of tip
 
@@ -216,6 +181,8 @@ export function workToBeDoneForBatch(
         );
       const tipindex = findTipIndex(batch_meta_infos, tip);
       if (tipindex === "reorg_found") {
+        console.log("[workToBeDoneForBatch] reorg found");
+
         return { from: 0 };
       } else if (tipindex === "empty_blocks_array") {
         return "skip";
