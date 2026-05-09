@@ -1,9 +1,13 @@
 import { LOCAL_NODE_DEFAULT_URL } from "../node-interaction/nodeUrl";
 import { type CacheChangedCallbackParameters } from "./scanresult/scanCache";
-import { openScanSettingsFile } from "./scanSettings";
+import {
+  openScanSettingsFile,
+  SCAN_SETTINGS_STORE_NAME_DEFAULT,
+} from "./scanSettings";
+import { log, setupLoggingPath } from "../io/logging";
 import { workerMainCode } from "./worker-entrypoints/worker";
 
-const CPU_POOL_SIZE = 4;
+export const CPU_POOL_SIZE = 4;
 
 export type WorkerSet = {
   fetchWorker: Worker;
@@ -18,7 +22,9 @@ export async function createWebworker(
   handle_error?: (error: unknown) => void,
 ): Promise<WorkerSet | undefined> {
   try {
-    const scanSettings = await openScanSettingsFile(scan_settings_path);
+    const resolvedPath = scan_settings_path || SCAN_SETTINGS_STORE_NAME_DEFAULT;
+    const scanSettings = await openScanSettingsFile(resolvedPath);
+    await setupLoggingPath(resolvedPath, pathPrefix ?? "", "mainthread");
 
     const node_url = scanSettings?.node_url || LOCAL_NODE_DEFAULT_URL;
     const cpu_worker_count =
@@ -33,7 +39,13 @@ export async function createWebworker(
       const channel = new MessageChannel();
       const cpuWorker = await startWebworkerReady();
       cpuWorker.postMessage(
-        { type: "setup", role: "cpubound", cpu_worker_id: i },
+        {
+          type: "setup",
+          role: "cpubound",
+          cpu_worker_id: i,
+          scan_settings_path: resolvedPath,
+          pathPrefix,
+        },
         [channel.port1],
       );
       cpuWorker.onerror = (e) => {
@@ -50,7 +62,7 @@ export async function createWebworker(
     coordinationWorker.postMessage(
       {
         type: "setup",
-        scan_settings_path,
+        scan_settings_path: resolvedPath,
         pathPrefix,
         role: "coordinator",
         node_url,
@@ -58,10 +70,10 @@ export async function createWebworker(
       },
       cpuPorts,
     ); // transfer CPU port2s to coordination worker
-    console.log(
-      "[createWebworker] coordinator worker started, node_url=" + node_url,
+    log("createWebworker", [
+      "coordinator worker started, node_url=" + node_url,
       ", cpuPorts=" + cpuPorts.length,
-    );
+    ]);
 
     coordinationWorker.onmessage = (event) => {
       if (event.data.type === "ERROR") {
@@ -107,7 +119,7 @@ export function startWebworker(
         if (handle_error) handle_error(event.data.payload ?? event.data.error);
         break;
       case "DEBUG":
-        console.log("worker debug:", event.data.payload);
+        log("startWebworker", ["worker debug:", event.data.payload]);
         break;
     }
   };

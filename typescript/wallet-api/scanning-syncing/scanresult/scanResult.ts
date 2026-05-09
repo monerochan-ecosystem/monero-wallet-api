@@ -5,6 +5,7 @@ import {
   type Output,
 } from "../../api";
 import { computeKeyImage, type KeyImage } from "./computeKeyImage";
+import { log } from "../../io/logging";
 import {
   mergeRanges,
   findRange,
@@ -71,10 +72,10 @@ export async function processScanResult(
       const split_height = result.block_infos[split_height_index];
 
       // we found the split height & do the reorg
-      console.log(
-        "[handleReorg] SPLIT FOUND at height",
+      log("processScanResult", [
+        "SPLIT FOUND at height",
         split_height.block_height,
-      );
+      ]);
       if (!cache.reorg_info) {
         cache.reorg_info = {
           split_heights: [split_height],
@@ -96,12 +97,12 @@ export async function processScanResult(
       const removed_outputs = Object.entries(cache.outputs).filter(
         ([id, output]) => output.block_height >= split_height.block_height,
       );
-      console.log(
-        "[handleReorg] removed_outputs count:",
+      log("processScanResult", [
+        "removed_outputs count:",
         removed_outputs.length,
         "reverted count:",
         reverted_outputs.length,
-      );
+      ]);
       for (const [id, old_output_state] of removed_outputs) {
         // 1. find key_image of output to be removed (as it was reorged)
         const [key_image] = Object.entries(cache.own_key_images).find(

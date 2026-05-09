@@ -1,6 +1,7 @@
 import { get_info } from "../api";
 import { atomicWrite } from "../io/atomicWrite";
 import { refreshEnvIndexedDB } from "../io/indexedDB";
+import type { LogSetting, PossibleLogs } from "../io/logging";
 import { LOCAL_NODE_DEFAULT_URL } from "../node-interaction/nodeUrl";
 
 export const SCAN_SETTINGS_STORE_NAME_DEFAULT = "ScanSettings.json";
@@ -23,6 +24,9 @@ export type WriteScanSettingParams = {
   wallet_route?: string;
   wallet_name?: string;
   wallet_slot?: number;
+  logs?: LogSetting;
+  logs_include?: PossibleLogs[];
+  logs_exclude?: PossibleLogs[];
 };
 export type ScanSettingOpened = {
   primary_address: string;
@@ -42,6 +46,9 @@ export type ScanSettings = {
   start_height: number | null;
   merchant_confirmations?: number | null;
   cpu_worker_count?: number;
+  logs?: LogSetting;
+  logs_include?: PossibleLogs[];
+  logs_exclude?: PossibleLogs[];
 };
 export type ScanSettingsOpened = {
   wallets: (ScanSettingOpened | undefined)[]; // ts should treat arrays like this by default. (value|undefined)[]
@@ -49,6 +56,9 @@ export type ScanSettingsOpened = {
   start_height: number | null;
   merchant_confirmations?: number | null;
   cpu_worker_count?: number;
+  logs?: LogSetting;
+  logs_include?: PossibleLogs[];
+  logs_exclude?: PossibleLogs[];
 };
 /**
  * Writes scan settings to the default or specified storage file in json.
@@ -361,12 +371,18 @@ export async function writeWalletToScanSettings(
           },
         ],
         node_url: params.node_url,
+        logs: params.logs,
+        logs_include: params.logs_include,
+        logs_exclude: params.logs_exclude,
         start_height: params.start_height || null,
       },
       params.scan_settings_path,
     );
   }
   scanSettings.node_url = params.node_url || scanSettings.node_url;
+  if (params.logs) scanSettings.logs = params.logs;
+  if (params.logs_include) scanSettings.logs_include = params.logs_include;
+  if (params.logs_exclude) scanSettings.logs_exclude = params.logs_exclude;
   scanSettings.start_height =
     params.start_height === undefined
       ? scanSettings.start_height

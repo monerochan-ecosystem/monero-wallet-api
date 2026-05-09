@@ -10,6 +10,7 @@ import {
   type ViewPair,
 } from "../../api";
 import { atomicWrite } from "../../io/atomicWrite";
+import { log } from "../../io/logging";
 import type { Payment } from "../../send-functionality/inputSelection";
 
 export async function initScanCache(
@@ -332,7 +333,10 @@ export function handleScanError(error: unknown) {
   // treat errno 0 code "ConnectionRefused" as non fatal outcome, and rethrow,
   // so that UI can be informed after catching it higher up
   if (isConnectionError(error)) {
-    console.log("Scan stopped. node might be offline. Connection Refused");
+    log(
+      "handleScanError",
+      "Scan stopped. node might be offline. Connection Refused",
+    );
     throw error;
   }
   // Treat AbortError as a normal, non-fatal outcome
@@ -342,13 +346,13 @@ export function handleScanError(error: unknown) {
     (("name" in error && error.name === "AbortError") ||
       ("code" in error && error.code === 20))
   ) {
-    console.log("Scan was aborted.");
+    log("handleScanError", "Scan was aborted.");
     return;
   } else {
-    console.log(
+    log("handleScanError", [
       error,
       "\n, scanWithCache in scanning-syncing/scanWithCache.ts`",
-    );
+    ]);
     throw error;
   }
 }

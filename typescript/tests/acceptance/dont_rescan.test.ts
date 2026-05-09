@@ -46,6 +46,12 @@ test("a: 10 wallets first pass vs one new wallet second pass", async () => {
       })),
       node_url: NODE_URL,
       start_height: START_HEIGHT,
+      logs: "console-and-file",
+      logs_include: [
+        "handleCpuboundScan",
+        "atomicWrite",
+        "blocksBufferFetchLoop",
+      ],
     },
     SCAN_SETTINGS_PATH,
   );
@@ -109,6 +115,12 @@ test("a: 10 wallets first pass vs one new wallet second pass", async () => {
       })),
       node_url: NODE_URL,
       start_height: START_HEIGHT,
+      logs: "console-and-file",
+      logs_include: [
+        "handleCpuboundScan",
+        "atomicWrite",
+        "blocksBufferFetchLoop",
+      ],
     },
     SCAN_SETTINGS_PATH,
   );
