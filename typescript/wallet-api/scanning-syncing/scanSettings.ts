@@ -24,6 +24,9 @@ export type WriteScanSettingParams = {
   wallet_route?: string;
   wallet_name?: string;
   wallet_slot?: number;
+  logs?: LogSetting;
+  logs_include?: PossibleLogs[];
+  logs_exclude?: PossibleLogs[];
 };
 export type ScanSettingOpened = {
   primary_address: string;
@@ -368,12 +371,18 @@ export async function writeWalletToScanSettings(
           },
         ],
         node_url: params.node_url,
+        logs: params.logs,
+        logs_include: params.logs_include,
+        logs_exclude: params.logs_exclude,
         start_height: params.start_height || null,
       },
       params.scan_settings_path,
     );
   }
   scanSettings.node_url = params.node_url || scanSettings.node_url;
+  if (params.logs) scanSettings.logs = params.logs;
+  if (params.logs_include) scanSettings.logs_include = params.logs_include;
+  if (params.logs_exclude) scanSettings.logs_exclude = params.logs_exclude;
   scanSettings.start_height =
     params.start_height === undefined
       ? scanSettings.start_height
