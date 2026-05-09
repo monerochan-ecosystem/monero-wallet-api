@@ -201,10 +201,20 @@ export function workToBeDoneForBatch(
       }
     } else {
       // NORMAL CASE directly in front of tip
-      // not fully covered. normal case of scheduling directly in front of the tip
-      // tip might be in a bit, but the extra complexity is not worth the small performance difference
-      // findTip should solve this in the processWorkItem step
-      return { from: 0 }; // NORMAL case of scheduling directly in front of the tip
+
+      const tip = foundRange.block_hashes.at(0);
+      if (!tip)
+        throw new Error(
+          "[workToBeDoneForBatch] tip not found, malformed range that covers the work to be done for this batch",
+        );
+      const tipindex = findTipIndex(batch_meta_infos, tip);
+      if (tipindex === "reorg_found") {
+        return { from: 0 };
+      } else if (tipindex === "empty_blocks_array") {
+        return "skip";
+      }
+      console.log("[workToBeDoneForBatch] tipindex", tipindex);
+      return { from: tipindex }; // NORMAL case of scheduling directly in front of the tip
     }
   } else {
     // NORMAL case of scheduling work ahead of the already processed ranges, with gap so we can do CPU work in parallel
