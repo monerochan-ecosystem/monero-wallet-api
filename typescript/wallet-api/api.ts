@@ -1,8 +1,5 @@
 import "./io/indexedDB";
-export type {
-  ScanResult,
-  ScanResultCallback,
-} from "./scanning-syncing/scanresult/scanResult";
+
 export type {
   CacheChangedCallback,
   CacheChangedCallbackParameters,
@@ -33,7 +30,6 @@ export {
 } from "./send-functionality/transactionBuilding";
 export { computeKeyImage } from "./scanning-syncing/scanresult/computeKeyImage";
 export {
-  scanWallets,
   startWebworker,
   createWebworker,
   makeWebworkerScript,
@@ -42,11 +38,15 @@ export {
 export { spendable } from "./scanning-syncing/scanresult/scanResult";
 
 export { openWallets, openWallet } from "./scanning-syncing/openWallet";
+export * from "./scanning-syncing/blocksbuffer/blocksBufferFetchLoop";
+export * from "./scanning-syncing/blocksbuffer/blocksbufferCoordination";
 export * from "./scanning-syncing/connectionStatus";
 export * from "./scanning-syncing/scanSettings";
 export * from "./scanning-syncing/scanresult/scanResult";
 export * from "./scanning-syncing/scanresult/scanStats";
 export * from "./scanning-syncing/scanresult/scanCache";
+export * from "./scanning-syncing/scanresult/scanCoordination";
+export * from "./scanning-syncing/scanresult/scanLoop";
 export * from "./keypairs-seeds/writeKeypairs";
 export * from "./keypairs-seeds/keypairs";
 export * from "./send-functionality/conversion";

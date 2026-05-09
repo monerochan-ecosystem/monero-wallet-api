@@ -1,26 +1,126 @@
-import { atomicWrite } from "../api";
+import {
+  atomicWrite,
+  type BlockInfo,
+  type CacheRange,
+  type ReorgInfo,
+} from "../api";
 import { SCAN_SETTINGS_STORE_NAME_DEFAULT } from "./scanSettings";
 export type ConnectionStatusOptions =
   | "OK"
   | "partial_read"
   | "connection_failed"
+  | "blocks_buffer_full"
   | "no_connection_yet"
   | "catastrophic_reorg";
+export type ConnectionSatusLastPacket = {
+  status: ConnectionStatusOptions;
+  bytes_read: number;
+  node_url: string;
+  timestamp: string;
+};
+export type ConnectionStatusSync = {
+  reorg_info?: ReorgInfo;
+  scanned_ranges: CacheRange[]; // list of block height ranges that have been scanned [0].start, [length-1].end <-- last scanned height
+  daemon_height: number;
+  current_scan_height: number; //  derived from:  scan_settings start_height + end height of scanned_range that start height is in scanned_ranges
+  eta: string;
+  timestamp: string;
+};
 export type ConnectionStatus = {
-  last_packet: {
-    status: ConnectionStatusOptions;
-    bytes_read: number;
-    node_url: string;
-    timestamp: string;
-  };
+  last_packet: ConnectionSatusLastPacket;
+  sync: ConnectionStatusSync;
 };
 
 export const DEFAULT_CONNECTION_STATUS_PREFIX = "ConnectionStatus-";
 
-export function connectionStatusFilePath(scan_settings_path?: string) {
-  if (!scan_settings_path)
-    scan_settings_path = SCAN_SETTINGS_STORE_NAME_DEFAULT;
-  return `${DEFAULT_CONNECTION_STATUS_PREFIX}${scan_settings_path}`;
+export function msToHHMM(ms: number): string {
+  const totalSeconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) {
+    return "00:00";
+  }
+
+  const paddedHours = String(hours).padStart(2, "0");
+  const paddedMinutes = String(remainingMinutes).padStart(2, "0");
+
+  return `${paddedHours}:${paddedMinutes}`;
+}
+
+export function emptyConnectionStatus(
+  overrides?: Partial<ConnectionStatus>,
+): ConnectionStatus {
+  const defaultStatus: ConnectionStatus = {
+    last_packet: {
+      status: "no_connection_yet",
+      bytes_read: 0,
+      node_url: "",
+      timestamp: new Date().toISOString(),
+    },
+    sync: {
+      scanned_ranges: [],
+      daemon_height: 0,
+      current_scan_height: 0,
+      eta: "00:00",
+      timestamp: new Date().toISOString(),
+    },
+  };
+  return overrides ? { ...defaultStatus, ...overrides } : defaultStatus;
+}
+
+export async function updateSyncETA(
+  daemon_height: number,
+  current_scan_height: number,
+  last_height: number | null,
+  last_timestamp: number | null,
+  scan_settings_path?: string,
+): Promise<{ last_height: number; last_timestamp: number }> {
+  const blocks_till_tip = daemon_height - current_scan_height;
+  let blocks_since_last_update: number | null = null;
+  let duration: number | null = null;
+
+  if (typeof last_height === "number") {
+    blocks_since_last_update = current_scan_height - last_height;
+  }
+
+  if (typeof last_timestamp === "number") {
+    duration = Date.now() - last_timestamp;
+  }
+
+  let eta = "00:00";
+  if (
+    blocks_since_last_update !== null &&
+    duration !== null &&
+    duration > 0 &&
+    blocks_till_tip > 0
+  ) {
+    const blocks_per_ms = blocks_since_last_update / duration;
+    const eta_ms = blocks_till_tip / blocks_per_ms;
+    eta = msToHHMM(eta_ms);
+  }
+
+  await readWriteConnectionStatusFile((cs) => {
+    cs.sync = {
+      ...cs.sync,
+      daemon_height,
+      current_scan_height,
+      eta,
+      timestamp: new Date().toISOString(),
+    };
+  }, scan_settings_path);
+
+  return { last_height: current_scan_height, last_timestamp: Date.now() };
+}
+
+export function connectionStatusFilePath(
+  scan_settings_path: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
+) {
+  const parts = scan_settings_path.split("/");
+  const basename = parts.pop()!;
+  const dir = parts.join("/");
+  const prefix = dir ? `${dir}/` : "";
+  return `${prefix}${DEFAULT_CONNECTION_STATUS_PREFIX}${basename}`;
 }
 
 export async function readConnectionStatusDefaultLocation(
@@ -40,19 +140,9 @@ export async function readConnectionStatusFile(
 }
 
 export async function writeConnectionStatusFile(
-  status: ConnectionStatusOptions,
-  node_url: string,
-  bytes_read: number = 0,
+  connectionStatus: ConnectionStatus,
   scan_settings_path?: string,
 ) {
-  const connectionStatus: ConnectionStatus = {
-    last_packet: {
-      status,
-      bytes_read,
-      node_url,
-      timestamp: new Date().toISOString(),
-    },
-  };
   return await atomicWrite(
     connectionStatusFilePath(scan_settings_path),
     JSON.stringify(connectionStatus, null, 2),
@@ -60,17 +150,32 @@ export async function writeConnectionStatusFile(
 }
 
 export async function readWriteConnectionStatusFile(
-  writeCB: (cs: ConnectionStatus | undefined) => ConnectionStatus | undefined,
+  writeCB: (cs: ConnectionStatus) => void,
   scan_settings_path?: string,
 ) {
-  const connectionStatus =
+  let connectionStatus =
     await readConnectionStatusDefaultLocation(scan_settings_path);
-  const cb = await writeCB(connectionStatus);
-  if (typeof cb === "undefined") return;
-  return await writeConnectionStatusFile(
-    cb.last_packet.status,
-    cb.last_packet.node_url,
-    cb.last_packet.bytes_read,
-    scan_settings_path,
+  if (!connectionStatus) connectionStatus = emptyConnectionStatus();
+  await writeCB(connectionStatus);
+  await writeConnectionStatusFile(connectionStatus, scan_settings_path);
+  return connectionStatus;
+}
+/**
+ * read the connection status from disk (typical /path/to/ConnectionStatus-ScanSettings.json)
+ * and persist empty inital status if not found
+ * @param scan_settings_path  path to the scan settings file /path/to/ScanSettings.json
+ * @returns connection status or empty initalized connection status
+ */
+export async function readOrInitConnectionStatus(
+  scan_settings_path?: string,
+): Promise<ConnectionStatus> {
+  const cs = await readConnectionStatusFile(
+    connectionStatusFilePath(scan_settings_path),
   );
+  if (typeof cs === "undefined") {
+    const emptyInitial = emptyConnectionStatus();
+    await writeConnectionStatusFile(emptyInitial, scan_settings_path);
+    return emptyInitial;
+  }
+  return cs;
 }

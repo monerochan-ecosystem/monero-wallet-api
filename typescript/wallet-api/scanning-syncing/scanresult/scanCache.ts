@@ -1,13 +1,13 @@
 import { type KeyImage } from "./computeKeyImage";
-import type { ReorgInfo } from "./reorg";
-import type {
-  BlockInfo,
-  FeeEstimateResponse,
-  GetBlockHeadersRange,
-  GetBlockHeadersRangeParams,
-  Output,
-  SendRawTransactionResult,
-  ViewPair,
+import {
+  get_block_headers_range,
+  type BlockInfo,
+  type FeeEstimateResponse,
+  type GetBlockHeadersRange,
+  type GetBlockHeadersRangeParams,
+  type Output,
+  type SendRawTransactionResult,
+  type ViewPair,
 } from "../../api";
 import { atomicWrite } from "../../io/atomicWrite";
 import type { Payment } from "../../send-functionality/inputSelection";
@@ -70,6 +70,60 @@ export async function initScanCache(
 
   return current_range;
 }
+export async function getBlockInfoForHeight(
+  height: number,
+  node_url: string,
+): Promise<BlockInfo> {
+  const blockHeaderResponse = await get_block_headers_range(node_url, {
+    start_height: height,
+    end_height: height,
+  });
+  const header = blockHeaderResponse.headers[0];
+  return {
+    block_hash: header.hash,
+    block_height: header.height,
+    block_timestamp: header.timestamp,
+  };
+}
+
+export async function makeCacheRangeForHeight(
+  height: number,
+  node_url: string,
+): Promise<CacheRange> {
+  const hash_at_height = await getBlockInfoForHeight(height, node_url);
+  const newRange: CacheRange = {
+    start: height,
+    end: height,
+    block_hashes: [hash_at_height, hash_at_height, hash_at_height],
+  };
+  return newRange;
+}
+export async function initScanCacheFile(
+  viewpair: ViewPair,
+  scan_settings_path?: string,
+  pathPrefix?: string,
+): Promise<ScanCache> {
+  const initialCache = await readCacheFileDefaultLocation(
+    viewpair.primary_address,
+    pathPrefix,
+  );
+  let cache: ScanCache = {
+    daemon_height: 0,
+    outputs: {},
+    own_key_images: {},
+    scanned_ranges: [],
+    primary_address: viewpair.primary_address,
+  };
+  if (initialCache) cache = initialCache;
+
+  cache.scanned_ranges = mergeRanges(cache.scanned_ranges);
+
+  await viewpair.addSubaddressesToScanCache(cache, scan_settings_path);
+
+  // write to cache
+  await writeCacheToFile(cache, pathPrefix);
+  return cache;
+}
 export async function readCacheFile(
   cacheFilePath: string,
 ): Promise<ScanCache | undefined> {
@@ -87,6 +141,9 @@ export function cacheFileDefaultLocation(
   primary_address: string,
   pathPrefix?: string,
 ) {
+  if (pathPrefix && pathPrefix.endsWith("/"))
+    pathPrefix = pathPrefix.slice(0, -1);
+  if (pathPrefix) pathPrefix += "/";
   return `${pathPrefix ?? ""}${primary_address}_cache.json`;
 }
 export async function readCacheFileDefaultLocation(
@@ -135,6 +192,13 @@ export function lastRange(ranges: CacheRange[]): CacheRange | undefined {
     ranges[0],
   );
 }
+export function lastRangeThrows(ranges: CacheRange[]): CacheRange {
+  if (!ranges.length) throw new Error("ranges is empty");
+  return ranges.reduce(
+    (maxRange, current) => (current.end > maxRange.end ? current : maxRange),
+    ranges[0],
+  );
+}
 
 export function mergeRanges(ranges: CacheRange[]): CacheRange[] {
   if (ranges.length <= 1) return ranges.map((r) => ({ ...r }));
@@ -147,8 +211,10 @@ export function mergeRanges(ranges: CacheRange[]): CacheRange[] {
     // If last range overlaps or touches current range
     if (curr.start <= last.end) {
       // Extend last range to cover both (take max end value)
-      last.end = Math.max(last.end, curr.end);
-      last.block_hashes = curr.block_hashes;
+      if (curr.end > last.end) {
+        last.end = curr.end;
+        last.block_hashes = curr.block_hashes;
+      }
     } else {
       // No overlap: add current range as new merged interval
       merged.push(curr);
@@ -162,6 +228,14 @@ export const findRange = (
   value: number,
 ): CacheRange | null =>
   ranges.find((r) => value >= r.start && value <= r.end) ?? null;
+export function findRangeThrows(
+  ranges: CacheRange[],
+  value: number,
+): CacheRange {
+  const range = findRange(ranges, value);
+  if (!range) throw new Error(`range not found for value: ${value}`);
+  return range;
+}
 export type CacheRange = {
   start: number;
   end: number;
@@ -190,6 +264,16 @@ export type ScanCache = {
   subaddresses?: Subaddress[];
   reorg_info?: ReorgInfo;
   daemon_height: number;
+};
+export type ReorgInfo = {
+  split_heights: BlockInfo[];
+  removed_outputs: ReorgedOutput[]; // Copies of detached outputs for logging
+  reverted_spends: ReorgedOutput[]; // Outputs that became unspent again
+};
+export type ReorgedOutput = {
+  old_output_state: Output;
+  key_image: KeyImage;
+  split_height: BlockInfo;
 };
 export type TxLog = {
   inputs_index: string[];

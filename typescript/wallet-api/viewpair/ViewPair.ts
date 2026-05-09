@@ -1,17 +1,16 @@
-import {
-  processScanResult,
-  type ScanResult,
-} from "../scanning-syncing/scanresult/scanResult";
+import { type ScanResult } from "../scanning-syncing/scanresult/scanResult";
 export { type ScanResult };
 export { NodeUrl } from "../node-interaction/nodeUrl";
 import {
   getBlocksBinScan,
   getBlocksBinExecuteRequest,
-  getBlocksBinScanResponse,
+  getBlocksBinScanOneBlock,
+  loadGetBlocksBinResponse,
   type GetBlocksBinMetaCallback,
   type GetBlocksBinRequest,
   MAINNET_GENESIS_BLOCK_HASH,
   STAGENET_GENESIS_BLOCK_HASH,
+  type ErrorResponse,
 } from "../node-interaction/binaryEndpoints";
 import {
   handleScanError,
@@ -25,7 +24,10 @@ import {
   type UnsignedTransaction,
 } from "../send-functionality/transactionBuilding";
 import { WasmProcessor } from "../wasm-processing/wasmProcessor";
-import { LOCAL_NODE_DEFAULT_URL } from "../node-interaction/nodeUrl";
+import {
+  LOCAL_NODE_DEFAULT_URL,
+  type NETWORKS,
+} from "../node-interaction/nodeUrl";
 import {
   atomicWrite,
   get_block_headers_range,
@@ -37,7 +39,7 @@ import {
   trimGetBlocksBinBuffer,
   writeGetblocksBinBuffer,
   type SlaveViewPair,
-} from "../scanning-syncing/scanresult/getBlocksbinBuffer";
+} from "../scanning-syncing/blocksbuffer/getBlocksbinBuffer";
 import {
   initScanCache,
   readCacheFileDefaultLocation,
@@ -55,7 +57,6 @@ import {
   writeConnectionStatusFile,
   type ConnectionStatus,
 } from "../scanning-syncing/connectionStatus";
-export type NETWORKS = "mainnet" | "stagenet" | "testnet";
 /**
  * This class is useful to interact with Moneros DaemonRpc binary requests in a convenient way.
  * (similar to how you would interact with a REST api that gives you json back.)
@@ -191,190 +192,68 @@ export class ViewPair extends WasmProcessor {
    * @param metaCallBack contains meta information about the getBlocksbin call (new sync height = start_height param + number of blocks)
    * @returns It returns {@link ScanResult} (outputs that belong to viewpair)
    */
-  public getBlocksBinScanResponse(
+  public async getBlocksBinScanResponse(
     getBlocksBinResponseBuffer: Uint8Array,
     metaCallBack?: GetBlocksBinMetaCallback,
   ) {
-    return getBlocksBinScanResponse(
-      this,
+    const meta = await this.loadGetBlocksBinResponse(
       getBlocksBinResponseBuffer,
-      metaCallBack,
     );
+    if ("error" in meta) return meta as any;
+    if (metaCallBack) metaCallBack(meta);
+
+    const result: ScanResult = {
+      outputs: [],
+      all_key_images: [],
+      new_height: meta.new_height,
+      primary_address: this.primary_address,
+      block_infos: meta.block_infos,
+      daemon_height: meta.daemon_height,
+    };
+
+    for (let i = 0; i < meta.block_infos.length; i++) {
+      const blockResult = await getBlocksBinScanOneBlock(this, i);
+      if ("error" in blockResult) return blockResult as any;
+      result.outputs.push(...blockResult.outputs);
+      result.all_key_images.push(...blockResult.all_key_images);
+      await sleep(10);
+    }
+
+    return result;
   }
   /**
-   * scan
+   * Loads a getBlocks.bin response into the WASM module without scanning for outputs.
+   * The stored response can later be used to scan individual blocks. Subsequent calls
+   * overwrite the previously stored response.
+   * @param getBlocksBinResponseBuffer the raw binary response from the get_blocks.bin endpoint
+   * @returns metadata about the loaded blocks (new_height, daemon_height, status, block_infos)
    */
-  public async scan(
-    cacheChanged: CacheChangedCallback = (params) => console.log(params),
-    stopSync?: AbortSignal,
-    scan_settings_path?: string,
-    pathPrefix?: string,
-  ) {
-    try {
-      const processor = this;
-      const nonHaltedWallets = await openNonHaltedWallets(scan_settings_path);
-      const masterWalletSettings = nonHaltedWallets[0];
-      if (masterWalletSettings.primary_address !== this.primary_address)
-        throw new Error(
-          "master wallet should be the first of the non halted wallets",
-        );
-      let masterStartHeight = await cullTooLargeScanHeight(
-        processor.node_url,
-        scan_settings_path,
-      );
-
-      let current_range = await initScanCache(
-        processor,
-        masterStartHeight,
-        scan_settings_path,
-        pathPrefix,
-      );
-      const blockGenerator = (async function* () {
-        while (true) {
-          if (stopSync?.aborted) return;
-          const firstResponse = await processor.getBlocksBinExecuteRequest(
-            { block_ids: current_range.block_hashes.map((b) => b.block_hash) },
-            stopSync,
-          );
-          await readWriteConnectionStatusFile((cs) => {
-            if (cs?.last_packet.status === "catastrophic_reorg") return;
-            const connectionStatus: ConnectionStatus = {
-              last_packet: {
-                status: "OK",
-                bytes_read: firstResponse.length,
-                node_url: processor.node_url,
-                timestamp: new Date().toISOString(),
-              },
-            };
-            return connectionStatus;
-          });
-
-          yield firstResponse;
-        }
-      })();
-
-      const masterWithKeys = await walletSettingsPlusKeys(masterWalletSettings);
-      const slaveViewPairs: SlaveViewPair[] = [];
-      if (nonHaltedWallets.length > 1) {
-        for (const slaveWallet of nonHaltedWallets.slice(1)) {
-          const slaveWithKeys = await walletSettingsPlusKeys(slaveWallet);
-          const viewpair = await ViewPair.create(
-            slaveWallet.primary_address,
-            slaveWithKeys.secret_view_key,
-            slaveWallet.subaddress_index,
-            masterWalletSettings.node_url,
-          );
-          slaveViewPairs.push({
-            viewpair,
-            current_range: await initScanCache(
-              viewpair,
-              masterStartHeight,
-              scan_settings_path,
-              pathPrefix,
-            ),
-            secret_spend_key: slaveWithKeys.secret_spend_key,
-          });
-        }
-      }
-      const catastrophic_reorg_cb = async () => {
-        writeConnectionStatusFile(
-          "catastrophic_reorg",
-          processor.node_url,
-          undefined,
-          scan_settings_path,
-        );
-      };
-      for await (const firstResponse of blockGenerator) {
-        if (!firstResponse) continue;
-        await this.writeSubaddressesToScanCache(scan_settings_path, pathPrefix);
-        const result = await processor.getBlocksBinScanResponse(firstResponse);
-        const oldMasterCurrentRange = structuredClone(current_range);
-
-        current_range = await processScanResult({
-          current_range,
-          result,
-          cacheChanged,
-          secret_spend_key: masterWithKeys.secret_spend_key,
-          pathPrefix,
-          catastrophic_reorg_cb,
-        });
-        if (slaveViewPairs.length > 0) {
-          if (result && "block_infos" in result)
-            await writeGetblocksBinBuffer(
-              firstResponse,
-              result.block_infos,
-              pathPrefix,
-            ); // feed the slaves
-          for (const slave of slaveViewPairs) {
-            let blocksBinItems = await readGetblocksBinBuffer(
-              slave.current_range.end,
-              pathPrefix,
-            );
-            let use_master_current_range = false;
-            if (!blocksBinItems.length) {
-              blocksBinItems = await readGetblocksBinBuffer(
-                current_range.end, // we use the new current range end to find the blocks
-                pathPrefix,
-              );
-              slave.current_range = structuredClone(oldMasterCurrentRange); // but we use the old master current range to scan with slaves
-              use_master_current_range = true;
-            }
-            for (const blocksBinItem of blocksBinItems) {
-              const blocksbin = new Uint8Array(
-                await Bun.file(
-                  `${pathPrefix ?? ""}getblocksbinbuffer/${
-                    blocksBinItem.filename
-                  }`,
-                ).arrayBuffer(),
-              );
-              await slave.viewpair.writeSubaddressesToScanCache(
-                scan_settings_path,
-                pathPrefix,
-              );
-
-              const slaveResult =
-                await slave.viewpair.getBlocksBinScanResponse(blocksbin);
-              slave.current_range = await processScanResult({
-                current_range: slave.current_range,
-                result: slaveResult,
-                cacheChanged,
-                secret_spend_key: slave.secret_spend_key,
-                pathPrefix,
-                use_master_current_range,
-                catastrophic_reorg_cb,
-              });
-            }
-          } // scan the slaves
-          await trimGetBlocksBinBuffer(nonHaltedWallets, pathPrefix);
-        }
-        if (
-          !result ||
-          (result && "block_infos" in result && result.block_infos.length === 0)
-        ) {
-          // we are at the tip, and there are no new blocks
-          // sleep for 1 second before sending another
-          // getBlocks.bin request
-          //
-          await sleep(1000);
-        }
-      }
-    } catch (error) {
-      handleScanError(error);
-      const processor = this;
-      const cache = await readCacheFileDefaultLocation(
-        processor.primary_address,
-        pathPrefix,
-      );
-      if (!cache)
-        throw new Error(
-          `${error} in scan() + cache not found for primary address: ${processor.primary_address} and path prefix: ${pathPrefix}`,
-        );
-      await cacheChanged({
-        newCache: cache,
-        changed_outputs: [],
-      });
-      throw error;
-    }
+  public loadGetBlocksBinResponse(getBlocksBinResponseBuffer: Uint8Array) {
+    return loadGetBlocksBinResponse(this, getBlocksBinResponseBuffer);
+  }
+  /**
+   * scan one block from a getblocks.bin response that was loaded into wasm memory.
+   * call loadGetBlocksBinResponse first to populate the response in the wasm module.
+   * call this in a loop over blockIndex 0..meta.block_infos.length-1 to scan all blocks.
+   * @param blockIndex index of the block within the loaded response (0-based)
+   * @returns scan result with outputs and all key images for that one block.
+   *          returns ErrorResponse (`{ error: string }`) if scanning fails.
+   *          check `if ("error" in result)` before accessing outputs/key_images.
+   *
+   * error cases from the rust wasm (search these strings in rust/src/):
+   * - "Block index {} out of bounds (total blocks: {})"
+   *   blockIndex >= number of blocks in the loaded response
+   * - "No getBlocks.bin response loaded. Call loadGetBlocksBinResponse first."
+   *   forgot to call loadGetBlocksBinResponse before this method
+   * - "Error scanning miner transaction: {}"
+   *   the miner tx of the block could not be scanned
+   * - "Error scanning block: {}"
+   *   the block could not be scanned
+   */
+  public getBlocksBinScanOneBlock(
+    blockIndex: number,
+  ): Promise<ScanResult | ErrorResponse> {
+    return getBlocksBinScanOneBlock(this, blockIndex);
   }
   /**
    * This method makes an integrated Address for the Address of the Viewpair it was opened with.

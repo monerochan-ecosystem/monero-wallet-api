@@ -69,10 +69,6 @@ export type GetBlocksResultMeta = {
   new_height: number;
   daemon_height: number;
   status: Status;
-  primary_address:
-    | "parsing-monerod-response-without-wallet"
-    | "error-address-not-set"
-    | string;
   block_infos: BlockInfo[];
 };
 export type BlockInfo = {
@@ -194,7 +190,6 @@ export async function getBlocksBinScanResponse<T extends WasmProcessor>(
       }) as ScanResult | ErrorResponse;
       if (!("error" in result)) {
         result.new_height = resultMeta.new_height;
-        result.primary_address = resultMeta.primary_address;
         result.block_infos = resultMeta.block_infos;
         result.daemon_height = resultMeta.daemon_height;
       }
@@ -224,39 +219,6 @@ export async function getBlocksBinScan<T extends WasmProcessor & HasNodeUrl>(
   );
 }
 
-export async function getBlocksBinJson<T extends WasmProcessor & HasNodeUrl>(
-  processor: T,
-  params: GetBlocksBinRequest,
-) {
-  const getBlocksRequestArray = getBlocksBinMakeRequest(processor, params);
-  const getBlocksBinResponseBuffer = await binaryFetchRequest(
-    processor.node_url + "/getblocks.bin",
-    getBlocksRequestArray, // written in build_getblocksbin_request call to readFromWasmMemory
-  );
-  processor.writeToWasmMemory = (ptr, len) => {
-    processor.writeArray(ptr, len, getBlocksBinResponseBuffer);
-  };
-  let resultMeta: GetBlocksResultMeta;
-  let result: GetBlocksBinResponse | ErrorResponse;
-  processor.readFromWasmMemory = (ptr, len) => {
-    resultMeta = JSON.parse(
-      processor.readString(ptr, len),
-    ) as GetBlocksResultMeta;
-    processor.readFromWasmMemory = (ptr, len) => {
-      result = JSON.parse(processor.readString(ptr, len)) as
-        | GetBlocksBinResponse
-        | ErrorResponse;
-      if (!("error" in result)) {
-        result.new_height = resultMeta.new_height;
-      }
-    };
-  };
-  //@ts-ignore
-  processor.tinywasi.instance.exports.convert_get_blocks_bin_response_to_json(
-    getBlocksBinResponseBuffer.length,
-  );
-  return result!; //result written in convert_get_blocks_bin_response_to_json
-}
 /**
  * throws error on failure to create request
  * @param processor wasmprocessor
@@ -322,6 +284,71 @@ export async function getOutsBinJson<T extends WasmProcessor & HasNodeUrl>(
   return result as GetOutsBinResponse;
 }
 
+/**
+ * Loads a getBlocks.bin response into the WASM module for later single-block scanning
+ * via repeated calls to scan_block. Unlike getBlocksBinScanResponse, this does not
+ * scan any outputs,it only returns the block metadata (heights, timestamps, hashes).
+ * Each call overwrites the previously stored response, so it can be called repeatedly
+ * without leaking memory.
+ * @param processor the WASM processor used to interface with the Rust module, eg ViewPair in viewpair.ts
+ * @param getBlocksBinResponseBuffer the raw binary response from the get_blocks.bin endpoint
+ * @returns metadata about the loaded blocks (new_height, daemon_height, status, block_infos)
+ */
+export async function loadGetBlocksBinResponse<T extends WasmProcessor>(
+  processor: T,
+  getBlocksBinResponseBuffer: Uint8Array,
+): Promise<GetBlocksResultMeta> {
+  processor.writeToWasmMemory = (ptr, len) => {
+    processor.writeArray(ptr, len, getBlocksBinResponseBuffer);
+  };
+  let resultMeta: GetBlocksResultMeta;
+  processor.readFromWasmMemory = (ptr, len) => {
+    resultMeta = JSON.parse(
+      processor.readString(ptr, len),
+    ) as GetBlocksResultMeta;
+  };
+  //@ts-ignore
+  processor.tinywasi.instance.exports.load_get_blocks_bin_response(
+    getBlocksBinResponseBuffer.length,
+  );
+  return resultMeta!;
+}
+
+/**
+ * Scans a single block from the previously loaded getBlocks.bin response.
+ * Call loadGetBlocksBinResponse first to load a response into WASM memory.
+ * @param processor the WASM processor
+ * @param blockIndex index of the block within the loaded response (0-based)
+ * @returns scan result with outputs and key images for that one block
+ *
+ * ErrorResponse type:
+ * the error messages come from the rust side in rust/src/:
+ * - "Block index {} out of bounds (total blocks: {})"
+ *   in lib.rs get_blocks_bin_scan_one_block, guards blockIndex against response.blocks.len
+ * - "No getBlocks.bin response loaded. Call loadGetBlocksBinResponse first."
+ *   in lib.rs get_blocks_bin_scan_one_block, when GLOBAL_GET_BLOCKS_BIN_RESPONSE is None
+ * - "Error scanning miner transaction: {}"
+ *   in block_parsing/mod.rs scan_block, scanner.scan_transaction failed when parsing miner tx of block
+ * - "Error scanning block: {}"
+ *   in block_parsing/mod.rs scan_block, scanner.scan(scan_block) failed
+ * all errors are returned as { error: string } (ErrorResponse type)
+ */
+export async function getBlocksBinScanOneBlock<T extends WasmProcessor>(
+  processor: T,
+  blockIndex: number,
+) {
+  let result: ScanResult | ErrorResponse;
+  processor.readFromWasmMemory = (ptr, len) => {
+    result = JSON.parse(processor.readString(ptr, len), (key, value) => {
+      if (key === "amount") return BigInt(value);
+      return value;
+    }) as ScanResult | ErrorResponse;
+  };
+  //@ts-ignore
+  processor.tinywasi.instance.exports.get_blocks_bin_scan_one_block(blockIndex);
+  return result!;
+}
+
 export async function binaryFetchRequest(
   url: string,
   body: Uint8Array,
@@ -334,29 +361,19 @@ export async function binaryFetchRequest(
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
-  const reader = response.body!.getReader();
-  const chunks: Uint8Array[] = [];
-  let totalBytes = 0;
   const MAX_SIZE = 125829120; // 120MB
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      totalBytes += value.length;
-      if (totalBytes > MAX_SIZE)
-        throw new Error(`Response exceeds 120MB (${totalBytes} bytes)`);
-      chunks.push(value);
-    }
-  } catch (readError) {
-    console.error("Reader error:", readError, "Partial bytes:", totalBytes);
-    // Eat the error - continue to return partial data
-  } finally {
-    reader.releaseLock();
+  const contentLength = parseInt(
+    response.headers.get("content-length") || "0",
+    10,
+  );
+  if (contentLength > MAX_SIZE) {
+    throw new Error(`Response exceeds 120MB (${contentLength} bytes)`);
   }
 
-  // Always return what we got (even if partial)
-  return Uint8Array.from(
-    chunks.reduce((acc: number[], chunk) => [...acc, ...chunk], []),
-  );
+  const buffer = await response.arrayBuffer();
+  if (buffer.byteLength > MAX_SIZE) {
+    throw new Error(`Response exceeds 120MB (${buffer.byteLength} bytes)`);
+  }
+
+  return new Uint8Array(buffer);
 }
