@@ -4,7 +4,7 @@ import {
   type GetBlocksBinBufferItem,
   type BlocksBufferLoopResult,
   handleConnectionStatusChanges,
-  processScanResultWITHOUT_SIDE_EFFECTS,
+  processScanResult,
   writeCacheToFile,
   type BlocksBufferIteratorResult,
   type ProcessScanResult,
@@ -371,7 +371,7 @@ export async function processScanResultForWorkItem(
   const lastBlock = item.batch.get_blocks_result_meta.block_infos[item.to];
   const cache = item.walletConfig.cache;
 
-  await processScanResultWITHOUT_SIDE_EFFECTS({
+  await processScanResult({
     from_height: firstBlock.block_height,
     to_height: lastBlock.block_height,
     result: value.result,
@@ -434,7 +434,7 @@ export async function processWorkItem(
 
   let res;
   try {
-    res = await processScanResultWITHOUT_SIDE_EFFECTS({
+    res = await processScanResult({
       from_height: firstBlock.block_height,
       to_height: lastBlock.block_height,
       result: item.result,

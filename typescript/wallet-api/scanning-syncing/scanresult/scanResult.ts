@@ -42,7 +42,7 @@ export type ProcessScanResult = {
   current_range: CacheRange;
   changed_outputs: ChangedOutput[];
 };
-export async function processScanResultWITHOUT_SIDE_EFFECTS(
+export async function processScanResult(
   params: ProcessScanResultParamsWithoutSideEffects,
 ): Promise<ProcessScanResult> {
   const { result, scanCache: cache, secret_spend_key } = params;
