@@ -294,7 +294,7 @@ export function reconcileWorkItemDone(
       const idx = blocksBuffer.findIndex(
         (b) => b.local_uuid === removed.batch.local_uuid,
       );
-      //TODO this really means we have to save work items scanCache to file
+      // this really means we have to save work items scanCache to file
       // before setting done = true
       if (idx !== -1) blocksBuffer.splice(idx, 1);
     }
@@ -667,17 +667,17 @@ export async function setupCoordinator(
     });
 
   const workBuffer: WorkItem[] = [];
-  const walletSyncInfos: WalletSyncInfo[] = [];
-  for (const wallet of work_to_be_done.wallet_configs) {
-    walletSyncInfos.push({
-      walletConfig: wallet,
-      work_buffer: [],
-      already_referenced: new Set(),
-    });
-  }
+  //TODO: refactor to per wallet buffer
+  // const walletSyncInfos: WalletSyncInfo[] = [];
+  // for (const wallet of work_to_be_done.wallet_configs) {
+  //   walletSyncInfos.push({
+  //     walletConfig: wallet,
+  //     work_buffer: [],
+  //   });
+  // }
 
   return {
-    walletSyncInfos,
+    // walletSyncInfos,
     blocksGenerator,
     workBuffer,
     blocksBuffer,
@@ -687,7 +687,6 @@ export async function setupCoordinator(
 export type WalletSyncInfo = {
   walletConfig: WalletConfig;
   work_buffer: WorkItem[];
-  already_referenced: Set<string>;
 };
 export type PortStatus = {
   port: MessagePort;
