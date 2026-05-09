@@ -102,9 +102,30 @@ export async function setupLoggingPath(
   return global_log_setup;
 }
 function safeStringify(value: any): string {
-  return JSON.stringify(value, (_key, v) =>
-    typeof v === "bigint" ? v.toString() : v,
-  );
+  try {
+    return JSON.stringify(value, (_key, v) => {
+      if (typeof v === "bigint") return v.toString();
+      if (typeof v === "function") return `fn ${v.name || "anon"}`;
+      if (v !== null && typeof v === "object") {
+        // promise or thenable
+        if (typeof (v as any).then === "function") {
+          try {
+            return typeof Bun !== "undefined" && (Bun as any).inspect
+              ? (Bun as any).inspect(v)
+              : "Promise";
+          } catch {
+            return "Promise";
+          }
+        }
+        // message port
+        const ctor = (v as any).constructor;
+        if (ctor?.name === "MessagePort") return "MessagePort";
+      }
+      return v;
+    });
+  } catch {
+    return String(value);
+  }
 }
 
 const flusherRef = new WeakMap<object, ReturnType<typeof setInterval>>();
@@ -183,13 +204,6 @@ export function log(fnname: string, message: any) {
   }
 
   if (logs === "file" || logs === "console-and-file") {
-    let safeMessage: any;
-    try {
-      safeMessage = structuredClone(message);
-    } catch {
-      // non-clonable (Promises, MessagePorts, etc.)
-      safeMessage = String(message);
-    }
-    file_logbuffer.push({ timestamp, message: safeMessage });
+    file_logbuffer.push({ timestamp, message });
   }
 }
