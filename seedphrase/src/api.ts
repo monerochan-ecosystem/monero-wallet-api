@@ -35,13 +35,20 @@ export type WalletRoute = {
   wallet_type: "single" | "sa_multi" | "pl_multi";
   wallet_slot: "0" | string;
 };
+export type GetSecretParams = {
+  route: WalletRoute;
+  seedphrase: string;
+  password?: string;
+  coin_name: "monero";
+  key_type: "spend" | "comms";
+};
 
-export function getWalletSecret(
-  { identity, domain, wallet_type, wallet_slot }: WalletRoute,
-  seedphrase: string,
-  password: string = "",
-  coin_name: string = "monero",
-): Uint8Array {
+export function getWalletSecret(params: GetSecretParams): Uint8Array {
+  const { identity, domain, wallet_type, wallet_slot } = params.route;
+  const seedphrase = params.seedphrase;
+  const password = params.password ?? "no_password";
+  const coin_name = params.coin_name;
+  const key_type = params.key_type;
   if (!identity || !domain)
     throw new Error(
       `Invalid wallet route,
@@ -60,10 +67,13 @@ export function getWalletSecret(
     throw new Error(
       "Invalid wallet id: " + wallet_slot + "has to be a number, default: 0",
     );
+  if (coin_name !== "monero") throw new Error("Unsupported coin name");
+  if (key_type !== "spend" && key_type !== "comms")
+    throw new Error("Unsupported key type");
 
   return deriveSecretKey(
     seedphrase,
-    `${identity}/${domain}/${wallet_type}/${wallet_slot}/${password}-${coin_name}`,
+    `${identity}/${domain}/${wallet_type}/${wallet_slot}/${password}-${coin_name}-${key_type}`,
   );
 }
 
