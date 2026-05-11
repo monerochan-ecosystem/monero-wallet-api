@@ -40,7 +40,7 @@ export type GetSecretParams = {
   seedphrase: string;
   password?: string;
   coin_name: "monero";
-  key_type: "spend" | "comms";
+  key_type: "spend" | "comms" | "hotkey" | "hotkey-comms";
 };
 
 export function getWalletSecret(params: GetSecretParams): Uint8Array {
@@ -68,7 +68,12 @@ export function getWalletSecret(params: GetSecretParams): Uint8Array {
       "Invalid wallet id: " + wallet_slot + "has to be a number, default: 0",
     );
   if (coin_name !== "monero") throw new Error("Unsupported coin name");
-  if (key_type !== "spend" && key_type !== "comms")
+  if (
+    key_type !== "spend" &&
+    key_type !== "comms" &&
+    key_type !== "hotkey" &&
+    key_type !== "hotkey-comms"
+  )
     throw new Error("Unsupported key type");
 
   return deriveSecretKey(
