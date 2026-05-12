@@ -1,5 +1,4 @@
 import { TinyWASI } from "./wasi";
-import { monero_wallet_api_wasm } from "./wasmFile";
 export type FunctionCallMeta = {
   function: string;
 };
@@ -33,7 +32,7 @@ export class WasmProcessor {
    */
   public readErrorFromWasmMemory: MemoryCallback = (
     ptr: number,
-    len: number
+    len: number,
   ) => {};
   /**
    * Writes an array of bytes to a specified offset in WebAssembly memory.
@@ -111,7 +110,7 @@ export class WasmProcessor {
   };
   public tinywasi!: TinyWASI;
   protected constructor() {}
-  public async initWasmModule() {
+  public async initWasmModule(wasm_module: Uint8Array<ArrayBuffer>) {
     const tinywasi = new TinyWASI();
     this.tinywasi = tinywasi;
     const imports = {
@@ -130,16 +129,16 @@ export class WasmProcessor {
     };
 
     const { module, instance } = await WebAssembly.instantiate(
-      monero_wallet_api_wasm,
-      imports
+      wasm_module,
+      imports,
     );
     tinywasi.initialize(instance);
     return tinywasi;
   }
 
-  static async init() {
+  static async init(wasm_module: Uint8Array<ArrayBuffer>) {
     const wasmProcessor = new WasmProcessor();
-    await wasmProcessor.initWasmModule();
+    await wasmProcessor.initWasmModule(wasm_module);
     return wasmProcessor;
   }
 }
