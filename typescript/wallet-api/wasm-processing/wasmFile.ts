@@ -1,4 +1,4 @@
-// the wasm files will be fileld in by the bun macro in the build process
+// the wasm files will be filled in by the bun macro in the build process
 // consult templates/wasmFile.ts to see how this is done:
 // import { fileToBase64 } from "../inlineMacro" with { type: "macro" };
 // const libsource = fileToBase64(
