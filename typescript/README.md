@@ -46,6 +46,11 @@ cd rust || cd ../rust
 cargo build  --target wasm32-wasip1 --release --lib
 ```
 
+```bash
+cd frost-dkg || cd ../frost-dkg
+cargo build  --target wasm32-wasip1 --release --lib
+```
+
 #### 2. build typescript:
 
 ```bash
