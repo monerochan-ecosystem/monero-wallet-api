@@ -1,27 +1,59 @@
 # @spirobel/monero-wallet-api
 
-To install dependencies:
+## quick start
 
-```bash
-cd typescript || cd ../typescript
-bun install
+```ts
+import { openWallets } from "@spirobel/monero-wallet-api";
+
+// add a wallet address to ScanSettings.json first
+
+// convenience script to make a regtest wallet and write to RegtestScanSettings.json + keys to .env.local:
+// bun run scripts/regtest_gen.ts
+
+// scan all non-halted wallets from the settings file:
+const wallets = await openWallets({
+  scan_settings_path: "./ScanSettings.json", // this is the default scan settings file name
+  pathPrefix: "./", // default path for wallet scan caches, stats files, connection status file
+  notifyMasterChanged: async (params) => {
+    // called on each scan result: outputs, new_height, etc.
+    console.log("progress", params.newCache.current_height);
+  },
+});
+
+// change node url mid scan
+await wallets.changeNodeUrl("http://127.0.0.1:18081");
+
+// stop scan worker
+wallets.stopWorker();
 ```
 
-To build:
+See the [acceptance test](typescript/tests/acceptance/dont_rescan.test.ts) for a full working example.
+
+## install
+
+To install the package:
 
 ```bash
-cd typescript || cd ../typescript
-bun build
+bun add @spirobel/monero-wallet-api
 ```
 
-rust release build
+## build
+
+#### 1. rust release build
 
 ```bash
 cd rust || cd ../rust
 cargo build  --target wasm32-wasip1 --release --lib
 ```
 
-prerequisite: install rust
+#### 2. build typescript:
+
+```bash
+cd typescript || cd ../typescript
+bun build
+```
+
+prerequisite: install rust (or use docker image, see below)
 
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
