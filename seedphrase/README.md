@@ -86,11 +86,11 @@ selects an arbitrator from the merchant approved arbitrator list, and wants to p
 2. To finish the DKG setup process and obtain the shared spend pub key, (which is used to obtain the address of the shared escrow wallet), at least t (threshold) of n (total number of multisig participants) participants need to exchange messages.
 3. To obtain the multisig private viewkey, a shared secret between at least two parties of the escrow wallet is needed.
 
-Instead of a typical 2 of 3 multisig setup, we use a 3 of 6 multisig setup.
+Instead of a typical 2 of 3 multisig setup, we use a 3 of 5 multisig setup, merchant and customer each get 2 keys and the arbitrator gets 1 key.
 
 A. This still means two parties have to collude to unlock the funds in the escrow wallet.
 
-B. The merchant can keep one key offline
+B. The merchant can keep one key offline, while even if the hotkey on the shopserver is compromised, the arbitrator key alone is not enough to unlock the escrow wallet.
 
 C. The wallet can be set up without the direct participation of the arbitrator.
 
