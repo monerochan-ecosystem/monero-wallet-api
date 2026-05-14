@@ -127,6 +127,9 @@ export function walletRouteFromString(input: string): WalletRouteResult {
   if (Number.isNaN(parseInt(wallet_slot))) {
     return { ok: false, error: `invalid wallet_slot: "${wallet_slot}"` };
   }
+  if (parseInt(wallet_slot) < 0) {
+    return { ok: false, error: `invalid wallet_slot: "${wallet_slot} < 0"` };
+  }
 
   return {
     ok: true,
