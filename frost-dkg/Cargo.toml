@@ -1,0 +1,57 @@
+[package]
+name = "frost-dkg"
+version = "0.1.0"
+edition = "2021"
+description = "Standalone eVRF DKG + FROST signing with a JSON-friendly API, callable from C"
+
+[dependencies]
+dkg-evrf = { path = "/home/test/projects/serai/crypto/dkg/evrf", default-features = false }
+modular-frost = { path = "/home/test/projects/serai/crypto/frost", default-features = false, features = [
+    "ed25519",
+    "ristretto",
+] }
+embedwards25519 = { path = "/home/test/projects/serai/crypto/embedwards25519", features = [
+    "std",
+] }
+hex = "0.4"
+ciphersuite = { path = "/home/test/projects/serai/crypto/ciphersuite", features = [
+    "std",
+] }
+zeroize = { version = "^1.5", default-features = false, features = [
+    "zeroize_derive",
+    "alloc",
+] }
+rand_core = { version = "0.6", default-features = false, features = [
+    "getrandom",
+] }
+serde_json = { version = "1", default-features = false, features = ["std"] }
+
+
+[profile.dev.package]
+curve25519-dalek = { opt-level = 3 }
+dalek-ff-group = { opt-level = 3 }
+embedwards25519 = { opt-level = 3 }
+generalized-bulletproofs = { opt-level = 3 }
+generalized-bulletproofs-circuit-abstraction = { opt-level = 3 }
+generalized-bulletproofs-ec-gadgets = { opt-level = 3 }
+multiexp = { opt-level = 3 }
+ff = { opt-level = 3 }
+group = { opt-level = 3 }
+
+
+[patch.crates-io]
+std-shims = { path = "/home/test/projects/serai/patches/std-shims" }
+flexible-transcript = { path = "/home/test/projects/serai/crypto/transcript" }
+multiexp = { path = "/home/test/projects/serai/crypto/multiexp" }
+ciphersuite = { path = "/home/test/projects/serai/patches/ciphersuite" }
+dalek-ff-group = { path = "/home/test/projects/serai/crypto/dalek-ff-group" }
+
+[lib]
+crate-type = ["lib", "cdylib"]
+
+[profile.release]
+opt-level = "z"   # Optimize for size.
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
