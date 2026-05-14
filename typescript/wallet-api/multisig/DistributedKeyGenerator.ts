@@ -159,6 +159,9 @@ export class DistributedKeyGenerator extends WasmProcessor {
     this.readFromWasmMemory = (ptr, len) => {
       result = JSON.parse(this.readString(ptr, len));
     };
+    this.readErrorFromWasmMemory = (ptr, len) => {
+      result = JSON.parse(this.readString(ptr, len));
+    };
 
     //@ts-ignore
     this.tinywasi.instance.exports.dkg_participate(jsonStr.length);
@@ -187,6 +190,9 @@ export class DistributedKeyGenerator extends WasmProcessor {
     // set up read callback: rust will call output_string() to return the result JSON
     let result: DkgVerifyResult | DkgErrorResponse | undefined;
     this.readFromWasmMemory = (ptr, len) => {
+      result = JSON.parse(this.readString(ptr, len));
+    };
+    this.readErrorFromWasmMemory = (ptr, len) => {
       result = JSON.parse(this.readString(ptr, len));
     };
 
