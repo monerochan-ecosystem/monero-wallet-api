@@ -21,7 +21,7 @@ export type DkgGetPublicKeyResult = {
 export type DkgParticipateParams = {
   // DKG secret key as 64-byte hex string
   dkg_secret_key: string;
-  // 32-byte context hex string
+  // label string, will be hashed to 32-byte context
   context: string;
   // array of DKG public keys as hex strings
   dkg_public_keys: string[];
@@ -37,7 +37,7 @@ export type DkgParticipateResult = {
 export type DkgVerifyParams = {
   // DKG secret key as 64-byte hex string
   dkg_secret_key: string;
-  // 32-byte context hex string
+  // label string, will be hashed to 32-byte context
   context: string;
   // threshold number of signers
   t: number;

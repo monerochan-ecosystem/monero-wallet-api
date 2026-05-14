@@ -62,9 +62,12 @@ pub fn dkg_get_public_key() {
   output_string(serde_json::json!({"dkg_public_key": hex_key}).to_string().as_str());
 }
 
-/// Participate in a DKG round.                                                          
-/// Input JSON:{"dkg_secret_key":"hex64","context":"hex32","dkg_public_keys":["hex32",...],"t":2}         
-/// Output JSON: {"participation":"hex_binary"}  or  {"message":"..."}                   
+/// Participate in a DKG round.
+/// Input JSON:{"dkg_secret_key":"hex64",
+///       "context":"string label that will be hashed to a 32 byte value",
+///       "dkg_public_keys":["hex32",...],
+///       "t":2}
+/// Output JSON: {"participation":"hex_binary"}  or  {"message":"..."}
 #[no_mangle]
 pub extern "C" fn dkg_participate(json_len: usize) {
   use rand_core::OsRng;
@@ -140,13 +143,15 @@ pub extern "C" fn dkg_participate(json_len: usize) {
   output_string(serde_json::json!({"participation": hex::encode(&buf)}).to_string().as_str());
 }
 
-/// Verify participations and extract the group key.                                                               
-/// Input JSON: {"dkg_secret_key":"hex64","context":"hex32","t":2,                                                 
-///              "dkg_public_keys":["hex32",...],                                                                  
-///              "participations":{"1":"hex","2":"hex","3":"hex"}}                                                 
-/// Output: {"group_key":"hex32","t":2,"n":3}                                                                      
-///      or: {"faulty_participants":[1]}                                                                           
-///      or: {"message":"NotEnoughParticipants"}                                                                   
+/// Verify participations and extract the group key.
+/// Input JSON: {"dkg_secret_key":"hex64",
+///               "context":"string label that will be hashed to a 32 byte value",
+///               "t":2,
+///               "dkg_public_keys":["hex32",...],
+///               "participations":{"1":"hex","2":"hex","3":"hex"}} <- length is number of participants
+/// Output: {"group_key":"hex32","t":2,"n":3}
+///      or: {"faulty_participants":[1]}
+///      or: {"message":"NotEnoughParticipants"}
 #[no_mangle]
 pub extern "C" fn dkg_verify(json_len: usize) {
   use rand_core::OsRng;
@@ -266,24 +271,13 @@ fn read_dkg_secret_key(
 }
 
 fn read_context(v: &serde_json::Value) -> Result<[u8; 32], String> {
-  let hex = v["context"]
+  use blake2::{Digest, Blake2s256};
+
+  let label = v["context"]
     .as_str()
     .ok_or_else(|| serde_json::json!({"message": "missing context"}).to_string())?;
-  let bytes = hex::decode(hex).map_err(|e| {
-    serde_json::json!({"message": format!("invalid context hex:         
- {e}")})
-    .to_string()
-  })?;
-  if bytes.len() != 32 {
-    return Err(
-      serde_json::json!({"message": "context must be 32                     
- bytes"})
-      .to_string(),
-    );
-  }
-  let mut ctx = [0u8; 32];
-  ctx.copy_from_slice(&bytes);
-  Ok(ctx)
+
+  Ok(Blake2s256::digest(label.as_bytes()).into())
 }
 
 fn read_pubkey_array<C: ciphersuite::WrappedGroup + ciphersuite::GroupIo>(
