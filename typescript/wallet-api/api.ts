@@ -29,6 +29,7 @@ export {
   type ParseAddressError,
 } from "./send-functionality/transactionBuilding";
 export { computeKeyImage } from "./scanning-syncing/scanresult/computeKeyImage";
+export * from "./send-functionality/multisig";
 export {
   startWebworker,
   createWebworker,
