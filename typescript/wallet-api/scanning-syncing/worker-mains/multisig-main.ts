@@ -33,7 +33,17 @@ export function multisigMainWorkerCall(
   } else if (msg.type === "multisig-call") {
     const functionName = msg.functionName;
     const params = msg.params;
+    log("multisigMainWorkerCall", [
+      `received call to ${functionName}() with params:`,
+      params,
+    ]);
+
     const result = dkg[functionName](params as any);
+    log("multisigMainWorkerCall", [
+      `received call to ${functionName}() with params, got result`,
+      params,
+      result,
+    ]);
     self.postMessage({ type: "multisig-call-result", result });
   }
 }

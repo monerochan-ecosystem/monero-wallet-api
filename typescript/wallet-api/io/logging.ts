@@ -67,6 +67,8 @@ export const LOGGING_FUNCTIONS = [
 
   // io/atomicWrite.ts
   "atomicWrite",
+  // multisig-main.ts
+  "multisigMainWorkerCall",
 ] as const;
 export type PossibleLogs = (typeof LOGGING_FUNCTIONS)[number];
 export type LogSetting = "console" | "file" | "console-and-file" | "off";
@@ -77,7 +79,7 @@ export type FileLogMessage = {
 export async function setupLoggingPath(
   scan_settings_path: string,
   path_prefix: string,
-  role: "coordinator" | "cpubound" | "mainthread",
+  role: "coordinator" | "cpubound" | "mainthread" | "multisig",
   cpu_worker_id?: number,
 ) {
   const scanSettings = await openScanSettingsFile(scan_settings_path);
