@@ -13,7 +13,10 @@ test("3-of-5 escrow DKG group key", async () => {
   const secretKeys: Uint8Array[] = [];
   const publicKeys: string[] = [];
 
-  const dkg = await DistributedKeyGenerator.create(threshold, count);
+  const dkg = await DistributedKeyGenerator.createAndSetupGenerators(
+    threshold,
+    count,
+  );
 
   for (let i = 0; i < count; i++) {
     const sk = crypto.getRandomValues(new Uint8Array(64));

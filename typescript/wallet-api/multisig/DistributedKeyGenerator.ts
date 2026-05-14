@@ -1,5 +1,18 @@
 import { frost_dkg_wasm } from "../wasm-processing/wasmFile";
 import { WasmProcessor } from "../wasm-processing/wasmProcessor";
+/**
+ * get the DKG public key from a 64-byte DKG secret key
+ * @param dkgSecretKey - 64 byte Uint8Array dkg secret key
+ * @returns - dkg public key as hex string
+ */
+export async function getDkgPublicKey(dkgSecretKey: Uint8Array) {
+  const dkg = await DistributedKeyGenerator.create();
+  const pubResult = dkg.getPublicKey(dkgSecretKey);
+  if ("message" in pubResult) {
+    throw new Error(`getPublicKey failed: ${pubResult.message}`);
+  }
+  return pubResult.dkg_public_key;
+}
 
 export type DkgGetPublicKeyResult = {
   dkg_public_key: string; // hex-encoded public key
@@ -59,12 +72,24 @@ export type DkgErrorResponse = {
 
 export class DistributedKeyGenerator extends WasmProcessor {
   /**
+   * create distributed key generator wasm instance,
+   * without initializing generators
+   * (in case you just want to get the public dkg key from a secret dkg key)
+   *
+   * @returns  - Promise<DistributedKeyGenerator>
+   */
+  public static async create(): Promise<DistributedKeyGenerator> {
+    const dkg = new DistributedKeyGenerator();
+    await dkg.initWasmModule(frost_dkg_wasm);
+    return dkg;
+  }
+  /**
    * set up a distributed key generator with t threshold and n total participants
    * @param t  - total number of multisig participants
    * @param n  - threshold to sign a transaction
-   * @returns
+   * @returns  - Promise<DistributedKeyGenerator>
    */
-  public static async create(
+  public static async createAndSetupGenerators(
     t: number,
     n: number,
   ): Promise<DistributedKeyGenerator> {
