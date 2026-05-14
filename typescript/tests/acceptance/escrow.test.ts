@@ -87,19 +87,19 @@ test("3-of-5 escrow DKG group key", async () => {
       `participate failed for customer 1: ${customer_part1.message}`,
     );
   }
-  participations["0"] = customer_part1.participation;
+  participations["1"] = customer_part1.participation;
   if ("message" in customer_part2) {
     throw new Error(
       `participate failed for customer 2: ${customer_part2.message}`,
     );
   }
-  participations["1"] = customer_part2.participation;
+  participations["2"] = customer_part2.participation;
   if ("message" in merchant_part1) {
     throw new Error(
       `participate failed for merchant 1: ${merchant_part1.message}`,
     );
   }
-  participations["2"] = merchant_part1.participation;
+  participations["3"] = merchant_part1.participation;
 
   console.log("participations finished:", participations);
 
