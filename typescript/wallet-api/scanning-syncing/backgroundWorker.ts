@@ -130,7 +130,7 @@ export function startWebworker(
 // WORKER_READY (meaning self.onmessage = handleMessage has executed).
 // after that, postMessage is safe, no race between worker startup
 // and message delivery.
-function startWebworkerReady(): Promise<Worker> {
+export function startWebworkerReady(): Promise<Worker> {
   const worker = startWebworker();
   return new Promise<Worker>((resolve) => {
     const onReady = (e: MessageEvent) => {
