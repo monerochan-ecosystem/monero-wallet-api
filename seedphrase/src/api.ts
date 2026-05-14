@@ -10,6 +10,7 @@ export function validateSeedphrase(seedphrase: string): boolean {
 }
 
 // Irreversible: Uses KDF to derive 64 bytes of key data from mnemonic + optional password.
+// returns 64 bytes of key data
 export function deriveSecretKey(
   seedphrase: string,
   password?: string,
@@ -42,7 +43,7 @@ export type GetSecretParams = {
   coin_name: "monero";
   key_type: "spend" | "comms" | "hotkey" | "hotkey-comms";
 };
-
+// returns 64 bytes of key data
 export function getWalletSecret(params: GetSecretParams): Uint8Array {
   const { identity, domain, wallet_type, wallet_slot } = params.route;
   const seedphrase = params.seedphrase;
