@@ -47,5 +47,8 @@
     "clean": "rm -rf ./dist"
   },
   "type": "module",
-  "types": "dist/api.d.ts"
+  "types": "dist/api.d.ts",
+  "dependencies": {
+    "@noble/hashes": "2.2.0"
+  }
 }
