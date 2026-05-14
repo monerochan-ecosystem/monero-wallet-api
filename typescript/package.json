@@ -49,6 +49,7 @@
   "type": "module",
   "types": "dist/api.d.ts",
   "dependencies": {
+    "@noble/curves": "2.2.0",
     "@noble/hashes": "2.2.0"
   }
 }
