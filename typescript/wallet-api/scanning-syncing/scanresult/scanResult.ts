@@ -1,19 +1,7 @@
-import {
-  CatastrophicReorgError,
-  type BlockInfo,
-  type GetBlocksResultMeta,
-  type Output,
-} from "../../api";
+import { CatastrophicReorgError, type BlockInfo, type Output } from "../../api";
 import { computeKeyImage, type KeyImage } from "./computeKeyImage";
 import { log } from "../../io/logging";
-import {
-  mergeRanges,
-  findRange,
-  readCacheFileDefaultLocation,
-  lastRange,
-  writeCacheToFile,
-  findRangeThrows,
-} from "./scanCache";
+import { mergeRanges, findRange, findRangeThrows } from "./scanCache";
 import { type ErrorResponse } from "../../node-interaction/binaryEndpoints";
 import type {
   CacheChangedCallback,
@@ -21,6 +9,8 @@ import type {
   ChangedOutput,
   ScanCache,
 } from "./scanCache";
+import { WasmProcessor } from "../../wasm-processing/wasmProcessor";
+import { monero_wallet_api_wasm } from "../../wasm-processing/wasmFile";
 
 export type ProcessScanResultParams = {
   current_range: CacheRange;
@@ -178,7 +168,7 @@ export async function processScanResult(
     const filteredKeyImages = result.all_key_images.filter(
       (ki) => ki.block_height >= tipHeight && ki.block_height <= last_height,
     );
-
+    const wasmProcessor = await WasmProcessor.init(monero_wallet_api_wasm);
     changed_outputs.push(
       ...(await detectOutputs(
         {
@@ -188,6 +178,7 @@ export async function processScanResult(
         },
         cache,
         secret_spend_key,
+        wasmProcessor,
       )),
     );
 
@@ -264,6 +255,7 @@ export async function detectOutputs(
   result: ScanResult,
   cache: ScanCache,
   spend_private_key?: string, // if no spendkey is provided, this will be a view only sync. (no ownspend detected)
+  wasmProcessor?: WasmProcessor,
 ) {
   let changed_outputs: ChangedOutput[] = [];
   for (const output of result.outputs) {
@@ -302,7 +294,11 @@ export async function detectOutputs(
 
     // 3. if this is not view only, add the key image to the cache, to find transactions spent by this wallet
     if (spend_private_key) {
-      let keyImage = await computeKeyImage(output, spend_private_key);
+      let keyImage = await computeKeyImage(
+        output,
+        spend_private_key,
+        wasmProcessor,
+      );
       if (keyImage) {
         cache.own_key_images[keyImage] = globalId;
       }

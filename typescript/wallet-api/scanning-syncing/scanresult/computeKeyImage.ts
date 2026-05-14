@@ -5,8 +5,10 @@ export type KeyImage = string;
 export async function computeKeyImage(
   output: Output,
   sender_spend_key: string,
+  wasmProcessor?: WasmProcessor,
 ): Promise<KeyImage | undefined> {
-  const wasmProcessor = await WasmProcessor.init(monero_wallet_api_wasm);
+  if (!wasmProcessor)
+    wasmProcessor = await WasmProcessor.init(monero_wallet_api_wasm);
   wasmProcessor.writeToWasmMemory = (ptr, len) => {
     wasmProcessor.writeString(ptr, len, output.serialized);
     wasmProcessor.writeToWasmMemory = (ptr, len) => {
