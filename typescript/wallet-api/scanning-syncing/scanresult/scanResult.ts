@@ -168,7 +168,6 @@ export async function processScanResult(
     const filteredKeyImages = result.all_key_images.filter(
       (ki) => ki.block_height >= tipHeight && ki.block_height <= last_height,
     );
-    const wasmProcessor = await WasmProcessor.init(monero_wallet_api_wasm);
     changed_outputs.push(
       ...(await detectOutputs(
         {
@@ -178,7 +177,6 @@ export async function processScanResult(
         },
         cache,
         secret_spend_key,
-        wasmProcessor,
       )),
     );
 
@@ -255,9 +253,10 @@ export async function detectOutputs(
   result: ScanResult,
   cache: ScanCache,
   spend_private_key?: string, // if no spendkey is provided, this will be a view only sync. (no ownspend detected)
-  wasmProcessor?: WasmProcessor,
 ) {
   let changed_outputs: ChangedOutput[] = [];
+  const wasmProcessor = await WasmProcessor.init(monero_wallet_api_wasm);
+
   for (const output of result.outputs) {
     // 0. prevent burning bug and avoid overwriting earlier found outputs
     const duplicate = Object.values(cache.outputs).find(
