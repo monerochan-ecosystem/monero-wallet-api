@@ -43,7 +43,11 @@ export type GetSecretParams = {
   coin_name: "monero";
   key_type: "spend" | "comms" | "hotkey" | "hotkey-comms";
 };
-// returns 64 bytes of key data
+/**
+ * Returns 64 bytes of key data, derived from mnemonic
+ * @param params wallet_route, seedphrase, password, coin_name, key_type
+ * @returns 64 bytes of key data - uses KDF ( bip39.mnemonicToSeedSync of noble bip39)
+ */
 export function getWalletSecret(params: GetSecretParams): Uint8Array {
   const { identity, domain, wallet_type, wallet_slot } = params.route;
   const seedphrase = params.seedphrase;
