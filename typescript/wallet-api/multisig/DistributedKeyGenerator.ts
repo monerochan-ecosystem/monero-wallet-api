@@ -14,6 +14,25 @@ export async function getDkgPublicKey(dkgSecretKey: Uint8Array) {
   return pubResult.dkg_public_key;
 }
 
+/**
+ * derive a Monero address (mainnet, stagenet, testnet) from a DKG group key.
+ * spend_public_key is the group_key hex from dkg_verify output.
+ * view_secret_key is the 32-byte view secret key hex. (see performEscrowViewPairECDH on how to get one)
+ *
+ * @returns object with view_key, mainnet_primary, stagenet_primary, testnet_primary
+ */
+export async function getDkgMoneroAddress(
+  spend_public_key: string,
+  view_secret_key: string,
+) {
+  const dkg = await DistributedKeyGenerator.create();
+  const result = dkg.getMoneroAddress({ spend_public_key, view_secret_key });
+  if ("message" in result) {
+    throw new Error(`getDkgMoneroAddress failed: ${result.message}`);
+  }
+  return result;
+}
+
 export type DkgGetPublicKeyResult = {
   dkg_public_key: string; // hex-encoded public key
 };
@@ -68,6 +87,20 @@ export type DkgVerifyResult =
 
 export type DkgErrorResponse = {
   message: string;
+};
+
+export type DkgGetMoneroAddressParams = {
+  // group_key hex from dkg_verify output
+  spend_public_key: string;
+  // 32-byte view secret key hex
+  view_secret_key: string;
+};
+
+export type DkgGetMoneroAddressResult = {
+  view_key: string;
+  mainnet_primary: string;
+  stagenet_primary: string;
+  testnet_primary: string;
 };
 
 export class DistributedKeyGenerator extends WasmProcessor {
@@ -201,6 +234,44 @@ export class DistributedKeyGenerator extends WasmProcessor {
 
     if (!result) {
       return { message: "No response from dkg_verify" };
+    }
+    return result;
+  }
+
+  /**
+   * derive a Monero address from a DKG group key.
+   *
+   * Input JSON keys expected by the rust wasm:
+   *   spend_public_key (hex32) - the group_key hex from dkg_verify output
+   *   view_secret_key (hex32) - 32-byte view secret key (see performEscrowViewPairECDH on how to get one)
+   *
+   * @param params - spendPublicKey and viewSecretKey as hex strings
+   * @returns object with view_key, mainnet_primary, stagenet_primary, testnet_primary
+   */
+  public getMoneroAddress(
+    params: DkgGetMoneroAddressParams,
+  ): DkgGetMoneroAddressResult | DkgErrorResponse {
+    const jsonStr = JSON.stringify(params);
+
+    // set up write callback: rust calls input_string(json_len)
+    this.writeToWasmMemory = (ptr, len) => {
+      this.writeString(ptr, len, jsonStr);
+    };
+
+    // set up read callback: rust calls output_string()
+    let result: DkgGetMoneroAddressResult | DkgErrorResponse | undefined;
+    this.readFromWasmMemory = (ptr, len) => {
+      result = JSON.parse(this.readString(ptr, len));
+    };
+    this.readErrorFromWasmMemory = (ptr, len) => {
+      result = JSON.parse(this.readString(ptr, len));
+    };
+
+    //@ts-ignore
+    this.tinywasi.instance.exports.dkg_get_monero_address(jsonStr.length);
+
+    if (!result) {
+      return { message: "No response from dkg_get_monero_address" };
     }
     return result;
   }
