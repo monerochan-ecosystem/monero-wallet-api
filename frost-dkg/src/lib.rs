@@ -6,6 +6,7 @@
 //! All messages are JSON-serializable for
 //! transport over network, QR codes, USB, etc.
 pub mod dkg;
+pub mod monero;
 
 pub(crate) mod your_program {
   /// implement input & output in your program to share arrays with the frost-dkg crate
