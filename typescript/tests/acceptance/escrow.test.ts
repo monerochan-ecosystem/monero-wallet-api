@@ -3,9 +3,12 @@ import {
   makeEscrowContext,
   getDkgPublicKey,
   MultiSig,
-  type DkgParticipateResult,
   type DkgVerifyInvalidResult,
   type DkgVerifyValidResult,
+  deriveEscrowViewpairCommsSecret,
+  escrowViewPairECDHgetPublicKey,
+  performEscrowViewPairECDH,
+  getDkgMoneroAddress,
 } from "../../dist/api";
 
 test("3-of-5 escrow DKG group key", async () => {
@@ -21,6 +24,15 @@ test("3-of-5 escrow DKG group key", async () => {
   const customer_pk2 = await getDkgPublicKey(customer_sk2);
   console.log("customer_pk2", customer_pk2);
 
+  // simulate the bip39 getWalletSecret() return of 64 bytes of key data
+  const customer_seed_derived_view_pair_sk = crypto.getRandomValues(
+    new Uint8Array(64),
+  );
+  const customer_vp_sk = await deriveEscrowViewpairCommsSecret(
+    customer_seed_derived_view_pair_sk,
+  );
+  const customer_vp_pk = await escrowViewPairECDHgetPublicKey(customer_vp_sk);
+
   // setup merchant keypairs
   const merchant_sk1 = crypto.getRandomValues(new Uint8Array(64));
   const merchant_pk1 = await getDkgPublicKey(merchant_sk1);
@@ -29,6 +41,27 @@ test("3-of-5 escrow DKG group key", async () => {
   const merchant_sk2 = crypto.getRandomValues(new Uint8Array(64));
   const merchant_pk2 = await getDkgPublicKey(merchant_sk2);
   console.log("merchant_pk2", merchant_pk2);
+  // simulate the bip39 getWalletSecret() return of 64 bytes of key data
+  const merchant_seed_derived_view_pair_sk = crypto.getRandomValues(
+    new Uint8Array(64),
+  );
+  const merchant_vp_sk = await deriveEscrowViewpairCommsSecret(
+    merchant_seed_derived_view_pair_sk,
+  );
+  const merchant_vp_pk = await escrowViewPairECDHgetPublicKey(merchant_vp_sk);
+
+  // perform escrow viewpair ECDH
+  const customer_escrow_viewpair_sk = await performEscrowViewPairECDH(
+    customer_vp_sk,
+    merchant_vp_pk,
+  );
+  const merchant_escrow_viewpair_sk = await performEscrowViewPairECDH(
+    merchant_vp_sk,
+    customer_vp_pk,
+  );
+
+  console.log("customer_escrow_viewpair_sk", customer_escrow_viewpair_sk);
+  console.log("merchant_escrow_viewpair_sk", merchant_escrow_viewpair_sk);
 
   // setup arbitrator keypair
   const arbitrator_sk = crypto.getRandomValues(new Uint8Array(64));
@@ -111,6 +144,12 @@ test("3-of-5 escrow DKG group key", async () => {
     dkg_public_keys: all_pk,
     participations,
   })) as DkgVerifyValidResult;
+
+  const escrow_address = await getDkgMoneroAddress(
+    verifyResult.group_key,
+    customer_escrow_viewpair_sk,
+  );
+  console.log("escrow_address", escrow_address);
 
   if ("group_key" in verifyResult) {
     console.log("\n  3-of-5 group key:", verifyResult.group_key);
