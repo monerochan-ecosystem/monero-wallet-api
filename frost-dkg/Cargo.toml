@@ -6,10 +6,15 @@ description = "Standalone eVRF DKG + FROST signing with a JSON-friendly API, cal
 
 [dependencies]
 dkg-evrf = { path = "/home/test/projects/serai/crypto/dkg/evrf", default-features = false }
-modular-frost = { path = "/home/test/projects/serai/crypto/frost", default-features = false, features = [
-    "ed25519",
-    "ristretto",
+dalek-ff-group = { path = "/home/test/projects/serai/crypto/dalek-ff-group", default-features = false, features = [
+    "std",
 ] }
+
+monero-wallet = { git = "https://github.com/monero-oxide/monero-oxide", rev = "c8be5d3d1287669946a83fbfcb296ce2a8852e47", default-features = false, features = [
+    "std",
+    "multisig",
+] }
+
 embedwards25519 = { path = "/home/test/projects/serai/crypto/embedwards25519", features = [
     "std",
 ] }
@@ -46,6 +51,8 @@ flexible-transcript = { path = "/home/test/projects/serai/crypto/transcript" }
 multiexp = { path = "/home/test/projects/serai/crypto/multiexp" }
 ciphersuite = { path = "/home/test/projects/serai/patches/ciphersuite" }
 dalek-ff-group = { path = "/home/test/projects/serai/crypto/dalek-ff-group" }
+modular-frost = { path = "/home/test/projects/serai/crypto/frost" }
+
 
 [lib]
 crate-type = ["lib", "cdylib"]

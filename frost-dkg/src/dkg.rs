@@ -1,6 +1,6 @@
 struct Ed25519Dkg;
 impl dkg_evrf::Curves for Ed25519Dkg {
-  type ToweringCurve = modular_frost::curve::Ed25519;
+  type ToweringCurve = dalek_ff_group::Ed25519;
   type EmbeddedCurve = embedwards25519::Embedwards25519;
   type EmbeddedCurveParameters = embedwards25519::Embedwards25519;
 }
