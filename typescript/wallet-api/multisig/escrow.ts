@@ -1,6 +1,7 @@
 import { ed25519, x25519 } from "@noble/curves/ed25519.js";
 import { numberToBytesLE } from "@noble/curves/utils.js";
 import { blake3 } from "@noble/hashes/blake3.js";
+import { vk_from_entropy } from "../api";
 
 export function makeEscrowContext(context_index: number) {
   if (Number.isNaN(parseInt(String(context_index)))) {
@@ -92,10 +93,10 @@ export function escrowViewPairECDHgetPublicKey(vp_comms_secret: Uint8Array) {
  * @param alice_sk - your viewpair secret
  * @param bob_pk - the other multisig (escrow) party's viewpair public key
  */
-export function performEscrowViewPairECDH(
+export async function performEscrowViewPairECDH(
   alice_sk: Uint8Array,
   bob_pk: Uint8Array,
-) {
+): Promise<string> {
   const txt = new TextEncoder();
 
   const aliceSecX = ed25519.utils.toMontgomerySecret(alice_sk);
@@ -104,10 +105,6 @@ export function performEscrowViewPairECDH(
   const sharedSecret = blake3(sharedKey, {
     context: txt.encode("escrow-viewpair-comms"),
   });
-
-  const scalar = numberToBytesLE(
-    ed25519.Point.Fn.fromBytes(sharedSecret),
-    32,
-  ).toHex();
+  const scalar = await vk_from_entropy(sharedSecret);
   return scalar;
 }

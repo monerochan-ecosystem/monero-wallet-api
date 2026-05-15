@@ -168,7 +168,35 @@ export async function makeViewKey(
   }
   return result as ViewPairJson;
 }
-
+/**
+ * entropy is hashed with keccak to make the view private key
+ * this is according to the convention in the monero code base,
+ * read the comment at the top of the file for more details & link to source
+ * @param entropy the spendkey the viewkey will be derived from
+ * @returns the viewkey that was derived from entropy as hex
+ */
+export async function vk_from_entropy(entropy: Uint8Array): Promise<string> {
+  if (entropy.length !== 32) {
+    throw new Error(
+      `Invalid entropy length: ${entropy.length}.
+       Expected 32 bytes array.`,
+    );
+  }
+  const wasmProcessor = await WasmProcessor.init(monero_wallet_api_wasm);
+  wasmProcessor.writeToWasmMemory = (ptr, len) => {
+    wasmProcessor.writeArray(ptr, len, entropy);
+  };
+  let result: String | undefined = undefined;
+  wasmProcessor.readFromWasmMemory = (ptr, len) => {
+    result = wasmProcessor.readString(ptr, len);
+  };
+  //@ts-ignore
+  wasmProcessor.tinywasi.instance.exports.vk_from_entropy(entropy.length);
+  if (!result) {
+    throw new Error("Failed to obtain view key from entropy.");
+  }
+  return result as string;
+}
 /**
  *
  * unlike crypto-ops.c sc_reduce32, this is not unrolled
