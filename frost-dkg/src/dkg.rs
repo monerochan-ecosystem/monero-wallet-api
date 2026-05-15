@@ -220,11 +220,15 @@ pub extern "C" fn dkg_verify(json_len: usize) {
         );
         return;
       }
+      let threshold_keys_serialized: Vec<String> =
+        keys.iter().map(|k| hex::encode(k.serialize().as_slice())).collect();
       output_string(
         serde_json::json!({
             "group_key": hex::encode(keys[0].group_key().to_bytes()),
             "t": keys[0].params().t(),
-            "n": keys[0].params().n()
+            "n": keys[0].params().n(),
+            "i": u16::from(keys[0].params().i()),
+            "threshold_keys": threshold_keys_serialized,
         })
         .to_string()
         .as_str(),

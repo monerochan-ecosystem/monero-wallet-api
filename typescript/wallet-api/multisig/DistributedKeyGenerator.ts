@@ -70,6 +70,8 @@ export type DkgVerifyValidResult = {
   group_key: string; // monero spend public key
   t: number;
   n: number;
+  i: number; // your participant index
+  threshold_keys: string[]; // hex-encoded serialized ThresholdKeys (one per key share)
 };
 
 export type DkgVerifyInvalidResult = {
