@@ -5,6 +5,7 @@ import {
   makeEscrowContext,
   getDkgPublicKey,
   MultiSig,
+  MultiSigTxSigner,
   type DkgVerifyInvalidResult,
   type DkgVerifyValidResult,
   deriveEscrowViewpairCommsSecret,
@@ -97,7 +98,7 @@ async function cleanupEscrowDir(): Promise<void> {
   await rm(ESCROW_DIR, { force: true, recursive: true }).catch(() => {});
   await mkdir(ESCROW_DIR, { recursive: true });
 }
-const TX_BLOCKS = 10;
+const TX_BLOCKS = 15;
 const TOTAL_BLOCKS = 1000;
 async function TestASetup() {
   await cleanupEscrowDir();
@@ -108,11 +109,20 @@ async function TestASetup() {
   const customerAddress = customerKP.view_key.mainnet_primary;
   Bun.env[`sk${customerAddress}`] = customerKP.spend_key;
   Bun.env[`vk${customerAddress}`] = customerKP.view_key.view_key;
+  await atomicWrite(
+    ESCROW_DIR + "/escrow_keys.json",
+    JSON.stringify({
+      customer_primary_address: customerAddress,
+      customer_spend_key: customerKP.spend_key,
+      customer_view_key: customerKP.view_key.view_key,
+    }),
+  );
 
   const scanSettings: ScanSettings = {
     wallets: [
       {
         primary_address: customerAddress,
+        wallet_name: "customer",
       },
     ],
     node_url: NODE_URL,
@@ -146,7 +156,6 @@ async function TestASetup() {
   await syncedPromise;
   return { wallets, postTxSyncPromise };
 }
-
 test("a: 3-of-5 escrow DKG group key, customer wallet spends tx into the escrow wallet", async () => {
   const customerWalletSynced = TestASetup();
 
@@ -348,9 +357,11 @@ test("a: 3-of-5 escrow DKG group key, customer wallet spends tx into the escrow 
   const customerWallet = customer_sync.wallets.wallets[0];
   customer_sync.wallets.stopWorker();
   Bun.env[`vk${escrow_address.mainnet_primary}`] = merchant_escrow_viewpair_sk;
+
   await writeWalletToScanSettings({
     primary_address: escrow_address.mainnet_primary,
-    start_height: 1000,
+    start_height: TOTAL_BLOCKS,
+    wallet_name: "escrow",
     scan_settings_path: SCAN_SETTINGS_PATH,
   });
   customer_sync.wallets.retry();
@@ -383,12 +394,184 @@ test("a: 3-of-5 escrow DKG group key, customer wallet spends tx into the escrow 
 
   await generateBlocks(customerWallet.primary_address, TX_BLOCKS);
   await customer_sync.postTxSyncPromise;
+
+  // create merchant final wallet here so test b: can re-run independently
+  const merchantKP_final = await makeTestKeyPair();
+  const merchant_final_address = merchantKP_final.view_key.mainnet_primary;
+  Bun.env[`sk${merchant_final_address}`] = merchantKP_final.spend_key;
+  Bun.env[`vk${merchant_final_address}`] = merchantKP_final.view_key.view_key;
+  await writeWalletToScanSettings({
+    primary_address: merchant_final_address,
+    start_height: TOTAL_BLOCKS + TX_BLOCKS,
+    wallet_name: "merchant",
+    scan_settings_path: SCAN_SETTINGS_PATH,
+  });
+  // save merchant keys alongside escrow keys
+  const existingKeys = JSON.parse(
+    await Bun.file(ESCROW_DIR + "/escrow_keys.json").text(),
+  );
+  await atomicWrite(
+    ESCROW_DIR + "/escrow_keys.json",
+    JSON.stringify(
+      {
+        ...existingKeys,
+        escrow_primary_address: escrow_address.mainnet_primary,
+        escrow_view_key: merchant_escrow_viewpair_sk,
+        merchant_primary_address: merchant_final_address,
+        merchant_spend_key: merchantKP_final.spend_key,
+        merchant_view_key: merchantKP_final.view_key.view_key,
+      },
+      null,
+      2,
+    ),
+  );
+  console.log("merchant final address", merchant_final_address);
 }, 120000);
 
 test("b: 7 days have passed, merchant sends escrow tx, signs together with arbitrator", async () => {
-  console.log();
-  const wallets = await openWallets({ scan_settings_path: SCAN_SETTINGS_PATH });
-  // wallets?.wallets.find(
-  //   (w) => w.primary_address === escrow_address.mainnet_primary,
-  // );
+  // load keys from test a: so this test can run independently
+  const escrowKeys = JSON.parse(
+    await Bun.file(ESCROW_DIR + "/escrow_keys.json").text(),
+  );
+  Bun.env[`sk${escrowKeys.customer_primary_address}`] =
+    escrowKeys.customer_spend_key;
+  Bun.env[`vk${escrowKeys.customer_primary_address}`] =
+    escrowKeys.customer_view_key;
+  Bun.env[`vk${escrowKeys.escrow_primary_address}`] =
+    escrowKeys.escrow_view_key;
+  const merchant_final_address = escrowKeys.merchant_primary_address;
+  Bun.env[`sk${merchant_final_address}`] = escrowKeys.merchant_spend_key;
+  Bun.env[`vk${merchant_final_address}`] = escrowKeys.merchant_view_key;
+
+  const wallets = await openWallets({
+    scan_settings_path: SCAN_SETTINGS_PATH,
+    pathPrefix: `${ESCROW_DIR}/`,
+    no_stats: true,
+  });
+  const escrowWallet = wallets?.wallets.find((w) => w.wallet_name === "escrow");
+  if (!escrowWallet)
+    throw new Error("escrowWallet not found, run test a: first");
+  // wait for escrow wallet to finish syncing before building the tx
+  // while (
+  //   escrowWallet.current_height === null ||
+  //   escrowWallet.current_height < TOTAL_BLOCKS + TX_BLOCKS
+  // ) {
+  //   await Bun.sleep(500);
+  // }
+  console.log("escrowWallet", escrowWallet.spendableInputs());
+  console.log("current height", escrowWallet.current_height);
+  const unsigned_tx_hex = await escrowWallet.makeStandardTransaction(
+    merchant_final_address,
+    "1137",
+  );
+
+  // read verify results from test a: to get threshold keys
+  const verifyResults = JSON.parse(
+    await Bun.file(ESCROW_DIR + "/verifyResult.json").text(),
+  );
+  const merchant1VR =
+    verifyResults.verifyResultMerchant1 as DkgVerifyValidResult;
+  const merchant2VR =
+    verifyResults.verifyResultMerchant2 as DkgVerifyValidResult;
+  const arbitratorVR =
+    verifyResults.verifyResultArbitrator as DkgVerifyValidResult;
+
+  if (
+    !merchant1VR.threshold_keys ||
+    !merchant2VR.threshold_keys ||
+    !arbitratorVR.threshold_keys
+  ) {
+    throw new Error(
+      "threshold_keys missing from verify results. Update dkg_verify rust code to export them.",
+    );
+  }
+
+  // each verify result has threshold_keys[0] = that participant's own key share
+  // participant indices: 1=customer1, 2=customer2, 3=merchant1, 4=merchant2, 5=arbitrator
+  const signers = [
+    {
+      idx: String(merchant1VR.i),
+      threshold_key: merchant1VR.threshold_keys[0],
+    },
+    {
+      idx: String(merchant2VR.i),
+      threshold_key: merchant2VR.threshold_keys[0],
+    },
+    {
+      idx: String(arbitratorVR.i),
+      threshold_key: arbitratorVR.threshold_keys[0],
+    },
+  ];
+
+  // step 1: each signer preprocesses
+  const txSigners = await Promise.all(
+    signers.map(() => MultiSigTxSigner.create()),
+  );
+  const preprocessResults = await Promise.all(
+    txSigners.map((s, i) =>
+      s.preprocess({
+        threshold_key: signers[i].threshold_key,
+        unsigned_tx: unsigned_tx_hex,
+      }),
+    ),
+  );
+  for (const r of preprocessResults) {
+    if ("message" in r) throw new Error(`preprocess failed: ${r.message}`);
+  }
+
+  // step 2: exchange preprocesses, each signer signs
+  const allPreprocesses: Record<string, string> = {};
+  preprocessResults.forEach((r, i) => {
+    allPreprocesses[signers[i].idx] = r.preprocess;
+  });
+  const signResults = await Promise.all(
+    txSigners.map((s) => s.sign({ preprocesses: allPreprocesses })),
+  );
+  for (const r of signResults) {
+    if ("message" in r) throw new Error(`sign failed: ${r.message}`);
+  }
+
+  // step 3: exchange shares, one signer completes (exclude own share)
+  const completer = txSigners[0];
+  const completerIdx = signers[0].idx;
+  const otherShares: Record<string, string> = {};
+  signResults.forEach((r, i) => {
+    if (signers[i].idx !== completerIdx) {
+      otherShares[signers[i].idx] = r.share;
+    }
+  });
+  const completeResult = completer.complete({ shares: otherShares });
+  if ("message" in completeResult)
+    throw new Error(`complete failed: ${completeResult.message}`);
+
+  // step 4: send raw transaction via escrow wallet's sendTransaction
+  const sendResult = await escrowWallet.sendTransaction(
+    completeResult.signed_tx,
+  );
+  console.log("send_raw_transaction result:", sendResult);
+
+  // step 5: mine blocks to confirm
+  // ( mine into the customer wallet, so escrow wallet stays clean)
+  const customerWallet = wallets?.wallets.find(
+    (w) => w.wallet_name === "customer",
+  );
+
+  await generateBlocks(customerWallet?.primary_address!, TX_BLOCKS);
+
+  // step 6: wait for merchant wallet to sync
+  const merchantWallet = wallets?.wallets.find(
+    (w) => w.wallet_name === "merchant",
+  );
+  if (!merchantWallet) throw new Error("merchant wallet not found");
+  while (
+    merchantWallet.current_height === null ||
+    merchantWallet.current_height < TOTAL_BLOCKS + TX_BLOCKS + TX_BLOCKS
+  ) {
+    await Bun.sleep(500);
+  }
+
+  // merchantWallet already found above
+  console.log("merchant balance:", merchantWallet.amount.toString());
+  expect(merchantWallet.amount).toBeGreaterThan(0n);
+  wallets?.stopWorker();
 }, 120000);
