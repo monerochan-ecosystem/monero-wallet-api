@@ -322,6 +322,25 @@ export class ScanCacheOpened {
     if (!privateSpendKey) throw new Error("privateSpendKey not found in env");
     return await signTransaction(unsignedTx, privateSpendKey);
   }
+  public async getFeeEstimate() {
+    const node = await NodeUrl.create(this.node_url);
+    const feeEstimate = await node.getFeeEstimate();
+    const feePerByte = BigInt(feeEstimate.fees![0]);
+
+    const max_plausible_fee = 20000000000n; // 0.02 XMR
+    const feeFor10kb = feePerByte * 10000n;
+    //2. check if fee is too high
+    if (feeFor10kb > max_plausible_fee) {
+      throw new Error(
+        `fee too high: 
+          ${feeFor10kb} (fee for 10kb tx size) > ${max_plausible_fee} (0.001 XMR)
+          most likely your node is faulty. connect to another node.
+           preferably run one yourself locally.`,
+      );
+    }
+
+    return feeEstimate;
+  }
   public async calculateFeeAndSelectInputs(
     params: CreateTransactionParams,
   ): Promise<{
