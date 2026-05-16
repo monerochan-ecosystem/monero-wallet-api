@@ -475,9 +475,9 @@ test("b: 7 days have passed, merchant sends escrow tx, signs together with arbit
 
   console.log("escrowWallet", escrowWallet.spendableInputs());
   console.log("current height", escrowWallet.current_height);
-  const unsigned_tx_hex = await escrowWallet.makeStandardTransaction(
+  const unsigned_tx_hex = await escrowWallet.sweepToExternalWallet(
     merchant_final_address,
-    "1137",
+    escrowWallet.spendableInputs(),
   );
 
   // read verify results from test a: to get threshold keys
@@ -571,7 +571,9 @@ test("b: 7 days have passed, merchant sends escrow tx, signs together with arbit
   if (!merchantWallet) throw new Error("merchant wallet not found");
   while (
     merchantWallet.current_height === null ||
-    merchantWallet.current_height < TOTAL_BLOCKS + TX_BLOCKS + TX_BLOCKS
+    merchantWallet.current_height < TOTAL_BLOCKS + TX_BLOCKS + TX_BLOCKS ||
+    escrowWallet.current_height === null ||
+    escrowWallet.current_height < TOTAL_BLOCKS + TX_BLOCKS + TX_BLOCKS
   ) {
     await Bun.sleep(500);
   }
