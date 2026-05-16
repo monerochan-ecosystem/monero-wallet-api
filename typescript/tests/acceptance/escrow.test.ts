@@ -127,16 +127,18 @@ async function TestASetup() {
     ],
     node_url: NODE_URL,
     start_height: TOTAL_BLOCKS - 70,
+    logs: "file",
+    logs_include: [
+      "handleCpuboundScan",
+      "atomicWrite",
+      "blocksBufferFetchLoop",
+    ],
   };
   await writeScanSettings(scanSettings, SCAN_SETTINGS_PATH);
   await generateBlocks(customerAddress, TOTAL_BLOCKS);
   let resolveSynced: () => void;
   const syncedPromise = new Promise<void>((resolve) => {
     resolveSynced = resolve;
-  });
-  let resolvePostTxSync: () => void;
-  const postTxSyncPromise = new Promise<void>((resolve) => {
-    resolvePostTxSync = resolve;
   });
 
   const wallets = await openWallets({
@@ -148,13 +150,10 @@ async function TestASetup() {
       if (last && last.end >= TOTAL_BLOCKS) {
         resolveSynced();
       }
-      if (last && last.end >= TOTAL_BLOCKS + TX_BLOCKS) {
-        resolvePostTxSync();
-      }
     },
   });
   await syncedPromise;
-  return { wallets, postTxSyncPromise };
+  return { wallets };
 }
 async function loadTestKeyPairs() {
   // load keys from test a: so this test can run independently
@@ -254,7 +253,8 @@ test("a: 3-of-5 escrow DKG group key, customer wallet spends tx into the escrow 
   if (!context) {
     throw new Error("context creation failed");
   }
-  // customer and merchant run DKG participate
+  // customer and merchant run DKG participate & let customer wallet sync in background
+  // (and fill with the regtest coins)
   const [customer_part1, customer_part2, merchant_part1, customer_sync] =
     await Promise.all([
       customer_dkg1.participate({
@@ -369,18 +369,8 @@ test("a: 3-of-5 escrow DKG group key, customer wallet spends tx into the escrow 
   }
   if (!customer_sync.wallets) throw new Error("customer wallets not opened");
   const customerWallet = customer_sync.wallets.wallets[0];
-  customer_sync.wallets.stopWorker();
-  Bun.env[`vk${escrow_address.mainnet_primary}`] = merchant_escrow_viewpair_sk;
-
-  await writeWalletToScanSettings({
-    primary_address: escrow_address.mainnet_primary,
-    start_height: TOTAL_BLOCKS,
-    wallet_name: "escrow",
-    scan_settings_path: SCAN_SETTINGS_PATH,
-  });
-  customer_sync.wallets.retry();
+  // SEND CUSTOMER FUNDS INTO ESCROW WALLET
   // enable decoy retry (safe because we're on a local regtest node)
-
   customerWallet.decoyRetry = true;
 
   let unsignedTx: string;
@@ -405,10 +395,21 @@ test("a: 3-of-5 escrow DKG group key, customer wallet spends tx into the escrow 
   expect(sendResult.not_relayed).toBe(false);
   expect(sendResult.overspend).toBe(false);
   expect(sendResult.too_big).toBe(false);
+  //STOP CUSTOMER WALLET SYNC
+  customer_sync.wallets.stopWorker();
 
-  await generateBlocks(customerWallet.primary_address, TX_BLOCKS);
-  await customer_sync.postTxSyncPromise;
-
+  Bun.env[`vk${escrow_address.mainnet_primary}`] = merchant_escrow_viewpair_sk;
+  // now we add the escrow wallet to scansettings
+  await writeWalletToScanSettings({
+    primary_address: escrow_address.mainnet_primary,
+    start_height: TOTAL_BLOCKS,
+    wallet_name: "escrow",
+    scan_settings_path: SCAN_SETTINGS_PATH,
+  });
+  let resolvePostTxSync: () => void;
+  const postTxSyncPromise = new Promise<void>((resolve) => {
+    resolvePostTxSync = resolve;
+  });
   // create merchant final wallet here so test b: can re-run independently
   const merchantKP_final = await makeTestKeyPair();
   const merchant_final_address = merchantKP_final.view_key.mainnet_primary;
@@ -416,7 +417,6 @@ test("a: 3-of-5 escrow DKG group key, customer wallet spends tx into the escrow 
   Bun.env[`vk${merchant_final_address}`] = merchantKP_final.view_key.view_key;
   await writeWalletToScanSettings({
     primary_address: merchant_final_address,
-    start_height: TOTAL_BLOCKS + TX_BLOCKS,
     wallet_name: "merchant",
     scan_settings_path: SCAN_SETTINGS_PATH,
   });
@@ -438,7 +438,29 @@ test("a: 3-of-5 escrow DKG group key, customer wallet spends tx into the escrow 
     ),
   );
   console.log("merchant final address", merchant_final_address);
-}, 120000);
+  // reopen wallets with escrow wallet & merchant wallet (where the funds will land eventually)
+  const wallets = await openWallets({
+    scan_settings_path: SCAN_SETTINGS_PATH,
+    pathPrefix: `${ESCROW_DIR}/`,
+    no_stats: true,
+    notifyMasterChanged: async (params) => {
+      const last = params.newCache.scanned_ranges.at(-1);
+
+      if (
+        // make sure the escrow wallet is synced we need it in test b
+        params.newCache.primary_address === escrow_address.mainnet_primary &&
+        last &&
+        last.end >= TOTAL_BLOCKS + TX_BLOCKS
+      ) {
+        resolvePostTxSync();
+      }
+    },
+  });
+
+  await generateBlocks(customerWallet.primary_address, TX_BLOCKS);
+  await postTxSyncPromise;
+  wallets?.stopWorker();
+}, 220000);
 
 test("b: 7 days have passed, merchant sends escrow tx, signs together with arbitrator", async () => {
   const merchant_final_address = await loadTestKeyPairs();
@@ -450,13 +472,7 @@ test("b: 7 days have passed, merchant sends escrow tx, signs together with arbit
   const escrowWallet = wallets?.wallets.find((w) => w.wallet_name === "escrow");
   if (!escrowWallet)
     throw new Error("escrowWallet not found, run test a: first");
-  // wait for escrow wallet to finish syncing before building the tx
-  // while (
-  //   escrowWallet.current_height === null ||
-  //   escrowWallet.current_height < TOTAL_BLOCKS + TX_BLOCKS
-  // ) {
-  //   await Bun.sleep(500);
-  // }
+
   console.log("escrowWallet", escrowWallet.spendableInputs());
   console.log("current height", escrowWallet.current_height);
   const unsigned_tx_hex = await escrowWallet.makeStandardTransaction(
