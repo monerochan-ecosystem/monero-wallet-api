@@ -71,7 +71,7 @@ export type DkgVerifyValidResult = {
   t: number;
   n: number;
   i: number; // your participant index
-  threshold_keys: string[]; // hex-encoded serialized ThresholdKeys (one per key share)
+  threshold_key: string; // hex-encoded serialized ThresholdKey
 };
 
 export type DkgVerifyInvalidResult = {

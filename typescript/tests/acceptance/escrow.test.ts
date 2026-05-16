@@ -477,30 +477,21 @@ test("b: 7 days have passed, merchant sends escrow tx, signs together with arbit
     verifyResults.verifyResultArbitrator as DkgVerifyValidResult;
 
   if (
-    !merchant1VR.threshold_keys ||
-    !merchant2VR.threshold_keys ||
-    !arbitratorVR.threshold_keys
+    !merchant1VR.threshold_key ||
+    !merchant2VR.threshold_key ||
+    !arbitratorVR.threshold_key
   ) {
     throw new Error(
-      "threshold_keys missing from verify results. Update dkg_verify rust code to export them.",
+      "threshold_key missing from verify results. Update dkg_verify rust code to export them.",
     );
   }
 
   // each verify result has threshold_keys[0] = that participant's own key share
   // participant indices: 1=customer1, 2=customer2, 3=merchant1, 4=merchant2, 5=arbitrator
   const signers = [
-    {
-      idx: String(merchant1VR.i),
-      threshold_key: merchant1VR.threshold_keys[0],
-    },
-    {
-      idx: String(merchant2VR.i),
-      threshold_key: merchant2VR.threshold_keys[0],
-    },
-    {
-      idx: String(arbitratorVR.i),
-      threshold_key: arbitratorVR.threshold_keys[0],
-    },
+    { idx: String(merchant1VR.i), threshold_key: merchant1VR.threshold_key },
+    { idx: String(merchant2VR.i), threshold_key: merchant2VR.threshold_key },
+    { idx: String(arbitratorVR.i), threshold_key: arbitratorVR.threshold_key },
   ];
 
   // step 1: each signer preprocesses
