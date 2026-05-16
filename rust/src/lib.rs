@@ -242,6 +242,25 @@ pub extern "C" fn make_transaction(json_params_len: usize) {
 }
 
 #[no_mangle]
+pub extern "C" fn make_external_sweep_transaction(json_params_len: usize) {
+  let json_params = input_string(json_params_len);
+  let viewpair = GLOBAL_VIEWPAIR.with_borrow(|viewpair| viewpair.clone());
+
+  match transaction_building::transaction::make_external_sweep_transaction(
+    &json_params,
+    viewpair.clone(),
+  ) {
+    Ok(signable_tx) => {
+      let tx_json = json!({ "signable_transaction": hex::encode(signable_tx.serialize()) });
+      output_string(&tx_json.to_string());
+    }
+    Err(e) => {
+      output_error_string(&e);
+      return;
+    }
+  }
+}
+#[no_mangle]
 pub extern "C" fn sign_transaction(tx_len: usize, secret_spend_key_len: usize) {
   let tx_string = input_string(tx_len);
   let secret_spend_key_string = input_string(secret_spend_key_len);

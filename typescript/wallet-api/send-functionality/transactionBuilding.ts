@@ -90,6 +90,31 @@ export type SendError = {
   error: ErrorDetail;
   message: string;
 };
+export function makeSweepTransaction<T extends WasmProcessor>(
+  processor: T,
+  params: MakeTransactionParams,
+): UnsignedTransaction {
+  const jsonParams = JSON.stringify(params);
+  processor.writeToWasmMemory = (ptr, len) => {
+    processor.writeString(ptr, len, jsonParams);
+  };
+  let result: { transaction: number[] } | null = null;
+  let error: { error: string } | null = null;
+  processor.readFromWasmMemory = (ptr, len) => {
+    result = JSON.parse(processor.readString(ptr, len));
+  };
+  processor.readErrorFromWasmMemory = (ptr, len) => {
+    error = JSON.parse(processor.readString(ptr, len));
+  };
+  //@ts-ignore
+  processor.tinywasi.instance.exports.make_external_sweep_transaction(
+    jsonParams.length,
+  );
+  if (!result) {
+    throw error;
+  }
+  return result["signable_transaction"] as UnsignedTransaction;
+}
 /**
  *  this function returns the unsigned transaction, throws {@link SendError}
  * @param processor

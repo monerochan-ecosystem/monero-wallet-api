@@ -18,6 +18,7 @@ import {
   type ScanCache,
 } from "../scanning-syncing/scanresult/scanCache";
 import {
+  makeSweepTransaction,
   makeTransaction,
   type MakeTransactionParams,
   type UnsignedTransaction,
@@ -343,6 +344,16 @@ export class ViewPair extends WasmProcessor {
    */
   public makeTransaction(params: MakeTransactionParams): UnsignedTransaction {
     return makeTransaction(this, params);
+  }
+  /**
+   * makeSweepTransaction
+   * @param params - The transaction parameters. Must have exactly one payment,
+   *  the amount will be overwritten by the total amount of the inputs - the necessary fee
+   *
+   * @returns The serialized transaction as an array of numbers
+   */
+  public makeSweepTransaction(params: MakeTransactionParams) {
+    return makeSweepTransaction(this, params);
   }
   /**
    * Retrieve block headers for a specified range of heights.
