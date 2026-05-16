@@ -23,7 +23,7 @@ const MONERONODE_DIR = "tests/moneronode";
 const TEST_DATA_DIR = "test-data/escrow";
 const ESCROW_DIR = TEST_DATA_DIR;
 const MONEROD_PATH = `${MONERONODE_DIR}/monerod`;
-const KEYPAIRS_PATH = `${MONERONODE_DIR}/keypairs.json`;
+const KEYPAIRS_PATH = `${ESCROW_DIR}/keypairs.json`;
 const SCAN_SETTINGS_PATH = `${ESCROW_DIR}/ScanSettings.json`;
 const RPC_PORT = 18081;
 const NODE_URL = `http://127.0.0.1:${RPC_PORT}`;
@@ -110,7 +110,7 @@ async function TestASetup() {
   Bun.env[`sk${customerAddress}`] = customerKP.spend_key;
   Bun.env[`vk${customerAddress}`] = customerKP.view_key.view_key;
   await atomicWrite(
-    ESCROW_DIR + "/escrow_keys.json",
+    KEYPAIRS_PATH,
     JSON.stringify({
       customer_primary_address: customerAddress,
       customer_spend_key: customerKP.spend_key,
@@ -155,6 +155,20 @@ async function TestASetup() {
   });
   await syncedPromise;
   return { wallets, postTxSyncPromise };
+}
+async function loadTestKeyPairs() {
+  // load keys from test a: so this test can run independently
+  const escrowKeys = JSON.parse(await Bun.file(KEYPAIRS_PATH).text());
+  Bun.env[`sk${escrowKeys.customer_primary_address}`] =
+    escrowKeys.customer_spend_key;
+  Bun.env[`vk${escrowKeys.customer_primary_address}`] =
+    escrowKeys.customer_view_key;
+  Bun.env[`vk${escrowKeys.escrow_primary_address}`] =
+    escrowKeys.escrow_view_key;
+  const merchant_final_address = escrowKeys.merchant_primary_address;
+  Bun.env[`sk${merchant_final_address}`] = escrowKeys.merchant_spend_key;
+  Bun.env[`vk${merchant_final_address}`] = escrowKeys.merchant_view_key;
+  return merchant_final_address;
 }
 test("a: 3-of-5 escrow DKG group key, customer wallet spends tx into the escrow wallet", async () => {
   const customerWalletSynced = TestASetup();
@@ -407,11 +421,9 @@ test("a: 3-of-5 escrow DKG group key, customer wallet spends tx into the escrow 
     scan_settings_path: SCAN_SETTINGS_PATH,
   });
   // save merchant keys alongside escrow keys
-  const existingKeys = JSON.parse(
-    await Bun.file(ESCROW_DIR + "/escrow_keys.json").text(),
-  );
+  const existingKeys = JSON.parse(await Bun.file(KEYPAIRS_PATH).text());
   await atomicWrite(
-    ESCROW_DIR + "/escrow_keys.json",
+    KEYPAIRS_PATH,
     JSON.stringify(
       {
         ...existingKeys,
@@ -429,20 +441,7 @@ test("a: 3-of-5 escrow DKG group key, customer wallet spends tx into the escrow 
 }, 120000);
 
 test("b: 7 days have passed, merchant sends escrow tx, signs together with arbitrator", async () => {
-  // load keys from test a: so this test can run independently
-  const escrowKeys = JSON.parse(
-    await Bun.file(ESCROW_DIR + "/escrow_keys.json").text(),
-  );
-  Bun.env[`sk${escrowKeys.customer_primary_address}`] =
-    escrowKeys.customer_spend_key;
-  Bun.env[`vk${escrowKeys.customer_primary_address}`] =
-    escrowKeys.customer_view_key;
-  Bun.env[`vk${escrowKeys.escrow_primary_address}`] =
-    escrowKeys.escrow_view_key;
-  const merchant_final_address = escrowKeys.merchant_primary_address;
-  Bun.env[`sk${merchant_final_address}`] = escrowKeys.merchant_spend_key;
-  Bun.env[`vk${merchant_final_address}`] = escrowKeys.merchant_view_key;
-
+  const merchant_final_address = await loadTestKeyPairs();
   const wallets = await openWallets({
     scan_settings_path: SCAN_SETTINGS_PATH,
     pathPrefix: `${ESCROW_DIR}/`,
