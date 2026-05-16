@@ -19,6 +19,7 @@ import type {
 import { createWebworker, type WorkerSet } from "../backgroundWorker";
 import { spendable } from "./scanResult";
 import {
+  getPathPrefix,
   openScanSettingsFile,
   readPrivateSpendKeyFromEnv,
   readWalletFromScanSettings,
@@ -143,14 +144,18 @@ export class ScanCacheOpened {
     }
     scanCacheOpen._highest_subaddress_index =
       walletSettings.subaddress_index || SUB_ADDRESS_INDEX_DEFAULT_VALUE;
-    scanCacheOpen._stats = await alignScanStatsWithCache(
-      scanCacheOpen._cache,
-      scanCacheOpen.view_pair,
-      params.primary_address,
-      params.pathPrefix,
-      walletSettings.subaddress_index,
-      lastRange(scanCacheOpen._cache.scanned_ranges)?.end,
-    );
+    if (!params.no_stats) {
+      scanCacheOpen._stats = await alignScanStatsWithCache(
+        scanCacheOpen._cache,
+        scanCacheOpen.view_pair,
+        params.primary_address,
+        getPathPrefix(params.scan_settings_path, params.pathPrefix),
+        walletSettings.subaddress_index,
+        lastRange(scanCacheOpen._cache.scanned_ranges)?.end,
+      );
+    } else {
+      scanCacheOpen._no_stats = params.no_stats; // true
+    }
     return scanCacheOpen;
   }
   get start_height(): number | null {
@@ -174,7 +179,8 @@ export class ScanCacheOpened {
     return current_range?.end || null;
   }
   get current_top_range_height(): number | null {
-    if (typeof this._stats === "undefined" || this._stats === null) return null;
+    if (typeof this._stats === "undefined" || this._stats === null)
+      return this.current_height;
     return this._stats.height;
   }
 
@@ -415,12 +421,16 @@ export class ScanCacheOpened {
     return this._cache.daemon_height;
   }
   get amount() {
+    if (this.no_stats) throw new Error("instance has no_stats option active");
     return this._stats?.total_spendable_amount || 0n;
   }
   get pending_amount() {
+    if (this.no_stats) throw new Error("instance has no_stats option active");
     return this._stats?.total_pending_amount || 0n;
   }
   get subaddresses() {
+    if (this.no_stats) throw new Error("instance has no_stats option active");
+
     return Object.values(this._stats?.subaddresses || {});
   }
   get tx_logs() {
@@ -605,13 +615,14 @@ export class ScanCacheOpened {
       created_at_timestamp,
       not_yet_included: true,
     };
-    this._stats = await writeStatsFileDefaultLocation({
-      primary_address: this.primary_address,
-      pathPrefix: this.pathPrefix,
-      writeCallback: async (stats) => {
-        stats.subaddresses[minor.toString()] = new_subaddress;
-      },
-    });
+    if (!this._no_stats)
+      this._stats = await writeStatsFileDefaultLocation({
+        primary_address: this.primary_address,
+        pathPrefix: getPathPrefix(this.scan_settings_path, this.pathPrefix),
+        writeCallback: async (stats) => {
+          stats.subaddresses[minor.toString()] = new_subaddress;
+        },
+      });
     return new_subaddress;
   }
   /**
@@ -736,14 +747,15 @@ export class ScanCacheOpened {
     if (this.view_pair.primary_address !== params.newCache.primary_address)
       return;
     this._cache = params.newCache;
-    this._stats = await alignScanStatsWithCache(
-      this._cache,
-      this.view_pair,
-      this.primary_address,
-      this.pathPrefix,
-      undefined,
-      lastRange(this._cache.scanned_ranges)?.end,
-    );
+    if (!this._no_stats)
+      this._stats = await alignScanStatsWithCache(
+        this._cache,
+        this.view_pair,
+        this.primary_address,
+        getPathPrefix(this.scan_settings_path, this.pathPrefix),
+        this.subaddress_index,
+        lastRange(this._cache.scanned_ranges)?.end,
+      );
 
     if (!this.no_worker) {
       const etaResult = await updateSyncETA(
@@ -762,6 +774,11 @@ export class ScanCacheOpened {
     }
   }
   private _highest_subaddress_index: number | null = null;
+  private _no_stats: boolean = false;
+  public get no_stats(): boolean {
+    return this._no_stats;
+  }
+
   private _cache: ScanCache = {
     daemon_height: 0,
     outputs: {},
