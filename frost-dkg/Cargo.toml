@@ -14,6 +14,8 @@ monero-wallet = { git = "https://github.com/monero-oxide/monero-oxide", rev = "c
     "std",
     "multisig",
 ] }
+modular-frost = { path = "/home/test/projects/serai/crypto/frost" }
+
 
 embedwards25519 = { path = "/home/test/projects/serai/crypto/embedwards25519", features = [
     "std",

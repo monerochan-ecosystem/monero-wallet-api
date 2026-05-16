@@ -32,6 +32,7 @@ export { computeKeyImage } from "./scanning-syncing/scanresult/computeKeyImage";
 export * from "./multisig/multisig";
 export * from "./multisig/DistributedKeyGenerator";
 export * from "./multisig/escrow";
+export * from "./multisig/MultiSigTxSigner";
 
 export {
   startWebworker,
