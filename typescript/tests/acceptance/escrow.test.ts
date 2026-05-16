@@ -16,6 +16,7 @@ import {
   writeScanSettings,
   openWallets,
   writeWalletToScanSettings,
+  atomicWrite,
 } from "../../dist/api";
 const MONERONODE_DIR = "tests/moneronode";
 const TEST_DATA_DIR = "test-data/escrow";
@@ -96,7 +97,7 @@ async function cleanupEscrowDir(): Promise<void> {
   await rm(ESCROW_DIR, { force: true, recursive: true }).catch(() => {});
   await mkdir(ESCROW_DIR, { recursive: true });
 }
-const TX_BLOCKS = 1;
+const TX_BLOCKS = 10;
 const TOTAL_BLOCKS = 1000;
 async function TestASetup() {
   await cleanupEscrowDir();
@@ -275,19 +276,61 @@ test("a: 3-of-5 escrow DKG group key, customer wallet spends tx into the escrow 
 
   console.log("participations finished:", participations);
 
-  // verify with participant 0 key (any of them works)
-  const verifyResult = (await customer_dkg1.verify({
+  const verifyResultCustomer1 = (await customer_dkg1.verify({
     dkg_secret_key: customer_sk1.toHex(),
     context,
     t: threshold,
     dkg_public_keys: all_pk,
     participations,
   })) as DkgVerifyValidResult;
-
+  const verifyResultCustomer2 = (await customer_dkg2.verify({
+    dkg_secret_key: customer_sk2.toHex(),
+    context,
+    t: threshold,
+    dkg_public_keys: all_pk,
+    participations,
+  })) as DkgVerifyValidResult;
+  const verifyResultMerchant1 = (await merchant_dkg1.verify({
+    dkg_secret_key: merchant_sk1.toHex(),
+    context,
+    t: threshold,
+    dkg_public_keys: all_pk,
+    participations,
+  })) as DkgVerifyValidResult;
+  const verifyResultMerchant2 = (await merchant_dkg2.verify({
+    dkg_secret_key: merchant_sk2.toHex(),
+    context,
+    t: threshold,
+    dkg_public_keys: all_pk,
+    participations,
+  })) as DkgVerifyValidResult;
+  const verifyResultArbitrator = (await arbitrator_dkg.verify({
+    dkg_secret_key: arbitrator_sk.toHex(),
+    context,
+    t: threshold,
+    dkg_public_keys: all_pk,
+    participations,
+  })) as DkgVerifyValidResult;
+  atomicWrite(
+    ESCROW_DIR + "/verifyResult.json",
+    JSON.stringify(
+      {
+        verifyResultCustomer1,
+        verifyResultCustomer2,
+        verifyResultMerchant1,
+        verifyResultMerchant2,
+        verifyResultArbitrator,
+      },
+      null,
+      2,
+    ),
+  );
+  const verifyResult = verifyResultCustomer1;
   const escrow_address = await getDkgMoneroAddress(
     verifyResult.group_key,
     customer_escrow_viewpair_sk,
   );
+
   console.log("escrow_address", escrow_address);
 
   if ("group_key" in verifyResult) {
@@ -340,4 +383,12 @@ test("a: 3-of-5 escrow DKG group key, customer wallet spends tx into the escrow 
 
   await generateBlocks(customerWallet.primary_address, TX_BLOCKS);
   await customer_sync.postTxSyncPromise;
+}, 120000);
+
+test("b: 7 days have passed, merchant sends escrow tx, signs together with arbitrator", async () => {
+  console.log();
+  const wallets = await openWallets({ scan_settings_path: SCAN_SETTINGS_PATH });
+  // wallets?.wallets.find(
+  //   (w) => w.primary_address === escrow_address.mainnet_primary,
+  // );
 }, 120000);
