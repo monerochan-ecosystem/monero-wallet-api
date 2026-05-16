@@ -23,6 +23,7 @@ import {
   readPrivateSpendKeyFromEnv,
   readWalletFromScanSettings,
   SCAN_SETTINGS_STORE_NAME_DEFAULT,
+  SUB_ADDRESS_INDEX_DEFAULT_VALUE,
   walletSettingsPlusKeys,
   writeNodeUrlToScanSettings,
   writeStartHeightToScanSettings,
@@ -140,6 +141,8 @@ export class ScanCacheOpened {
       // unpause will start scanning from this.wallet_scan_settings.start_height
       await scanCacheOpen.unpause();
     }
+    scanCacheOpen._highest_subaddress_index =
+      walletSettings.subaddress_index || SUB_ADDRESS_INDEX_DEFAULT_VALUE;
     scanCacheOpen._stats = await alignScanStatsWithCache(
       scanCacheOpen._cache,
       scanCacheOpen.view_pair,
@@ -152,6 +155,15 @@ export class ScanCacheOpened {
   }
   get start_height(): number | null {
     return this._start_height;
+  }
+
+  get subaddress_index(): number {
+    if (
+      typeof this._highest_subaddress_index === "undefined" ||
+      this._highest_subaddress_index === null
+    )
+      return SUB_ADDRESS_INDEX_DEFAULT_VALUE;
+    return this._highest_subaddress_index;
   }
   get current_height(): number | null {
     let current_range = findRange(
@@ -576,6 +588,7 @@ export class ScanCacheOpened {
     const last_subaddress_index = walletSettings.subaddress_index || 0;
     const minor = last_subaddress_index + 1;
     const subaddress = this.view_pair.makeSubaddress(minor);
+    this._highest_subaddress_index = minor;
 
     await writeWalletToScanSettings({
       primary_address: this.view_pair.primary_address,
@@ -748,7 +761,7 @@ export class ScanCacheOpened {
       if (listener) listener(params);
     }
   }
-
+  private _highest_subaddress_index: number | null = null;
   private _cache: ScanCache = {
     daemon_height: 0,
     outputs: {},
