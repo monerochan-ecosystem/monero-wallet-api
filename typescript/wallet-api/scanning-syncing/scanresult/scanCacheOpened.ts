@@ -424,6 +424,59 @@ export class ScanCacheOpened {
     });
     return unsignedTx;
   }
+  public async makeSweepTransactionFromSelectedInputs(
+    destination_address: string,
+    selectedInputs: Output[],
+    feeEstimate: FeeEstimateResponse,
+  ) {
+    // 4. get output distribution
+    const node = await NodeUrl.create(this.node_url);
+
+    const distibution = await node.getOutputDistribution();
+    const inputs: Input[] = [];
+
+    for (const input of selectedInputs) {
+      // 5. sample decoys & get outs from node: here is where a privacy compromising event could happen
+      const sizesToTry = this.decoyRetry
+        ? this.decoyRetrySizes
+        : [this.decoySampleCount];
+
+      let madeInput: Input | undefined;
+
+      for (const size of sizesToTry) {
+        if (madeInput) break;
+        try {
+          const prepared = prepareInput(node, distibution, input, size);
+          const wasmInput = node.makeInput(
+            prepared.input,
+            prepared.sample.candidates,
+            await prepared.outsResponse,
+          );
+          madeInput = wasmInput;
+        } catch (e) {
+          if (size === sizesToTry[sizesToTry.length - 1]) throw e;
+          // fall through to next size
+        }
+      }
+
+      if (!madeInput) throw new Error("failed to make input");
+      inputs.push(madeInput);
+    }
+
+    // 7. make transaction: combine inputs, payments + fee info
+    const unsignedTx = this.view_pair.makeSweepTransaction({
+      inputs,
+      payments: [
+        {
+          address: destination_address,
+          amount: "0",
+        },
+      ],
+      fee_response: feeEstimate,
+      fee_priority: "unimportant",
+    });
+    return unsignedTx;
+  }
   /**
    * this function returns the unsigned transaction, throws {@link SendError}
    */
@@ -433,6 +486,21 @@ export class ScanCacheOpened {
     return await this.makeTransactionFromSelectedInputs(
       params.payments,
       selectedInputs,
+      feeEstimate,
+    );
+  }
+  /**
+   * sweep inputs to external wallet address (the wallet will receive input amount - fee)
+   * @param inputs     use spendableInputs() to find inputs to put in
+   */
+  public async sweepToExternalWallet(
+    destination_address: string,
+    inputs: Output[],
+  ) {
+    const feeEstimate = await this.getFeeEstimate();
+    return await this.makeSweepTransactionFromSelectedInputs(
+      destination_address,
+      inputs,
       feeEstimate,
     );
   }
