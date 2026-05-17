@@ -497,7 +497,7 @@ test("b: 7 days have passed, merchant sends escrow tx, signs together with arbit
     !arbitratorVR.threshold_key
   ) {
     throw new Error(
-      "threshold_key missing from verify results. Update dkg_verify rust code to export them.",
+      "threshold_key missing from verify results. dkg.verify() returns the threshold key of the participant.",
     );
   }
 
@@ -510,45 +510,52 @@ test("b: 7 days have passed, merchant sends escrow tx, signs together with arbit
   ];
 
   // step 1: each signer preprocesses
-  const txSigners = await Promise.all(
-    signers.map(() => MultiSigTxSigner.create()),
-  );
-  const preprocessResults = await Promise.all(
-    txSigners.map((s, i) =>
-      s.preprocess({
-        threshold_key: signers[i].threshold_key,
-        unsigned_tx: unsigned_tx_hex,
-      }),
-    ),
-  );
-  for (const r of preprocessResults) {
-    if ("message" in r) throw new Error(`preprocess failed: ${r.message}`);
-  }
+  const preprocesses: Record<string, string> = {};
+  // the merchant has two key shares, so we need to create two multisig tx signers, that preprocess
+  const merchantMultiSigTxSigner1 = await MultiSigTxSigner.create();
+  const merchantMultiSigTxSigner2 = await MultiSigTxSigner.create();
+  preprocesses[merchant1VR.i] = await merchantMultiSigTxSigner1.preprocess({
+    threshold_key: merchant1VR.threshold_key,
+    unsigned_tx: unsigned_tx_hex,
+  }).preprocess;
+  preprocesses[merchant2VR.i] = await merchantMultiSigTxSigner2.preprocess({
+    threshold_key: merchant2VR.threshold_key,
+    unsigned_tx: unsigned_tx_hex,
+  }).preprocess;
+  // the arbitrator only has one key share, so we only need one more signer to reach the threshold
+  const arbitratorMultiSigTxSigner = await MultiSigTxSigner.create();
+  preprocesses[arbitratorVR.i] = await arbitratorMultiSigTxSigner.preprocess({
+    threshold_key: arbitratorVR.threshold_key,
+    unsigned_tx: unsigned_tx_hex,
+  }).preprocess;
 
   // step 2: exchange preprocesses, each signer signs
-  const allPreprocesses: Record<string, string> = {};
-  preprocessResults.forEach((r, i) => {
-    allPreprocesses[signers[i].idx] = r.preprocess;
+  const merchantShare1 = await merchantMultiSigTxSigner1.sign({
+    preprocesses,
   });
-  const signResults = await Promise.all(
-    txSigners.map((s) => s.sign({ preprocesses: allPreprocesses })),
-  );
-  for (const r of signResults) {
-    if ("message" in r) throw new Error(`sign failed: ${r.message}`);
-  }
+  const merchantShare2 = await merchantMultiSigTxSigner2.sign({
+    preprocesses,
+  });
+  const arbitratorShare = await arbitratorMultiSigTxSigner.sign({
+    preprocesses,
+  });
+  const txSigners = [
+    merchantMultiSigTxSigner1,
+    merchantMultiSigTxSigner2,
+    arbitratorMultiSigTxSigner,
+  ];
 
   // step 3: exchange shares, one signer completes (exclude own share)
-  const completer = txSigners[0];
-  const completerIdx = signers[0].idx;
-  const otherShares: Record<string, string> = {};
-  signResults.forEach((r, i) => {
-    if (signers[i].idx !== completerIdx) {
-      otherShares[signers[i].idx] = r.share;
-    }
+
+  const otherShares: Record<string, string> = {
+    //    [merchant1VR.i]: merchantShare1.share, <-- own share
+    [merchant2VR.i]: merchantShare2.share,
+    [arbitratorVR.i]: arbitratorShare.share,
+  };
+
+  const completeResult = merchantMultiSigTxSigner1.complete({
+    shares: otherShares,
   });
-  const completeResult = completer.complete({ shares: otherShares });
-  if ("message" in completeResult)
-    throw new Error(`complete failed: ${completeResult.message}`);
 
   // step 4: send raw transaction via escrow wallet's sendTransaction
   const sendResult = await escrowWallet.sendTransaction(
