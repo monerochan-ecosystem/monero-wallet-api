@@ -21,8 +21,8 @@ import type { BunRequest } from "bun";
 
 const AMOUNT = "0.1337";
 const ACCEPT_AFTER_CONFIRMATIONS = 10;
-
-// ─── Skeleton ───────────────────────────────────────────────────────────────
+export const WALLET_CACHES_DIR = "wallet-caches";
+export const SCAN_SETTINGS_PATH = WALLET_CACHES_DIR + "/ScanSettings.json";
 
 const skeleton = await html`<!DOCTYPE html>
   <html>
@@ -35,8 +35,6 @@ const skeleton = await html`<!DOCTYPE html>
       ${null}
     </body>
   </html> `.build();
-
-// ─── Routes ─────────────────────────────────────────────────────────────────
 
 export function makeRoutes() {
   return {
@@ -59,11 +57,10 @@ export function makeRoutes() {
 
 Bun.serve({ port: 3004, routes: makeRoutes() });
 
-// ─── Open Merchant Wallet ─────────────────────────────────────────────────────────
-
 let retryScheduled = false;
 
 const wallets = await openWallets({
+  scan_settings_path: SCAN_SETTINGS_PATH,
   notifyMasterChanged: async (params) => {
     // sync payments on cache change
     // sync in any case to update confirmations
@@ -119,8 +116,6 @@ async function syncPaymentStatus() {
 }
 // sync payments on startup
 await syncPaymentStatus();
-
-// ─── Route Handlers ─────────────────────────────────────────────────────────
 
 async function newSessionRoute() {
   const secret = crypto.randomUUID();
@@ -270,8 +265,6 @@ async function checkoutRoute(req: Request) {
 
   return new Response(skeleton.fill(content));
 }
-
-// ─── Styles ─────────────────────────────────────────────────────
 
 const checkoutStyles = html`<style>
   iframe {
