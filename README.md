@@ -5,6 +5,15 @@
 ```ts
 import { openWallets } from "@spirobel/monero-wallet-api";
 
+// scan all non-halted wallets from the settings file:
+const wallets = await openWallets();
+```
+
+## kitchen sink + transaction sending
+
+```ts
+import { openWallets } from "@spirobel/monero-wallet-api";
+
 // add a wallet address to ScanSettings.json first
 
 // convenience script to make a regtest wallet and write to RegtestScanSettings.json + keys to .env.local:
@@ -23,11 +32,31 @@ const wallets = await openWallets({
 // change node url mid scan
 await wallets.changeNodeUrl("http://127.0.0.1:18081");
 
+// send a transaction
+wallets.wallets[0].makeSignSendTransaction();
+wallets.wallets[0].makeStandardTransaction(
+  escrow_address.mainnet_primary,
+  "133700000000",
+);
+wallets.wallets[0].signTransaction();
+wallets.wallets[0].sendTransaction();
+
+// sweep all funds to another wallet
+const unsigned_tx_hex = await escrowWallet.sweepToExternalWallet(
+  merchant_final_address,
+  escrowWallet.spendableInputs(),
+);
+
 // stop scan worker
 wallets.stopWorker();
 ```
 
-See the [acceptance test](typescript/tests/acceptance/dont_rescan.test.ts) for a full working example.
+See the [reorg handling test](typescript/tests/acceptance/reorg_handling.test.ts) for a regtest reorg example.
+
+After running this test a local node is available, which
+makes it possible to easily run the [escrow test](typescript/tests/acceptance/escrow.test.ts) described in detail [here](https://monerochan.news/article/19).
+
+See the [acceptance test](typescript/tests/acceptance/dont_rescan.test.ts) for a full working sync example with mainnet data.
 
 ## documentation overview
 
