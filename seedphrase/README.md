@@ -101,3 +101,5 @@ To bundle the two multisig shares (+ shared secret for viewkey) under one route,
 - `spend` - the private spend key, this is the default case.
 - `comms` - in the typical escrow multisig case we need to create a shared secret via ECDH with the merchant, for the creation of the view private key of the escrow wallet. The generic name `comms` implies this shared secret can also be used to provide encrypted direct messages features, between the multisig participants.
 - `hotkey` - this is the hotkey that is put on the checkout page of the merchant. To facilitate the exchange of messages to perform the wallet setup with 3 out of 6 participants.
+
+Read this [article](https://monerochan.news/article/19) to learn more about the escrow multisig setup.
