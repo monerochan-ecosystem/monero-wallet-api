@@ -6,6 +6,7 @@ import type {
   DkgParticipateResult,
   DkgVerifyParams,
   DkgVerifyResult,
+  DkgVerifyValidResult,
 } from "./DistributedKeyGenerator";
 
 export class MultiSig {
@@ -64,12 +65,12 @@ export class MultiSig {
   }
 
   /**
-   * participate in a DKG round.
+   * participate in a DKG round (nothrow).
    *
    * @param params dkg_secret_key as 64-byte hex string, context, dkg_public_keys array (length is n implicitly), t (threshold)
    * @returns The participation message as hex, or an error object
    */
-  public participate(
+  public participateNoThrow(
     params: DkgParticipateParams,
   ): Promise<DkgParticipateResult | DkgErrorResponse> {
     const msg = { type: "multisig-call", functionName: "participate", params };
@@ -95,13 +96,13 @@ export class MultiSig {
   }
 
   /**
-   * verify DKG participations and extract the group key.
+   * verify DKG participations and extract the group key (nothrow).
    *
    * @param params dkg_secret_key as 64-byte hex string, context, t (threshold), dkg_public_keys array (length is n implicitly),
    *  participations [ paricipant index -> hex participation message ]
    * @returns The group key and params, faulty participants, not-enough message, or error
    */
-  public verify(
+  public verifyNoThrow(
     params: DkgVerifyParams,
   ): Promise<DkgVerifyResult | DkgErrorResponse> {
     const msg = { type: "multisig-call", functionName: "verify", params };
@@ -124,6 +125,33 @@ export class MultiSig {
       },
     );
     return result_promise;
+  }
+
+  /**
+   * participate in a DKG round (throws on error).
+   */
+  public async participate(
+    params: DkgParticipateParams,
+  ): Promise<DkgParticipateResult> {
+    const result = await this.participateNoThrow(params);
+    if ("message" in result) {
+      throw new Error(`participate failed: ${result.message}`);
+    }
+    return result;
+  }
+
+  /**
+   * verify DKG participations and extract the group key (throws on error).
+   */
+  public async verify(params: DkgVerifyParams): Promise<DkgVerifyValidResult> {
+    const result = await this.verifyNoThrow(params);
+    if ("message" in result) {
+      throw new Error(`verify failed: ${result.message}`);
+    }
+    if ("faulty_participants" in result) {
+      throw new Error(`verify failed: ${result.faulty_participants}`);
+    }
+    return result;
   }
 }
 

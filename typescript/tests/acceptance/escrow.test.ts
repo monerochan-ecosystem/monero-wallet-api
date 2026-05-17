@@ -277,63 +277,48 @@ test("a: 3-of-5 escrow DKG group key, customer wallet spends tx into the escrow 
       }),
       customerWalletSynced,
     ]);
-  const participations: Record<string, string> = {};
-  if ("message" in customer_part1) {
-    throw new Error(
-      `participate failed for customer 1: ${customer_part1.message}`,
-    );
-  }
-  participations["1"] = customer_part1.participation;
-  if ("message" in customer_part2) {
-    throw new Error(
-      `participate failed for customer 2: ${customer_part2.message}`,
-    );
-  }
-  participations["2"] = customer_part2.participation;
-  if ("message" in merchant_part1) {
-    throw new Error(
-      `participate failed for merchant 1: ${merchant_part1.message}`,
-    );
-  }
-  participations["3"] = merchant_part1.participation;
-
+  const participations: Record<string, string> = {
+    "1": customer_part1.participation,
+    "2": customer_part2.participation,
+    "3": merchant_part1.participation,
+  };
   console.log("participations finished:", participations);
 
-  const verifyResultCustomer1 = (await customer_dkg1.verify({
+  const verifyResultCustomer1 = await customer_dkg1.verify({
     dkg_secret_key: customer_sk1.toHex(),
     context,
     t: threshold,
     dkg_public_keys: all_pk,
     participations,
-  })) as DkgVerifyValidResult;
-  const verifyResultCustomer2 = (await customer_dkg2.verify({
+  });
+  const verifyResultCustomer2 = await customer_dkg2.verify({
     dkg_secret_key: customer_sk2.toHex(),
     context,
     t: threshold,
     dkg_public_keys: all_pk,
     participations,
-  })) as DkgVerifyValidResult;
-  const verifyResultMerchant1 = (await merchant_dkg1.verify({
+  });
+  const verifyResultMerchant1 = await merchant_dkg1.verify({
     dkg_secret_key: merchant_sk1.toHex(),
     context,
     t: threshold,
     dkg_public_keys: all_pk,
     participations,
-  })) as DkgVerifyValidResult;
-  const verifyResultMerchant2 = (await merchant_dkg2.verify({
+  });
+  const verifyResultMerchant2 = await merchant_dkg2.verify({
     dkg_secret_key: merchant_sk2.toHex(),
     context,
     t: threshold,
     dkg_public_keys: all_pk,
     participations,
-  })) as DkgVerifyValidResult;
-  const verifyResultArbitrator = (await arbitrator_dkg.verify({
+  });
+  const verifyResultArbitrator = await arbitrator_dkg.verify({
     dkg_secret_key: arbitrator_sk.toHex(),
     context,
     t: threshold,
     dkg_public_keys: all_pk,
     participations,
-  })) as DkgVerifyValidResult;
+  });
   atomicWrite(
     ESCROW_DIR + "/verifyResult.json",
     JSON.stringify(

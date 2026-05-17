@@ -38,7 +38,12 @@ export function multisigMainWorkerCall(
       params,
     ]);
 
-    const result = dkg[functionName](params as any);
+    let result;
+    if (functionName === "participate") {
+      result = dkg.participateNoThrow(params as DkgParticipateParams);
+    } else if (functionName === "verify") {
+      result = dkg.verifyNoThrow(params as DkgVerifyParams);
+    }
     log("multisigMainWorkerCall", [
       `received call to ${functionName}() with params, got result`,
       params,
