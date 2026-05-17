@@ -49,7 +49,20 @@ export class MultiSigTxSigner extends WasmProcessor {
    * @param params threshold_key hex, unsigned_tx hex
    * @returns preprocess hex
    */
-  public preprocess(
+  public preprocess(params: MoneroPreprocessParams): MoneroPreprocessResult {
+    const result = this.preprocessNoThrow(params);
+    if ("message" in result) {
+      throw new Error(`preprocess failed: ${result.message}`);
+    }
+    return result;
+  }
+  /**
+   * preprocess -  does not throw, with return error type
+   *
+   * @param params threshold_key hex, unsigned_tx hex
+   * @returns preprocess hex
+   */
+  public preprocessNoThrow(
     params: MoneroPreprocessParams,
   ): MoneroPreprocessResult | MoneroErrorResponse {
     const jsonStr = JSON.stringify(params);
@@ -74,14 +87,26 @@ export class MultiSigTxSigner extends WasmProcessor {
     }
     return result;
   }
-
   /**
    * sign
    *
    * @param params preprocesses map from all signers
    * @returns share hex
    */
-  public sign(
+  public sign(params: MoneroSignParams): MoneroSignResult {
+    const result = this.signNoThrow(params);
+    if ("message" in result) {
+      throw new Error(`sign failed: ${result.message}`);
+    }
+    return result;
+  }
+  /**
+   * sign -  does not throw, with return error type
+   *
+   * @param params preprocesses map from all signers
+   * @returns share hex
+   */
+  public signNoThrow(
     params: MoneroSignParams,
   ): MoneroSignResult | MoneroErrorResponse {
     const jsonStr = JSON.stringify(params);
@@ -106,14 +131,26 @@ export class MultiSigTxSigner extends WasmProcessor {
     }
     return result;
   }
-
   /**
    * complete
    *
    * @param params shares map from all signers
    * @returns signed_tx hex
    */
-  public complete(
+  public complete(params: MoneroCompleteParams): MoneroCompleteResult {
+    const result = this.completeNoThrow(params);
+    if ("message" in result) {
+      throw new Error(`complete failed: ${result.message}`);
+    }
+    return result;
+  }
+  /**
+   * complete -  does not throw, with return error type
+   *
+   * @param params shares map from all signers
+   * @returns signed_tx hex
+   */
+  public completeNoThrow(
     params: MoneroCompleteParams,
   ): MoneroCompleteResult | MoneroErrorResponse {
     const jsonStr = JSON.stringify(params);
