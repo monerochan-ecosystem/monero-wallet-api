@@ -58,6 +58,12 @@ cd typescript || cd ../typescript
 bun build
 ```
 
+prerequisite: init submodule (frost-dkg uses serai submodule)
+
+```bash
+git submodule update --init --recursive
+```
+
 prerequisite: install rust (or use docker image, see below)
 
 ```bash
