@@ -467,7 +467,6 @@ test("b: 7 days have passed, merchant sends escrow tx, signs together with arbit
   const wallets = await openWallets({
     scan_settings_path: SCAN_SETTINGS_PATH,
     pathPrefix: `${ESCROW_DIR}/`,
-    no_stats: true,
   });
   const escrowWallet = wallets?.wallets.find((w) => w.wallet_name === "escrow");
   if (!escrowWallet)
