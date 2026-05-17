@@ -1,0 +1,3 @@
+[submodule "frost-dkg/vendor/serai"]
+	path = frost-dkg/vendor/serai
+	url = https://github.com/monerochan-ecosystem/serai.git/
