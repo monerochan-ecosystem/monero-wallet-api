@@ -1,6 +1,6 @@
 {
   "name": "@spirobel/monero-wallet-api",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "main": "dist/api.js",
   "module": "dist/api.js",
   "devDependencies": {
@@ -47,5 +47,9 @@
     "clean": "rm -rf ./dist"
   },
   "type": "module",
-  "types": "dist/api.d.ts"
+  "types": "dist/api.d.ts",
+  "dependencies": {
+    "@noble/curves": "2.2.0",
+    "@noble/hashes": "2.2.0"
+  }
 }

@@ -5,7 +5,7 @@
     "": {
       "name": "standard-checkout",
       "dependencies": {
-        "@spirobel/mininext": "0.8.4",
+        "@spirobel/mininext": "0.8.5",
         "@spirobel/monero-wallet-api": "0.3.16",
         "qrcode": "1.5.4",
       },
@@ -19,7 +19,7 @@
     },
   },
   "packages": {
-    "@spirobel/mininext": ["@spirobel/mininext@0.8.4", "", { "peerDependencies": { "typescript": "^5.0.0" } }, "sha512-t6N0uxFeYepbsLs+3kqDsALuTgW/Qahk6Z5NpV+IOP0U+sQTEYOQbRtc7IDBAMRRY3BzZLENNbZrnUUODmw0Vg=="],
+    "@spirobel/mininext": ["@spirobel/mininext@0.8.5", "", { "peerDependencies": { "typescript": "^5.0.0" } }, "sha512-mjsDcdIPM1/FjlowLn/A/b05eoMOTQZ2dIH+NJnnnlwIUOSxIYarBWkkPu1uuS8G6ZcdchOd0eaezJyHD6MIjw=="],
 
     "@spirobel/monero-wallet-api": ["@spirobel/monero-wallet-api@0.3.16", "", { "dependencies": { "zod": "4.3.6" }, "peerDependencies": { "typescript": "5.9.3" } }, "sha512-BSi9q7AQpveNzRAARevOBDK2uoVHH7kdyll/Smy72kI2oC0Rd30LJt2oZF+mpHPgIG49nVxQQsFIA0zs2WCWaA=="],
 

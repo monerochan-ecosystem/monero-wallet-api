@@ -2,6 +2,8 @@ import { coordinatorMainWorker } from "./coordinator-main";
 import { handleCpuboundScanTry, sendFromCpuWorker } from "./cpubound-main";
 import { log, setupLoggingPath } from "../../io/logging";
 import { SCAN_SETTINGS_STORE_NAME_DEFAULT } from "../scanSettings";
+import { multisigMainWorkerCall } from "./multisig-main";
+import { DistributedKeyGenerator } from "../../api";
 
 self.onerror = (e) => self.postMessage({ type: "ERROR", payload: e });
 self.addEventListener("unhandledrejection", (e) =>
@@ -11,6 +13,7 @@ self.addEventListener("unhandledrejection", (e) =>
 let SCAN_SETTINGS_PATH: string | undefined;
 let PATH_PREFIX: string | undefined;
 let cpuPort: MessagePort | undefined;
+let multisig_dkg: DistributedKeyGenerator | undefined;
 export function CPU_PORT_HANDLER(pe: MessageEvent) {
   if (!cpuPort)
     throw new Error("[cpubound] cpuPort is undefined in port.onmessage");
@@ -63,7 +66,16 @@ const handleMessage = async (e: MessageEvent) => {
           });
         },
       );
+    } else if (msg.role === "multisig") {
+      DistributedKeyGenerator.createAndSetupGenerators(msg.t, msg.n).then(
+        (dkg) => {
+          multisig_dkg = dkg;
+          self.postMessage({ type: "multisig-ready" });
+        },
+      );
     }
+  } else if (msg.type === "multisig-call") {
+    multisigMainWorkerCall(msg, multisig_dkg);
   }
 };
 function handleMessageTry(e: MessageEvent) {

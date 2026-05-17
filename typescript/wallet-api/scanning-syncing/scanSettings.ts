@@ -5,6 +5,11 @@ import type { LogSetting, PossibleLogs } from "../io/logging";
 import { LOCAL_NODE_DEFAULT_URL } from "../node-interaction/nodeUrl";
 
 export const SCAN_SETTINGS_STORE_NAME_DEFAULT = "ScanSettings.json";
+// default value for subaddress highest minor index eg up to which minor index,
+// to add subaddresses to the scanner
+
+// (we never touch major index, having two values is just too confusing)
+export const SUB_ADDRESS_INDEX_DEFAULT_VALUE = 1;
 
 export type ScanSetting = {
   primary_address: string;
@@ -363,7 +368,8 @@ export async function writeWalletToScanSettings(
         wallets: [
           {
             primary_address: params.primary_address,
-            subaddress_index: params.subaddress_index || 1,
+            subaddress_index:
+              params.subaddress_index || SUB_ADDRESS_INDEX_DEFAULT_VALUE,
             halted: params.halted,
             wallet_route: params.wallet_route,
             wallet_name: params.wallet_name,
@@ -395,7 +401,8 @@ export async function writeWalletToScanSettings(
     // wallet does not exist yet in settings
     scanSettings.wallets.push({
       primary_address: params.primary_address,
-      subaddress_index: params.subaddress_index || 1,
+      subaddress_index:
+        params.subaddress_index || SUB_ADDRESS_INDEX_DEFAULT_VALUE,
       halted: params.halted,
       wallet_route: params.wallet_route,
       wallet_name: params.wallet_name,
@@ -406,7 +413,9 @@ export async function writeWalletToScanSettings(
     const wallet = scanSettings.wallets[already_has_settings];
     if (wallet) {
       wallet.subaddress_index =
-        params.subaddress_index || wallet.subaddress_index || 1;
+        params.subaddress_index ||
+        wallet.subaddress_index ||
+        SUB_ADDRESS_INDEX_DEFAULT_VALUE;
       wallet.halted = params.halted || wallet.halted;
       wallet.wallet_route = params.wallet_route || wallet.wallet_route;
       wallet.wallet_name = params.wallet_name || wallet.wallet_name;

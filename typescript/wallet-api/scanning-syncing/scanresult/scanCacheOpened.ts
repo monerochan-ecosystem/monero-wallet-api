@@ -19,10 +19,12 @@ import type {
 import { createWebworker, type WorkerSet } from "../backgroundWorker";
 import { spendable } from "./scanResult";
 import {
+  getPathPrefix,
   openScanSettingsFile,
   readPrivateSpendKeyFromEnv,
   readWalletFromScanSettings,
   SCAN_SETTINGS_STORE_NAME_DEFAULT,
+  SUB_ADDRESS_INDEX_DEFAULT_VALUE,
   walletSettingsPlusKeys,
   writeNodeUrlToScanSettings,
   writeStartHeightToScanSettings,
@@ -140,18 +142,33 @@ export class ScanCacheOpened {
       // unpause will start scanning from this.wallet_scan_settings.start_height
       await scanCacheOpen.unpause();
     }
-    scanCacheOpen._stats = await alignScanStatsWithCache(
-      scanCacheOpen._cache,
-      scanCacheOpen.view_pair,
-      params.primary_address,
-      params.pathPrefix,
-      walletSettings.subaddress_index,
-      lastRange(scanCacheOpen._cache.scanned_ranges)?.end,
-    );
+    scanCacheOpen._highest_subaddress_index =
+      walletSettings.subaddress_index || SUB_ADDRESS_INDEX_DEFAULT_VALUE;
+    if (!params.no_stats) {
+      scanCacheOpen._stats = await alignScanStatsWithCache(
+        scanCacheOpen._cache,
+        scanCacheOpen.view_pair,
+        params.primary_address,
+        getPathPrefix(params.scan_settings_path, params.pathPrefix),
+        walletSettings.subaddress_index,
+        lastRange(scanCacheOpen._cache.scanned_ranges)?.end,
+      );
+    } else {
+      scanCacheOpen._no_stats = params.no_stats; // true
+    }
     return scanCacheOpen;
   }
   get start_height(): number | null {
     return this._start_height;
+  }
+
+  get subaddress_index(): number {
+    if (
+      typeof this._highest_subaddress_index === "undefined" ||
+      this._highest_subaddress_index === null
+    )
+      return SUB_ADDRESS_INDEX_DEFAULT_VALUE;
+    return this._highest_subaddress_index;
   }
   get current_height(): number | null {
     let current_range = findRange(
@@ -162,7 +179,8 @@ export class ScanCacheOpened {
     return current_range?.end || null;
   }
   get current_top_range_height(): number | null {
-    if (typeof this._stats === "undefined" || this._stats === null) return null;
+    if (typeof this._stats === "undefined" || this._stats === null)
+      return this.current_height;
     return this._stats.height;
   }
 
@@ -304,6 +322,25 @@ export class ScanCacheOpened {
     if (!privateSpendKey) throw new Error("privateSpendKey not found in env");
     return await signTransaction(unsignedTx, privateSpendKey);
   }
+  public async getFeeEstimate() {
+    const node = await NodeUrl.create(this.node_url);
+    const feeEstimate = await node.getFeeEstimate();
+    const feePerByte = BigInt(feeEstimate.fees![0]);
+
+    const max_plausible_fee = 20000000000n; // 0.02 XMR
+    const feeFor10kb = feePerByte * 10000n;
+    //2. check if fee is too high
+    if (feeFor10kb > max_plausible_fee) {
+      throw new Error(
+        `fee too high: 
+          ${feeFor10kb} (fee for 10kb tx size) > ${max_plausible_fee} (0.001 XMR)
+          most likely your node is faulty. connect to another node.
+           preferably run one yourself locally.`,
+      );
+    }
+
+    return feeEstimate;
+  }
   public async calculateFeeAndSelectInputs(
     params: CreateTransactionParams,
   ): Promise<{
@@ -387,6 +424,59 @@ export class ScanCacheOpened {
     });
     return unsignedTx;
   }
+  public async makeSweepTransactionFromSelectedInputs(
+    destination_address: string,
+    selectedInputs: Output[],
+    feeEstimate: FeeEstimateResponse,
+  ) {
+    // 4. get output distribution
+    const node = await NodeUrl.create(this.node_url);
+
+    const distibution = await node.getOutputDistribution();
+    const inputs: Input[] = [];
+
+    for (const input of selectedInputs) {
+      // 5. sample decoys & get outs from node: here is where a privacy compromising event could happen
+      const sizesToTry = this.decoyRetry
+        ? this.decoyRetrySizes
+        : [this.decoySampleCount];
+
+      let madeInput: Input | undefined;
+
+      for (const size of sizesToTry) {
+        if (madeInput) break;
+        try {
+          const prepared = prepareInput(node, distibution, input, size);
+          const wasmInput = node.makeInput(
+            prepared.input,
+            prepared.sample.candidates,
+            await prepared.outsResponse,
+          );
+          madeInput = wasmInput;
+        } catch (e) {
+          if (size === sizesToTry[sizesToTry.length - 1]) throw e;
+          // fall through to next size
+        }
+      }
+
+      if (!madeInput) throw new Error("failed to make input");
+      inputs.push(madeInput);
+    }
+
+    // 7. make transaction: combine inputs, payments + fee info
+    const unsignedTx = this.view_pair.makeSweepTransaction({
+      inputs,
+      payments: [
+        {
+          address: destination_address,
+          amount: "0",
+        },
+      ],
+      fee_response: feeEstimate,
+      fee_priority: "unimportant",
+    });
+    return unsignedTx;
+  }
   /**
    * this function returns the unsigned transaction, throws {@link SendError}
    */
@@ -399,16 +489,35 @@ export class ScanCacheOpened {
       feeEstimate,
     );
   }
+  /**
+   * sweep inputs to external wallet address (the wallet will receive input amount - fee)
+   * @param inputs     use spendableInputs() to find inputs to put in
+   */
+  public async sweepToExternalWallet(
+    destination_address: string,
+    inputs: Output[],
+  ) {
+    const feeEstimate = await this.getFeeEstimate();
+    return await this.makeSweepTransactionFromSelectedInputs(
+      destination_address,
+      inputs,
+      feeEstimate,
+    );
+  }
   get daemon_height() {
     return this._cache.daemon_height;
   }
   get amount() {
+    if (this.no_stats) throw new Error("instance has no_stats option active");
     return this._stats?.total_spendable_amount || 0n;
   }
   get pending_amount() {
+    if (this.no_stats) throw new Error("instance has no_stats option active");
     return this._stats?.total_pending_amount || 0n;
   }
   get subaddresses() {
+    if (this.no_stats) throw new Error("instance has no_stats option active");
+
     return Object.values(this._stats?.subaddresses || {});
   }
   get tx_logs() {
@@ -576,6 +685,7 @@ export class ScanCacheOpened {
     const last_subaddress_index = walletSettings.subaddress_index || 0;
     const minor = last_subaddress_index + 1;
     const subaddress = this.view_pair.makeSubaddress(minor);
+    this._highest_subaddress_index = minor;
 
     await writeWalletToScanSettings({
       primary_address: this.view_pair.primary_address,
@@ -592,13 +702,14 @@ export class ScanCacheOpened {
       created_at_timestamp,
       not_yet_included: true,
     };
-    this._stats = await writeStatsFileDefaultLocation({
-      primary_address: this.primary_address,
-      pathPrefix: this.pathPrefix,
-      writeCallback: async (stats) => {
-        stats.subaddresses[minor.toString()] = new_subaddress;
-      },
-    });
+    if (!this._no_stats)
+      this._stats = await writeStatsFileDefaultLocation({
+        primary_address: this.primary_address,
+        pathPrefix: getPathPrefix(this.scan_settings_path, this.pathPrefix),
+        writeCallback: async (stats) => {
+          stats.subaddresses[minor.toString()] = new_subaddress;
+        },
+      });
     return new_subaddress;
   }
   /**
@@ -723,14 +834,15 @@ export class ScanCacheOpened {
     if (this.view_pair.primary_address !== params.newCache.primary_address)
       return;
     this._cache = params.newCache;
-    this._stats = await alignScanStatsWithCache(
-      this._cache,
-      this.view_pair,
-      this.primary_address,
-      this.pathPrefix,
-      undefined,
-      lastRange(this._cache.scanned_ranges)?.end,
-    );
+    if (!this._no_stats)
+      this._stats = await alignScanStatsWithCache(
+        this._cache,
+        this.view_pair,
+        this.primary_address,
+        getPathPrefix(this.scan_settings_path, this.pathPrefix),
+        this.subaddress_index,
+        lastRange(this._cache.scanned_ranges)?.end,
+      );
 
     if (!this.no_worker) {
       const etaResult = await updateSyncETA(
@@ -747,6 +859,11 @@ export class ScanCacheOpened {
     for (const listener of this.notifyListeners) {
       if (listener) listener(params);
     }
+  }
+  private _highest_subaddress_index: number | null = null;
+  private _no_stats: boolean = false;
+  public get no_stats(): boolean {
+    return this._no_stats;
   }
 
   private _cache: ScanCache = {

@@ -13,50 +13,32 @@ import {
   type ErrorResponse,
 } from "../node-interaction/binaryEndpoints";
 import {
-  handleScanError,
   lastRange,
   writeCacheFileDefaultLocationThrows,
   type ScanCache,
 } from "../scanning-syncing/scanresult/scanCache";
 import {
+  makeSweepTransaction,
   makeTransaction,
   type MakeTransactionParams,
   type UnsignedTransaction,
 } from "../send-functionality/transactionBuilding";
+import { monero_wallet_api_wasm } from "../wasm-processing/wasmFile";
+
 import { WasmProcessor } from "../wasm-processing/wasmProcessor";
 import {
   LOCAL_NODE_DEFAULT_URL,
   type NETWORKS,
 } from "../node-interaction/nodeUrl";
 import {
-  atomicWrite,
   get_block_headers_range,
   get_info,
   type GetBlockHeadersRangeParams,
 } from "../api";
-import {
-  readGetblocksBinBuffer,
-  trimGetBlocksBinBuffer,
-  writeGetblocksBinBuffer,
-  type SlaveViewPair,
-} from "../scanning-syncing/blocksbuffer/getBlocksbinBuffer";
-import {
-  initScanCache,
-  readCacheFileDefaultLocation,
-  type CacheChangedCallback,
-} from "../scanning-syncing/scanresult/scanCache";
-import {
-  cullTooLargeScanHeight,
-  openNonHaltedWallets,
-  readWalletFromScanSettings,
-  walletSettingsPlusKeys,
-} from "../scanning-syncing/scanSettings";
+
+import { readWalletFromScanSettings } from "../scanning-syncing/scanSettings";
 import { sleep } from "../io/sleep";
-import {
-  readWriteConnectionStatusFile,
-  writeConnectionStatusFile,
-  type ConnectionStatus,
-} from "../scanning-syncing/connectionStatus";
+
 /**
  * This class is useful to interact with Moneros DaemonRpc binary requests in a convenient way.
  * (similar to how you would interact with a REST api that gives you json back.)
@@ -92,7 +74,7 @@ export class ViewPair extends WasmProcessor {
       node_url || LOCAL_NODE_DEFAULT_URL,
       primary_address,
     );
-    const tinywasi = await viewPair.initWasmModule();
+    const tinywasi = await viewPair.initWasmModule(monero_wallet_api_wasm);
     viewPair.writeToWasmMemory = (ptr, len) => {
       viewPair.writeString(ptr, len, primary_address);
       viewPair.writeToWasmMemory = (ptr, len) => {
@@ -362,6 +344,16 @@ export class ViewPair extends WasmProcessor {
    */
   public makeTransaction(params: MakeTransactionParams): UnsignedTransaction {
     return makeTransaction(this, params);
+  }
+  /**
+   * makeSweepTransaction
+   * @param params - The transaction parameters. Must have exactly one payment,
+   *  the amount will be overwritten by the total amount of the inputs - the necessary fee
+   *
+   * @returns The serialized transaction as an array of numbers
+   */
+  public makeSweepTransaction(params: MakeTransactionParams) {
+    return makeSweepTransaction(this, params);
   }
   /**
    * Retrieve block headers for a specified range of heights.

@@ -4,12 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-cuprate-types = { git = "https://github.com/monerochan-ecosystem/cuprate", default-features = false, features = [
+cuprate-types = { git = "https://github.com/monerochan-ecosystem/cuprate", rev = "27eec55f5b7851a2b36e158065a6be95c091e904", default-features = false, features = [
     "epee",
 ] }
-cuprate-rpc-types = { git = "https://github.com/monerochan-ecosystem/cuprate" }
-cuprate-epee-encoding = { git = "https://github.com/monerochan-ecosystem/cuprate" }
-cuprate-fixed-bytes = { git = "https://github.com/monerochan-ecosystem/cuprate" }
+cuprate-rpc-types = { git = "https://github.com/monerochan-ecosystem/cuprate", rev = "27eec55f5b7851a2b36e158065a6be95c091e904" }
+cuprate-epee-encoding = { git = "https://github.com/monerochan-ecosystem/cuprate", rev = "27eec55f5b7851a2b36e158065a6be95c091e904" }
+cuprate-fixed-bytes = { git = "https://github.com/monerochan-ecosystem/cuprate", rev = "27eec55f5b7851a2b36e158065a6be95c091e904" }
 
 curve25519-dalek = { version = "4", default-features = false, features = [
     "alloc",
@@ -24,10 +24,10 @@ serde = "1.0.217"
 rand_core = { version = "0.6", default-features = false, features = [
     "getrandom",
 ] }
-monero-oxide = { git = "https://github.com/monerochan-ecosystem/monero-oxide", version = "0.1.4-alpha" }
-monero-wallet = { git = "https://github.com/monerochan-ecosystem/monero-oxide", version = "0.1.0" }
-monero-primitives = { git = "https://github.com/monerochan-ecosystem/monero-oxide", version = "0.1.0" }
-monero-io = { git = "https://github.com/monerochan-ecosystem/monero-oxide", version = "0.1.0" }
+monero-oxide = { git = "https://github.com/monerochan-ecosystem/monero-oxide", version = "0.1.4-alpha", rev = "7fdca4cb5c9ae8496b2204713e114ee85e623ed6" }
+monero-wallet = { git = "https://github.com/monerochan-ecosystem/monero-oxide", version = "0.1.0", rev = "7fdca4cb5c9ae8496b2204713e114ee85e623ed6" }
+monero-primitives = { git = "https://github.com/monerochan-ecosystem/monero-oxide", version = "0.1.0", rev = "7fdca4cb5c9ae8496b2204713e114ee85e623ed6" }
+monero-io = { git = "https://github.com/monerochan-ecosystem/monero-oxide", version = "0.1.0", rev = "7fdca4cb5c9ae8496b2204713e114ee85e623ed6" }
 std-shims = { version = "0.1.4", default-features = false }
 rand_distr = { version = "0.4", default-features = false }
 [lib]

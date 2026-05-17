@@ -101,6 +101,12 @@ pub extern "C" fn make_viewkey(spend_key_string_len: usize) {
   ));
 }
 #[no_mangle]
+pub extern "C" fn vk_from_entropy() {
+  let viewkey_vec = input(32);
+  let viewkey: [u8; 32] = viewkey_vec.try_into().unwrap();
+  output_string(hex::encode(keypairs::make_viewkey(viewkey).to_bytes()).as_str());
+}
+#[no_mangle]
 pub extern "C" fn init_viewpair(
   primary_address_string_len: usize,
   secret_view_key_string_len: usize,
@@ -235,6 +241,25 @@ pub extern "C" fn make_transaction(json_params_len: usize) {
   }
 }
 
+#[no_mangle]
+pub extern "C" fn make_external_sweep_transaction(json_params_len: usize) {
+  let json_params = input_string(json_params_len);
+  let viewpair = GLOBAL_VIEWPAIR.with_borrow(|viewpair| viewpair.clone());
+
+  match transaction_building::transaction::make_external_sweep_transaction(
+    &json_params,
+    viewpair.clone(),
+  ) {
+    Ok(signable_tx) => {
+      let tx_json = json!({ "signable_transaction": hex::encode(signable_tx.serialize()) });
+      output_string(&tx_json.to_string());
+    }
+    Err(e) => {
+      output_error_string(&e);
+      return;
+    }
+  }
+}
 #[no_mangle]
 pub extern "C" fn sign_transaction(tx_len: usize, secret_spend_key_len: usize) {
   let tx_string = input_string(tx_len);
@@ -405,25 +430,25 @@ pub extern "C" fn get_blocks_bin_scan_one_block(block_index: u32) {
   let scanner = GLOBAL_SCANNER.with_borrow(|scanner| scanner.clone());
   let primary_address =
     GLOBAL_PRIMARY_ADDRESS.with_borrow(|primary_address| primary_address.clone());
-  let result = GLOBAL_GET_BLOCKS_BIN_RESPONSE.with_borrow(|response| {
-    match response {
-      Some(ref get_blocks_bin) => {
-        if (block_index as usize) >= get_blocks_bin.blocks.len() {
-          return Err(format!(
-            "Block index {} out of bounds (total blocks: {})",
-            block_index,
-            get_blocks_bin.blocks.len()
-          ));
-        }
-        match scan_block(&scanner, &primary_address, get_blocks_bin, block_index as usize) {
-          Ok((output_jsons, input_images_jsons)) => {
-            let result_json = json!({"outputs": output_jsons, "all_key_images": input_images_jsons});
-            Ok(convert_to_json(&result_json))
-          }
-          Err(error_string) => Err(error_string),
-        }
+  let result = GLOBAL_GET_BLOCKS_BIN_RESPONSE.with_borrow(|response| match response {
+    Some(ref get_blocks_bin) => {
+      if (block_index as usize) >= get_blocks_bin.blocks.len() {
+        return Err(format!(
+          "Block index {} out of bounds (total blocks: {})",
+          block_index,
+          get_blocks_bin.blocks.len()
+        ));
       }
-      None => Err("No getBlocks.bin response loaded. Call loadGetBlocksBinResponse first.".to_string()),
+      match scan_block(&scanner, &primary_address, get_blocks_bin, block_index as usize) {
+        Ok((output_jsons, input_images_jsons)) => {
+          let result_json = json!({"outputs": output_jsons, "all_key_images": input_images_jsons});
+          Ok(convert_to_json(&result_json))
+        }
+        Err(error_string) => Err(error_string),
+      }
+    }
+    None => {
+      Err("No getBlocks.bin response loaded. Call loadGetBlocksBinResponse first.".to_string())
     }
   });
   match result {

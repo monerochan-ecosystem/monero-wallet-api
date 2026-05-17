@@ -30,6 +30,7 @@ import {
   type Input,
 } from "../send-functionality/transactionBuilding";
 import { WasmProcessor } from "../wasm-processing/wasmProcessor";
+import { monero_wallet_api_wasm } from "../wasm-processing/wasmFile";
 /**
  * This class is useful to interact with Moneros DaemonRpc binary requests in a convenient way.
  * (similar to how you would interact with a REST api that gives you json back.)
@@ -53,7 +54,7 @@ export class NodeUrl extends WasmProcessor {
   }
   public static async create(node_url?: string): Promise<NodeUrl> {
     const nodeUrl = new NodeUrl(node_url || LOCAL_NODE_DEFAULT_URL);
-    await nodeUrl.initWasmModule();
+    await nodeUrl.initWasmModule(monero_wallet_api_wasm);
     return nodeUrl;
   }
 

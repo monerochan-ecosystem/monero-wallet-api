@@ -84,6 +84,63 @@ pub fn make_transaction(
   .map_err(|e| json!({"message":"failed to create SignableTransaction","error":e}).to_string())
 }
 
+pub fn make_external_sweep_transaction(
+  json_params: &str,
+  viewpair: ViewPair,
+  // inputs: Vec<OutputWithDecoys>,
+  // payments: Vec<(MoneroAddress, u64)>,
+  // OPTIONAL outgoing_view_key: Zeroizing<[u8; 32]>, default random if None
+  // OPTIONAL: data: Vec<Vec<u8>>,
+) -> Result<SignableTransaction, String> {
+  let params = parse_make_transaction_params(json_params)?;
+  let priority = parse_fee_priority(&params.fee_priority)?;
+  let fee_rate = get_fee_rate(priority, params.fee_response).map_err(|e| {
+    format!("failed to get fee rate (from fee priority + rpc get_fee_estimate response: {:?}", e)
+  })?;
+  let inputs = read_inputs(params.inputs)?;
+  let payments = parse_payments(&params.payments)?;
+  if payments.len() != 1 {
+    return Err("external sweep must have exactly one payment".to_string());
+  }
+
+  let change = Change::new(viewpair.clone(), None);
+  let outgoing_view_key = match &params.outgoing_view_key {
+    Some(s) => {
+      let bytes: [u8; 32] = <[u8; 32]>::from_hex(s)
+        .map_err(|e| format!("failed to parse outgoing_view_key hex: {:?}", e))?;
+      Zeroizing::new(bytes)
+    }
+    None => {
+      let mut outgoing_view = Zeroizing::new([0; 32]);
+      OsRng.fill_bytes(&mut outgoing_view.as_mut()[..]);
+      outgoing_view
+    }
+  };
+  let data = params.data.unwrap_or(vec![]);
+  let tx = SignableTransaction::new(
+    RctType::ClsagBulletproofPlus,
+    outgoing_view_key.clone(),
+    inputs.clone(),
+    payments.clone(),
+    change.clone(),
+    data.clone(),
+    fee_rate,
+  )
+  .map_err(|e| json!({"message":"failed to create SignableTransaction","error":e}).to_string())?;
+  let change_amount = tx.necessary_fee();
+  let total_input: u64 = inputs.iter().map(|input| input.commitment().amount).sum();
+  let real_payments = vec![(payments[0].0, total_input - change_amount)];
+  SignableTransaction::new(
+    RctType::ClsagBulletproofPlus,
+    outgoing_view_key,
+    inputs,
+    real_payments,
+    change,
+    data,
+    fee_rate,
+  )
+  .map_err(|e| json!({"message":"failed to create SignableTransaction","error":e}).to_string())
+}
 #[derive(Debug, Deserialize)]
 struct FeeResponse {
   // status: String,

@@ -10,6 +10,7 @@ export function validateSeedphrase(seedphrase: string): boolean {
 }
 
 // Irreversible: Uses KDF to derive 64 bytes of key data from mnemonic + optional password.
+// returns 64 bytes of key data
 export function deriveSecretKey(
   seedphrase: string,
   password?: string,
@@ -40,9 +41,13 @@ export type GetSecretParams = {
   seedphrase: string;
   password?: string;
   coin_name: "monero";
-  key_type: "spend" | "comms";
+  key_type: "spend" | "comms" | "hotkey" | "hotkey-comms";
 };
-
+/**
+ * Returns 64 bytes of key data, derived from mnemonic
+ * @param params wallet_route, seedphrase, password, coin_name, key_type
+ * @returns 64 bytes of key data - uses KDF ( bip39.mnemonicToSeedSync of noble bip39)
+ */
 export function getWalletSecret(params: GetSecretParams): Uint8Array {
   const { identity, domain, wallet_type, wallet_slot } = params.route;
   const seedphrase = params.seedphrase;
@@ -68,7 +73,12 @@ export function getWalletSecret(params: GetSecretParams): Uint8Array {
       "Invalid wallet id: " + wallet_slot + "has to be a number, default: 0",
     );
   if (coin_name !== "monero") throw new Error("Unsupported coin name");
-  if (key_type !== "spend" && key_type !== "comms")
+  if (
+    key_type !== "spend" &&
+    key_type !== "comms" &&
+    key_type !== "hotkey" &&
+    key_type !== "hotkey-comms"
+  )
     throw new Error("Unsupported key type");
 
   return deriveSecretKey(
@@ -120,6 +130,9 @@ export function walletRouteFromString(input: string): WalletRouteResult {
 
   if (Number.isNaN(parseInt(wallet_slot))) {
     return { ok: false, error: `invalid wallet_slot: "${wallet_slot}"` };
+  }
+  if (parseInt(wallet_slot) < 0) {
+    return { ok: false, error: `invalid wallet_slot: "${wallet_slot} < 0"` };
   }
 
   return {

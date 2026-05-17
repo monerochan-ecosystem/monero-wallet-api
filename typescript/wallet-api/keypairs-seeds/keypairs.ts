@@ -67,6 +67,7 @@
 // 4849   crypto::ElectrumWords::bytes_to_words(recovery_val, electrum_words, mnemonic_language);
 // https://github.com/monero-project/monero/blob/48ad374b0d6d6e045128729534dc2508e6999afe/src/simplewallet/simplewallet.cpp#L4849
 
+import { monero_wallet_api_wasm } from "../wasm-processing/wasmFile";
 import { WasmProcessor } from "../wasm-processing/wasmProcessor";
 export type SpendKey = string;
 export type Keypair = {
@@ -88,7 +89,7 @@ export async function makeTestKeyPair(): Promise<Keypair> {
  * @returns SpendKey
  */
 export async function makeSpendKey(): Promise<SpendKey> {
-  const wasmProcessor = await WasmProcessor.init();
+  const wasmProcessor = await WasmProcessor.init(monero_wallet_api_wasm);
 
   let result: SpendKey | undefined = undefined;
   wasmProcessor.readFromWasmMemory = (ptr, len) => {
@@ -110,7 +111,7 @@ export async function makeSpendKeyFromSeed(
        Expected 128 hex characters (64 bytes).`,
     );
   }
-  const wasmProcessor = await WasmProcessor.init();
+  const wasmProcessor = await WasmProcessor.init(monero_wallet_api_wasm);
   wasmProcessor.writeToWasmMemory = (ptr, len) => {
     wasmProcessor.writeString(ptr, len, wallet_secret);
   };
@@ -150,7 +151,7 @@ export async function makeViewKey(
        Expected 64 hex characters (32 bytes).`,
     );
   }
-  const wasmProcessor = await WasmProcessor.init();
+  const wasmProcessor = await WasmProcessor.init(monero_wallet_api_wasm);
   wasmProcessor.writeToWasmMemory = (ptr, len) => {
     wasmProcessor.writeString(ptr, len, spend_private_key);
   };
@@ -167,7 +168,35 @@ export async function makeViewKey(
   }
   return result as ViewPairJson;
 }
-
+/**
+ * entropy is hashed with keccak to make the view private key
+ * this is according to the convention in the monero code base,
+ * read the comment at the top of the file for more details & link to source
+ * @param entropy the spendkey the viewkey will be derived from
+ * @returns the viewkey that was derived from entropy as hex
+ */
+export async function vk_from_entropy(entropy: Uint8Array): Promise<string> {
+  if (entropy.length !== 32) {
+    throw new Error(
+      `Invalid entropy length: ${entropy.length}.
+       Expected 32 bytes array.`,
+    );
+  }
+  const wasmProcessor = await WasmProcessor.init(monero_wallet_api_wasm);
+  wasmProcessor.writeToWasmMemory = (ptr, len) => {
+    wasmProcessor.writeArray(ptr, len, entropy);
+  };
+  let result: String | undefined = undefined;
+  wasmProcessor.readFromWasmMemory = (ptr, len) => {
+    result = wasmProcessor.readString(ptr, len);
+  };
+  //@ts-ignore
+  wasmProcessor.tinywasi.instance.exports.vk_from_entropy(entropy.length);
+  if (!result) {
+    throw new Error("Failed to obtain view key from entropy.");
+  }
+  return result as string;
+}
 /**
  *
  * unlike crypto-ops.c sc_reduce32, this is not unrolled

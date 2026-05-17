@@ -1,4 +1,5 @@
 import type { GetFeeEstimateResult, Output } from "../api";
+import { monero_wallet_api_wasm } from "../wasm-processing/wasmFile";
 import { WasmProcessor } from "../wasm-processing/wasmProcessor";
 export type Input = string;
 export type UnsignedTransaction = string;
@@ -89,6 +90,31 @@ export type SendError = {
   error: ErrorDetail;
   message: string;
 };
+export function makeSweepTransaction<T extends WasmProcessor>(
+  processor: T,
+  params: MakeTransactionParams,
+): UnsignedTransaction {
+  const jsonParams = JSON.stringify(params);
+  processor.writeToWasmMemory = (ptr, len) => {
+    processor.writeString(ptr, len, jsonParams);
+  };
+  let result: { transaction: number[] } | null = null;
+  let error: { error: string } | null = null;
+  processor.readFromWasmMemory = (ptr, len) => {
+    result = JSON.parse(processor.readString(ptr, len));
+  };
+  processor.readErrorFromWasmMemory = (ptr, len) => {
+    error = JSON.parse(processor.readString(ptr, len));
+  };
+  //@ts-ignore
+  processor.tinywasi.instance.exports.make_external_sweep_transaction(
+    jsonParams.length,
+  );
+  if (!result) {
+    throw error;
+  }
+  return result["signable_transaction"] as UnsignedTransaction;
+}
 /**
  *  this function returns the unsigned transaction, throws {@link SendError}
  * @param processor
@@ -123,7 +149,7 @@ export async function signTransaction(
   tx: UnsignedTransaction,
   sender_spend_key: string,
 ): Promise<SignedTransaction> {
-  const wasmProcessor = await WasmProcessor.init();
+  const wasmProcessor = await WasmProcessor.init(monero_wallet_api_wasm);
   wasmProcessor.writeToWasmMemory = (ptr, len) => {
     wasmProcessor.writeString(ptr, len, tx);
     wasmProcessor.writeToWasmMemory = (ptr, len) => {
@@ -156,7 +182,7 @@ export type ParseAddressError = {
 export async function parseAddress(
   address: string,
 ): Promise<ParsedAddress | ParseAddressError> {
-  const wasmProcessor = await WasmProcessor.init();
+  const wasmProcessor = await WasmProcessor.init(monero_wallet_api_wasm);
   wasmProcessor.writeToWasmMemory = (ptr, len) => {
     wasmProcessor.writeString(ptr, len, address);
   };
