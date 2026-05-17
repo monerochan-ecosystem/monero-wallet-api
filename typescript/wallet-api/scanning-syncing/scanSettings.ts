@@ -81,27 +81,27 @@ export type ScanSettingsOpened = {
  * ```
  *
  * @param scan_settings - The complete {@link ScanSettings} configuration to persist.
- * @param settingsStorePath - Optional path for the settings file. Defaults to `SCAN_SETTINGS_STORE_NAME_DEFAULT`.
+ * @param scan_settings_path - Optional path for the settings file. Defaults to `SCAN_SETTINGS_STORE_NAME_DEFAULT`.
  * @returns A promise that resolves when the file is successfully written.
  * @throws Will throw if file writing fails (e.g., permissions, disk space).
  */
 export async function writeScanSettings(
   scan_settings: ScanSettings,
-  settingsStorePath: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
+  scan_settings_path: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
 ) {
   return await atomicWrite(
-    settingsStorePath,
+    scan_settings_path,
     JSON.stringify(scan_settings, null, 2),
   );
 }
 export type WriteScanSettingsFileParams = {
-  settingsStorePath?: string;
+  scan_settings_path?: string;
   writeCallback: (settings: ScanSettings) => void | Promise<void>;
 };
 export async function writeScanSettingsFileDefaultLocation(
   params: WriteScanSettingsFileParams,
 ) {
-  let settings = await openScanSettingsFile(params.settingsStorePath);
+  let settings = await openScanSettingsFile(params.scan_settings_path);
   if (!settings) {
     // Create empty ScanSettings object with default values
     settings = {
@@ -112,13 +112,13 @@ export async function writeScanSettingsFileDefaultLocation(
   }
   await params.writeCallback(settings);
   // write to settings file
-  await writeScanSettings(settings, params.settingsStorePath);
+  await writeScanSettings(settings, params.scan_settings_path);
 }
 export async function writeStartHeightToScanSettings(
   start_height: number | null,
-  settingsStorePath: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
+  scan_settings_path: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
 ) {
-  const scanSettings = (await openScanSettingsFile(settingsStorePath)) || {
+  const scanSettings = (await openScanSettingsFile(scan_settings_path)) || {
     node_url: LOCAL_NODE_DEFAULT_URL,
     wallets: [],
     start_height: null,
@@ -131,26 +131,26 @@ export async function writeStartHeightToScanSettings(
 }
 export async function writeDaemonHeightAsStartHeightToScanSettings(
   node_url: string,
-  settingsStorePath: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
+  scan_settings_path: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
 ): Promise<number> {
   const getInfo = await get_info(node_url);
 
-  const scanSettings = (await openScanSettingsFile(settingsStorePath)) || {
+  const scanSettings = (await openScanSettingsFile(scan_settings_path)) || {
     node_url: LOCAL_NODE_DEFAULT_URL,
     wallets: [],
     start_height: null,
   };
   scanSettings.start_height = getInfo.height - 1;
-  await atomicWrite(settingsStorePath, JSON.stringify(scanSettings, null, 2));
+  await atomicWrite(scan_settings_path, JSON.stringify(scanSettings, null, 2));
   return getInfo.height;
 }
 export async function cullTooLargeScanHeight(
   node_url: string,
-  settingsStorePath: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
+  scan_settings_path: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
 ): Promise<number> {
   const getInfo = await get_info(node_url);
 
-  const scanSettings = (await openScanSettingsFile(settingsStorePath)) || {
+  const scanSettings = (await openScanSettingsFile(scan_settings_path)) || {
     node_url: LOCAL_NODE_DEFAULT_URL,
     wallets: [],
     start_height: null,
@@ -160,30 +160,33 @@ export async function cullTooLargeScanHeight(
     scanSettings.start_height > getInfo.height - 1
   ) {
     scanSettings.start_height = getInfo.height - 1;
-    await atomicWrite(settingsStorePath, JSON.stringify(scanSettings, null, 2));
+    await atomicWrite(
+      scan_settings_path,
+      JSON.stringify(scanSettings, null, 2),
+    );
   }
 
   return scanSettings.start_height;
 }
 export async function writeNodeUrlToScanSettings(
   node_url: string,
-  settingsStorePath: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
+  scan_settings_path: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
 ) {
-  const scanSettings = (await openScanSettingsFile(settingsStorePath)) || {
+  const scanSettings = (await openScanSettingsFile(scan_settings_path)) || {
     node_url: LOCAL_NODE_DEFAULT_URL,
     wallets: [],
     start_height: null,
   };
   scanSettings.node_url = node_url;
   return await atomicWrite(
-    settingsStorePath,
+    scan_settings_path,
     JSON.stringify(scanSettings, null, 2),
   );
 }
 export async function readNodeUrlFromScanSettings(
-  settingsStorePath: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
+  scan_settings_path: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
 ) {
-  const scanSettings = await openScanSettingsFile(settingsStorePath);
+  const scanSettings = await openScanSettingsFile(scan_settings_path);
   return scanSettings?.node_url;
 }
 /**
@@ -197,22 +200,22 @@ export async function readNodeUrlFromScanSettings(
  *
  * @param merchant_confirmations - Number of confirmations required before
  *   accepting a payment, or `null` to leave it unset.
- * @param settingsStorePath - Optional path for the settings file.
+ * @param scan_settings_path - Optional path for the settings file.
  *   Defaults to `SCAN_SETTINGS_STORE_NAME_DEFAULT`.
  * @returns A promise that resolves when the file is successfully written.
  */
 export async function writeMerchantConfirmationsToScanSettings(
   merchant_confirmations: number | null,
-  settingsStorePath: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
+  scan_settings_path: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
 ) {
-  const scanSettings = (await openScanSettingsFile(settingsStorePath)) || {
+  const scanSettings = (await openScanSettingsFile(scan_settings_path)) || {
     node_url: LOCAL_NODE_DEFAULT_URL,
     wallets: [],
     start_height: null,
   };
   scanSettings.merchant_confirmations = merchant_confirmations;
   return await atomicWrite(
-    settingsStorePath,
+    scan_settings_path,
     JSON.stringify(scanSettings, null, 2),
   );
 }
@@ -226,15 +229,15 @@ export async function writeMerchantConfirmationsToScanSettings(
  * for a payment. The actual enforcement of this policy is left to the
  * custom payment-system code that consumes this library.
  *
- * @param settingsStorePath - Optional path for the settings file.
+ * @param scan_settings_path - Optional path for the settings file.
  *   Defaults to `SCAN_SETTINGS_STORE_NAME_DEFAULT`.
  * @returns The configured number of confirmations, null, or `undefined`
  *   if the setting has not been persisted yet.
  */
 export async function readMerchantConfirmationsFromScanSettings(
-  settingsStorePath: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
+  scan_settings_path: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
 ) {
-  const scanSettings = await openScanSettingsFile(settingsStorePath);
+  const scanSettings = await openScanSettingsFile(scan_settings_path);
   return scanSettings?.merchant_confirmations;
 }
 /**
@@ -249,7 +252,7 @@ export async function readMerchantConfirmationsFromScanSettings(
  * }
  * ```
  *
- * @param settingsStorePath - Path to the settings file. Defaults to `SCAN_SETTINGS_STORE_NAME_DEFAULT`.
+ * @param scan_settings_path - Path to the settings file. Defaults to `SCAN_SETTINGS_STORE_NAME_DEFAULT`.
  * @returns The parsed {@link ScanSettings} object if file exists and is valid JSON, otherwise `undefined`.
  */
 export async function readScanSettings(
