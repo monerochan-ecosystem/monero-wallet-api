@@ -51,12 +51,12 @@ const unsigned_tx_hex = await escrowWallet.sweepToExternalWallet(
 wallets.stopWorker();
 ```
 
-See the [reorg handling test](typescript/tests/acceptance/reorg_handling.test.ts) for a regtest reorg example.
+See the [reorg handling test](tests/acceptance/reorg_handling.test.ts) for a regtest reorg example.
 
 After running this test a local node is available, which
-makes it possible to easily run the [escrow test](typescript/tests/acceptance/escrow.test.ts) described in detail [here](https://monerochan.news/article/19).
+makes it possible to easily run the [escrow test](tests/acceptance/escrow.test.ts) described in detail [here](https://monerochan.news/article/19).
 
-See the [acceptance test](typescript/tests/acceptance/dont_rescan.test.ts) for a full working sync example with mainnet data.
+See the [acceptance test](tests/acceptance/dont_rescan.test.ts) for a full working sync example with mainnet data.
 
 ## install
 
