@@ -39,6 +39,8 @@ export class ScanSettingsOpened {
         node_url: LOCAL_NODE_DEFAULT_URL,
         start_height: null,
       };
+      // persist the defaults so the file exists on disk
+      await writeScanSettings(settings, scan_settings_path);
     }
 
     return new ScanSettingsOpened(settings, scan_settings_path, pathPrefix);
