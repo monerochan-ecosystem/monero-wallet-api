@@ -4,7 +4,7 @@ import {
   type CacheRange,
   type ReorgInfo,
 } from "../api";
-import { SCAN_SETTINGS_STORE_NAME_DEFAULT } from "./scanSettings";
+import { SCAN_SETTINGS_STORE_NAME_DEFAULT } from "../api";
 export type ConnectionStatusOptions =
   | "OK"
   | "partial_read"

@@ -29,7 +29,7 @@ import {
   writeNodeUrlToScanSettings,
   writeStartHeightToScanSettings,
   writeWalletToScanSettings,
-} from "../scanSettings";
+} from "../../api";
 import {
   findRange,
   lastRange,

@@ -1,9 +1,11 @@
 import { coordinatorMainWorker } from "./coordinator-main";
 import { handleCpuboundScanTry, sendFromCpuWorker } from "./cpubound-main";
 import { log, setupLoggingPath } from "../../io/logging";
-import { SCAN_SETTINGS_STORE_NAME_DEFAULT } from "../scanSettings";
 import { multisigMainWorkerCall } from "./multisig-main";
-import { DistributedKeyGenerator } from "../../api";
+import {
+  DistributedKeyGenerator,
+  SCAN_SETTINGS_STORE_NAME_DEFAULT,
+} from "../../api";
 
 self.onerror = (e) => self.postMessage({ type: "ERROR", payload: e });
 self.addEventListener("unhandledrejection", (e) =>

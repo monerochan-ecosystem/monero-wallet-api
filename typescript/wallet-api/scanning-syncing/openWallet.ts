@@ -3,10 +3,7 @@ import {
   ScanCacheOpened,
   type ManyScanCachesOpenedCreateOptions,
 } from "./scanresult/scanCacheOpened";
-import {
-  openScanSettingsFile,
-  writeWalletToScanSettings,
-} from "./scanSettings";
+import { openScanSettingsFile, writeWalletToScanSettings } from "../api";
 /**
  * Opens all **non halted wallets listed in ScanSettings.json** for scanning.
  *

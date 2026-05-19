@@ -27,7 +27,7 @@ import {
   SCAN_SETTINGS_STORE_NAME_DEFAULT,
   walletSettingsPlusKeys,
   type ScanSettings,
-} from "../scanSettings";
+} from "../../api";
 import {
   findRange,
   initScanCacheFile,
