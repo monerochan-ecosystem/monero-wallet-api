@@ -16,11 +16,6 @@ import {
   type ScanSettings,
 } from "../api";
 
-export type ScanSettingsOpenedCreateParams = {
-  scan_settings_path?: string;
-  pathPrefix?: string;
-};
-
 export class ScanSettingsOpened {
   /**
    * open the settings file and return a new ScanSettingsOpened instance.
