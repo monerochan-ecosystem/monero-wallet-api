@@ -1,5 +1,5 @@
 import { LOCAL_NODE_DEFAULT_URL } from "../node-interaction/nodeUrl";
-import type { LogSetting, PossibleLogs } from "../io/logging";
+import { LOGGING_FUNCTIONS, type LogSetting, type PossibleLogs } from "../io/logging";
 import {
   getPathPrefix,
   makeSpendKeyFromSeed,
@@ -37,6 +37,11 @@ export class ScanSettingsOpened {
       // persist the defaults so the file exists on disk
       await writeScanSettings(settings, scan_settings_path);
     }
+
+    ScanSettingsOpened._validateLogOptions(
+      settings.logs_include,
+      settings.logs_exclude,
+    );
 
     return new ScanSettingsOpened(settings, scan_settings_path, pathPrefix);
   }
@@ -134,6 +139,12 @@ export class ScanSettingsOpened {
     } else {
       this._settings.logs_exclude = logs_exclude;
     }
+
+    // validate before persisting
+    ScanSettingsOpened._validateLogOptions(
+      this._settings.logs_include,
+      this._settings.logs_exclude,
+    );
 
     await this._persist();
   }
@@ -354,7 +365,38 @@ export class ScanSettingsOpened {
   public async reload() {
     const settings = await openScanSettingsFile(this._scan_settings_path);
     if (settings) {
+      ScanSettingsOpened._validateLogOptions(
+        settings.logs_include,
+        settings.logs_exclude,
+      );
       this._settings = settings;
+    }
+  }
+
+  /**
+   * validate that all entries in logs_include and logs_exclude
+   * are valid function names from LOGGING_FUNCTIONS.
+   * throws if any entry is invalid.
+   */
+  private static _validateLogOptions(
+    logs_include?: PossibleLogs[] | null,
+    logs_exclude?: PossibleLogs[] | null,
+  ) {
+    const valid = new Set<string>(LOGGING_FUNCTIONS);
+    const invalid: string[] = [];
+    for (const arr of [logs_include, logs_exclude]) {
+      if (!arr) continue;
+      for (const item of arr) {
+        if (!valid.has(item)) {
+          invalid.push(item);
+        }
+      }
+    }
+    if (invalid.length > 0) {
+      throw new Error(
+        `invalid log function(s): ${invalid.join(", ")}. ` +
+        `valid options are: ${[...valid].join(", ")}`,
+      );
     }
   }
 

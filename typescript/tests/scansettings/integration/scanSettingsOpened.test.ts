@@ -408,3 +408,63 @@ test("j: getWalletsOpened returns all wallets with keys", async () => {
     "wallet b",
   ]);
 });
+
+test("k: setLogSettings rejects invalid function names", async () => {
+  const dir = `${OUT}/k`;
+  await rm(dir, { force: true, recursive: true });
+  await mkdir(dir, { recursive: true });
+
+  const path = `${dir}/ScanSettings.json`;
+  const sso = await ScanSettingsOpened.create(path);
+
+  // invalid in logs_include
+
+  await expect(
+    sso.setLogSettings("file", ["notARealFunction"] as any),
+  ).rejects.toThrow("invalid log function");
+
+  // invalid in logs_exclude
+  await expect(
+    sso.setLogSettings("file", undefined, ["alsoFake"] as any),
+  ).rejects.toThrow("invalid log function");
+
+  // valid values still work
+  await sso.setLogSettings("file", ["coordinatorMain"]);
+  expect(sso.logs_include).toEqual(["coordinatorMain"]);
+});
+
+test("l: invalid log options in an existing file throws on create and reload", async () => {
+  const dir = `${OUT}/l`;
+  await rm(dir, { force: true, recursive: true });
+  await mkdir(dir, { recursive: true });
+
+  // create with invalid file throws
+  const badPath = `${dir}/bad.json`;
+  await writeScanSettings(
+    {
+      wallets: [],
+      node_url: "http://127.0.0.1:18081",
+      start_height: null,
+      logs_include: ["bogusFunction"] as any,
+    },
+    badPath,
+  );
+  await expect(ScanSettingsOpened.create(badPath)).rejects.toThrow(
+    "invalid log function",
+  );
+
+  // reload after file corruption throws
+  const sso = await ScanSettingsOpened.create(`${dir}/good.json`);
+  await sso.setLogSettings("file", ["coordinatorMain"]);
+  // corrupt the file directly
+  await writeScanSettings(
+    {
+      wallets: [],
+      node_url: "http://127.0.0.1:18081",
+      start_height: null,
+      logs_exclude: ["notValid"] as any,
+    },
+    `${dir}/good.json`,
+  );
+  await expect(sso.reload()).rejects.toThrow("invalid log function");
+});
