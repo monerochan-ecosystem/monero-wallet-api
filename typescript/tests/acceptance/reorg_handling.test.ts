@@ -5,16 +5,13 @@ import {
   openWallets,
   cacheFileDefaultLocation,
   readConnectionStatusDefaultLocation,
-  blocksBufferFetchLoop,
+  type ScanSettings,
   type ManyScanCachesOpened,
   type ScanCache,
   type ReorgInfo,
-} from "../../dist/api";
-import {
   makeTestKeyPair,
   type Keypair,
-} from "../../wallet-api/keypairs-seeds/keypairs";
-import type { ScanSettings } from "../../wallet-api/scanning-syncing/scanSettings";
+} from "../../dist/api";
 
 const MONERONODE_DIR = "tests/moneronode";
 const TEST_DATA_DIR = "test-data/reorg_handling";
