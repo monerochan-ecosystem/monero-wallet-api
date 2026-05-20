@@ -1,5 +1,4 @@
 import {
-  atomicWrite,
   NodeUrl,
   signTransaction,
   ViewPair,
@@ -20,16 +19,13 @@ import { createWebworker, type WorkerSet } from "../backgroundWorker";
 import { spendable } from "./scanResult";
 import {
   getPathPrefix,
-  openScanSettingsFile,
   readPrivateSpendKeyFromEnv,
-  readWalletFromScanSettings,
   SCAN_SETTINGS_STORE_NAME_DEFAULT,
   SUB_ADDRESS_INDEX_DEFAULT_VALUE,
   walletSettingsPlusKeys,
-  writeNodeUrlToScanSettings,
-  writeStartHeightToScanSettings,
-  writeWalletToScanSettings,
 } from "../../api";
+import { ScanSettingsOpened } from "../../scansettings/scanSettingsOpened";
+import type { LogSetting, PossibleLogs } from "../../io/logging";
 import {
   findRange,
   lastRange,
@@ -98,39 +94,50 @@ export class ScanCacheOpened {
       params.pathPrefix,
     );
 
-    const walletSettings = await readWalletFromScanSettings(
-      params.primary_address,
-      params.scan_settings_path,
-    );
-    if (!walletSettings)
-      throw new Error(
-        `wallet not found in settings. did you call openwallet with the right params?
-      Either wrong file name supplied to params.scan_settings_path: ${params.scan_settings_path}
-      Or wrong primary_address supplied params.primary_address: ${params.primary_address}`,
-      );
     if (!params.primary_address)
       throw new Error(
         `primary_address is required, potentially half filled out wallet setting in: ${
           params.scan_settings_path || SCAN_SETTINGS_STORE_NAME_DEFAULT
         }`,
       );
+
+    // use ScanSettingsOpened instead of direct scanSettings calls
+    const scanSettings = await ScanSettingsOpened.create(
+      params.scan_settings_path,
+      params.pathPrefix,
+    );
+    const walletSettings = scanSettings.getWallet(params.primary_address);
+    if (!walletSettings)
+      throw new Error(
+        `wallet not found in settings. did you call openwallet with the right params?
+      Either wrong file name supplied to params.scan_settings_path: ${params.scan_settings_path}
+      Or wrong primary_address supplied params.primary_address: ${params.primary_address}`,
+      );
+
+    const walletWithSettings = {
+      ...walletSettings,
+      node_url: scanSettings.node_url,
+      start_height: scanSettings.start_height,
+    };
     // read secret_view_key and secret_spend_key from env
-    const walletSettingsWithKeys = await walletSettingsPlusKeys(walletSettings);
+    const walletSettingsWithKeys =
+      await walletSettingsPlusKeys(walletWithSettings);
 
     // create viewpair + ScanCacheOpened instance
     const scanCacheOpen = new ScanCacheOpened(
+      scanSettings,
       await ViewPair.create(
         params.primary_address,
         walletSettingsWithKeys.secret_view_key,
         walletSettings.subaddress_index,
-        walletSettings.node_url,
+        scanSettings.node_url,
       ),
       walletSettings.wallet_route,
       walletSettings.wallet_name,
       walletSettings.wallet_slot,
       params.no_worker || false,
       params.masterCacheChanged || null,
-      walletSettings.start_height,
+      scanSettings.start_height,
       params.scan_settings_path,
       params.pathPrefix,
       params.workerError,
@@ -190,7 +197,7 @@ export class ScanCacheOpened {
       delete this.worker;
     }
 
-    await writeStartHeightToScanSettings(start_height, this.scan_settings_path);
+    await this._scanSettings.setStartHeight(start_height);
     this._start_height = start_height;
     await this.unpause();
   }
@@ -255,6 +262,21 @@ export class ScanCacheOpened {
   private set node_url(nu: string) {
     this.view_pair.node_url = nu;
   }
+  get merchant_confirmations(): number | null | undefined {
+    return this._scanSettings.merchant_confirmations;
+  }
+  get cpu_worker_count(): number | undefined {
+    return this._scanSettings.cpu_worker_count;
+  }
+  get logs(): LogSetting | undefined {
+    return this._scanSettings.logs;
+  }
+  get logs_include(): PossibleLogs[] | undefined {
+    return this._scanSettings.logs_include;
+  }
+  get logs_exclude(): PossibleLogs[] | undefined {
+    return this._scanSettings.logs_exclude;
+  }
   public async changeNodeUrlAndStartHeight(
     node_url?: string,
     start_height?: number | null,
@@ -264,15 +286,12 @@ export class ScanCacheOpened {
       delete this.worker;
     }
     if (node_url !== undefined) {
-      await writeNodeUrlToScanSettings(node_url, this.scan_settings_path);
+      await this._scanSettings.setNodeUrl(node_url);
       this.node_url = node_url;
     }
 
     if (start_height !== undefined) {
-      await writeStartHeightToScanSettings(
-        start_height,
-        this.scan_settings_path,
-      );
+      await this._scanSettings.setStartHeight(start_height);
       this._start_height = start_height;
     }
 
@@ -284,8 +303,27 @@ export class ScanCacheOpened {
       delete this.worker;
     }
 
-    await writeNodeUrlToScanSettings(node_url, this.scan_settings_path);
+    await this._scanSettings.setNodeUrl(node_url);
     this.node_url = node_url;
+    await this.unpause();
+  }
+  public async setMerchantConfirmations(merchant_confirmations: number | null) {
+    this.stopWorker();
+    await this._scanSettings.setMerchantConfirmations(merchant_confirmations);
+    await this.unpause();
+  }
+  public async setCpuWorkerCount(cpu_worker_count: number | undefined) {
+    this.stopWorker();
+    await this._scanSettings.setCpuWorkerCount(cpu_worker_count);
+    await this.unpause();
+  }
+  public async setLogSettings(
+    logs?: LogSetting | null,
+    logs_include?: PossibleLogs[] | null,
+    logs_exclude?: PossibleLogs[] | null,
+  ) {
+    this.stopWorker();
+    await this._scanSettings.setLogSettings(logs, logs_include, logs_exclude);
     await this.unpause();
   }
   public async retry() {
@@ -293,12 +331,13 @@ export class ScanCacheOpened {
       this.worker.terminate();
       delete this.worker;
     }
-    const scan_settings = await readWalletFromScanSettings(
+    //  scansettings  so external changes (e.g. from a sidebar frontend instance) are picked up
+    await this._scanSettings.reload();
+    const walletStillExists = this._scanSettings.walletExists(
       this.primary_address,
-      this.scan_settings_path,
-    ).catch(() => false);
+    );
 
-    if (scan_settings) {
+    if (walletStillExists) {
       // if there is no scan settings file,
       // the retry loop is stopped.
       // the wallet reset happens through deleting all the scan setting + cache files
@@ -307,7 +346,7 @@ export class ScanCacheOpened {
       //TODO ? write connection status retry
       await this.unpause();
     }
-    return scan_settings ? true : false;
+    return walletStillExists;
   }
   public async sendTransaction(
     signedTx: string,
@@ -672,9 +711,10 @@ export class ScanCacheOpened {
    * @returns Adressstring
    */
   public async makeSubaddress(): Promise<Subaddress> {
-    const walletSettings = await readWalletFromScanSettings(
+    // reload scansettings so external changes (e.g. from a sidebar frontend instance) are picked up
+    await this._scanSettings.reload();
+    const walletSettings = this._scanSettings.getWallet(
       this.view_pair.primary_address,
-      this.scan_settings_path,
     );
     if (!walletSettings)
       throw new Error(
@@ -687,11 +727,10 @@ export class ScanCacheOpened {
     const subaddress = this.view_pair.makeSubaddress(minor);
     this._highest_subaddress_index = minor;
 
-    await writeWalletToScanSettings({
-      primary_address: this.view_pair.primary_address,
-      subaddress_index: minor,
-      scan_settings_path: this.scan_settings_path,
-    });
+    await this._scanSettings.setSubaddressIndex(
+      this.view_pair.primary_address,
+      minor,
+    );
     const created_at_height = lastRange(this._cache.scanned_ranges)?.end || 0;
     const created_at_timestamp = new Date().getTime();
 
@@ -727,11 +766,7 @@ export class ScanCacheOpened {
   }
   public async pause() {
     if (this.worker) this.worker.terminate();
-    return await writeWalletToScanSettings({
-      primary_address: this.view_pair.primary_address,
-      halted: true,
-      scan_settings_path: this.scan_settings_path,
-    });
+    return await this._scanSettings.haltWallet(this.view_pair.primary_address);
   }
   public stopWorker() {
     if (this.worker) {
@@ -768,11 +803,9 @@ export class ScanCacheOpened {
         },
       );
     }
-    return await writeWalletToScanSettings({
-      primary_address: this.view_pair.primary_address,
-      halted: false,
-      scan_settings_path: this.scan_settings_path,
-    });
+    return await this._scanSettings.unhaltWallet(
+      this.view_pair.primary_address,
+    );
   }
   /**
    * selectInputs returns array of inputs, whose sum is larger than amount
@@ -878,6 +911,7 @@ export class ScanCacheOpened {
   private last_eta_timestamp: number | null = null;
 
   private constructor(
+    private _scanSettings: ScanSettingsOpened,
     public readonly view_pair: ViewPair,
     public readonly wallet_route: string | undefined,
     public readonly wallet_name: string | undefined,
@@ -940,6 +974,48 @@ export class ManyScanCachesOpened {
     const masterWallet = this.wallets[0];
     return await masterWallet.changeNodeUrl(node_url);
   }
+  get merchant_confirmations(): number | null | undefined {
+    if (this.wallets.length === 0) return undefined;
+    return this.wallets[0]?.merchant_confirmations;
+  }
+  get cpu_worker_count(): number | undefined {
+    if (this.wallets.length === 0) return undefined;
+    return this.wallets[0]?.cpu_worker_count;
+  }
+  get logs(): LogSetting | undefined {
+    if (this.wallets.length === 0) return undefined;
+    return this.wallets[0]?.logs;
+  }
+  get logs_include(): PossibleLogs[] | undefined {
+    if (this.wallets.length === 0) return undefined;
+    return this.wallets[0]?.logs_include;
+  }
+  get logs_exclude(): PossibleLogs[] | undefined {
+    if (this.wallets.length === 0) return undefined;
+    return this.wallets[0]?.logs_exclude;
+  }
+  public async setMerchantConfirmations(merchant_confirmations: number | null) {
+    if (this.wallets.length === 0) throw new Error("no wallets");
+    return await this.wallets[0].setMerchantConfirmations(
+      merchant_confirmations,
+    );
+  }
+  public async setCpuWorkerCount(cpu_worker_count: number | undefined) {
+    if (this.wallets.length === 0) throw new Error("no wallets");
+    return await this.wallets[0].setCpuWorkerCount(cpu_worker_count);
+  }
+  public async setLogSettings(
+    logs?: LogSetting | null,
+    logs_include?: PossibleLogs[] | null,
+    logs_exclude?: PossibleLogs[] | null,
+  ) {
+    if (this.wallets.length === 0) throw new Error("no wallets");
+    return await this.wallets[0].setLogSettings(
+      logs,
+      logs_include,
+      logs_exclude,
+    );
+  }
   public async changeStartHeight(start_height: number | null) {
     if (this.wallets.length === 0) throw new Error("no wallets");
     const masterWallet = this.wallets[0];
@@ -953,13 +1029,16 @@ export class ManyScanCachesOpened {
     no_stats,
     workerError,
   }: ManyScanCachesOpenedCreateOptions) {
-    const scan_settings = await openScanSettingsFile(scan_settings_path);
-    if (!scan_settings?.wallets)
+    const scanSettingsOpened = await ScanSettingsOpened.create(
+      scan_settings_path,
+      pathPrefix,
+    );
+    if (!scanSettingsOpened.wallets || scanSettingsOpened.wallets.length === 0)
       throw new Error(
         `no wallets in settings file. Did you supply the right path?
      are there wallets in the default '${SCAN_SETTINGS_STORE_NAME_DEFAULT}' file?`,
       );
-    const nonHaltedWallets = scan_settings.wallets.filter(
+    const nonHaltedWallets = scanSettingsOpened.wallets.filter(
       (wallet) => !wallet?.halted,
     );
     if (!nonHaltedWallets.length) return undefined;
