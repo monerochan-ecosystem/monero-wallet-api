@@ -93,27 +93,48 @@ export class ScanSettingsOpened {
     await this._persist();
   }
 
-  public async setMerchantConfirmations(merchant_confirmations: number | null) {
+  public async setMerchantConfirmations(
+    merchant_confirmations: number | undefined | null,
+  ) {
     await this.reload();
     this._settings.merchant_confirmations = merchant_confirmations;
+    if (merchant_confirmations === null)
+      delete this._settings.merchant_confirmations;
     await this._persist();
   }
 
-  public async setCpuWorkerCount(cpu_worker_count: number | undefined) {
+  public async setCpuWorkerCount(cpu_worker_count: number | undefined | null) {
     await this.reload();
-    this._settings.cpu_worker_count = cpu_worker_count;
+    if (cpu_worker_count === null) {
+      delete this._settings.cpu_worker_count;
+    } else {
+      this._settings.cpu_worker_count = cpu_worker_count;
+    }
     await this._persist();
   }
 
   public async setLogSettings(
-    logs?: LogSetting,
-    logs_include?: PossibleLogs[],
-    logs_exclude?: PossibleLogs[],
+    logs?: LogSetting | null,
+    logs_include?: PossibleLogs[] | null,
+    logs_exclude?: PossibleLogs[] | null,
   ) {
     await this.reload();
-    this._settings.logs = logs;
-    this._settings.logs_include = logs_include;
-    this._settings.logs_exclude = logs_exclude;
+    if (logs === null) {
+      delete this._settings.logs;
+    } else {
+      this._settings.logs = logs;
+    }
+    if (logs_include === null) {
+      delete this._settings.logs_include;
+    } else {
+      this._settings.logs_include = logs_include;
+    }
+    if (logs_exclude === null) {
+      delete this._settings.logs_exclude;
+    } else {
+      this._settings.logs_exclude = logs_exclude;
+    }
+
     await this._persist();
   }
 
