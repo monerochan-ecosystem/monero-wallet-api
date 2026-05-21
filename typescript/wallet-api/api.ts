@@ -41,6 +41,7 @@ export { openWallets, openWallet } from "./scanning-syncing/openWallet";
 export * from "./scanning-syncing/blocksbuffer/blocksBufferFetchLoop";
 export * from "./scanning-syncing/blocksbuffer/blocksbufferCoordination";
 export * from "./scanning-syncing/connectionStatus";
+export { ConnectionStatusOpened } from "./scanning-syncing/connectionStatusOpened";
 export * from "./scansettings/scanSettings";
 export { ScanSettingsOpened } from "./scansettings/scanSettingsOpened";
 export * from "./scanning-syncing/scanresult/scanResult";

@@ -25,6 +25,7 @@ import {
   walletSettingsPlusKeys,
 } from "../../api";
 import { ScanSettingsOpened } from "../../scansettings/scanSettingsOpened";
+import { ConnectionStatusOpened } from "../connectionStatusOpened";
 import type { LogSetting, PossibleLogs } from "../../io/logging";
 import {
   findRange,
@@ -933,6 +934,8 @@ export type ManyScanCachesOpenedCreateOptions = {
   notifyMasterChanged?: CacheChangedCallback;
   no_stats?: boolean;
   workerError?: (error: unknown) => void;
+  connectionStatusIntervalMs?: number;
+  onConnectionStatusChange?: ((status: ConnectionStatus | null) => void) | null;
 };
 export class ManyScanCachesOpened {
   get start_height(): number | null {
@@ -994,6 +997,15 @@ export class ManyScanCachesOpened {
     if (this.wallets.length === 0) return undefined;
     return this.wallets[0]?.logs_exclude;
   }
+  get connectionStatus(): ConnectionStatus | null {
+    return this.connectionStatusOpened.connectionStatus;
+  }
+  watchConnectionStatus(intervalMs?: number) {
+    this.connectionStatusOpened.watch(intervalMs);
+  }
+  unwatchConnectionStatus() {
+    this.connectionStatusOpened.unwatch();
+  }
   public async setMerchantConfirmations(merchant_confirmations: number | null) {
     if (this.wallets.length === 0) throw new Error("no wallets");
     return await this.wallets[0].setMerchantConfirmations(
@@ -1028,6 +1040,8 @@ export class ManyScanCachesOpened {
     notifyMasterChanged,
     no_stats,
     workerError,
+    onConnectionStatusChange,
+    connectionStatusIntervalMs,
   }: ManyScanCachesOpenedCreateOptions) {
     const scanSettingsOpened = await ScanSettingsOpened.create(
       scan_settings_path,
@@ -1088,7 +1102,13 @@ export class ManyScanCachesOpened {
       openedWallets.push(onlyWallet);
     }
 
-    return new ManyScanCachesOpened(openedWallets);
+    const csOpened = new ConnectionStatusOpened(
+      scan_settings_path || SCAN_SETTINGS_STORE_NAME_DEFAULT,
+      onConnectionStatusChange ?? null,
+    );
+    csOpened.watch(connectionStatusIntervalMs);
+
+    return new ManyScanCachesOpened(openedWallets, csOpened);
   }
   /**
    * feed the master wallet and therefore all wallets
@@ -1096,5 +1116,8 @@ export class ManyScanCachesOpened {
   public async feed(params: CacheChangedCallbackParameters) {
     await this.wallets[0].feed(params);
   }
-  private constructor(public readonly wallets: ScanCacheOpened[]) {}
+  private constructor(
+    public readonly wallets: ScanCacheOpened[],
+    public readonly connectionStatusOpened: ConnectionStatusOpened,
+  ) {}
 }
