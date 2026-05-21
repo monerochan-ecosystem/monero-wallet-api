@@ -41,7 +41,12 @@ export async function* blocksBufferFetchLoop(
 ): AsyncGenerator<BlocksBufferLoopResult> {
   connection_status = structuredClone(connection_status);
   const nodeUrl = await NodeUrl.create(node_url);
-  log("blocksBufferFetchLoop", ["NodeUrl:", nodeUrl.node_url, "start:", start_height]);
+  log("blocksBufferFetchLoop", [
+    "NodeUrl:",
+    nodeUrl.node_url,
+    "start:",
+    start_height,
+  ]);
 
   start_height = await reduceStartHeightToTip(start_height, nodeUrl.node_url);
   // initialise ranges on first call
@@ -77,8 +82,26 @@ export async function* blocksBufferFetchLoop(
       await sleep(5000);
       continue;
     }
-    log("blocksBufferFetchLoop", ["fetching", nodeUrl.node_url, current_range.start, "->", current_range.end]);
-    const get_blocks_bin = await doRPCrequest(nodeUrl, current_range, stopSync);
+    log("blocksBufferFetchLoop", [
+      "fetching",
+      nodeUrl.node_url,
+      current_range.start,
+      "->",
+      current_range.end,
+    ]);
+    let get_blocks_bin;
+    try {
+      get_blocks_bin = await doRPCrequest(nodeUrl, current_range, stopSync);
+    } catch (error) {
+      connection_status.last_packet = {
+        status: "connection_failed",
+        bytes_read: 0,
+        node_url,
+        timestamp: new Date().toISOString(),
+      };
+      yield connection_status.last_packet;
+      throw error;
+    }
 
     const result_meta = await nodeUrl.loadGetBlocksBinResponse(get_blocks_bin);
     log(
