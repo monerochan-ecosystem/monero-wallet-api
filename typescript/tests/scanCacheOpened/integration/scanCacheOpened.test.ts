@@ -8,7 +8,7 @@ import {
   openWallets,
   writeScanSettings,
   makeTestKeyPair,
-  readCacheFileDefaultLocation,
+  type ConnectionStatus,
 } from "../../../dist/api";
 
 const OUT = "test-data/scanCacheOpened";
@@ -304,6 +304,118 @@ test("c: worker restart on setting change via openWallets", async () => {
 
   wallets.stopWorker();
 }, 60000);
+
+test("d: connection status watcher fires and caches correctly with live node", async () => {
+  const dir = `${OUT}/d`;
+  await rm(dir, { force: true, recursive: true });
+  await mkdir(dir, { recursive: true });
+
+  const path = `${dir}/ScanSettings.json`;
+  await writeScanSettings(
+    {
+      wallets: [{ primary_address: kp1.addr }],
+      node_url: URL,
+      start_height: 0,
+    },
+    path,
+  );
+
+  let callCount = 0;
+  let lastStatus: ConnectionStatus | null = null;
+
+  const wallets = await openWallets({
+    scan_settings_path: path,
+    pathPrefix: `${dir}/`,
+    connectionStatusIntervalMs: 500,
+    onConnectionStatusChange: (status) => {
+      callCount++;
+      lastStatus = status;
+    },
+    no_stats: true,
+  });
+  if (!wallets) throw new Error("expected wallets");
+
+  // wait for the fetcher to write real data (daemon_height > 0)
+  let daemonHeight = 0;
+  const deadline = Date.now() + 10000;
+  while (Date.now() < deadline) {
+    await Bun.sleep(200);
+    if (wallets.connectionStatusOpened.connectionStatus?.sync?.daemon_height) {
+      daemonHeight =
+        wallets.connectionStatusOpened.connectionStatus.sync.daemon_height;
+      break;
+    }
+  }
+  expect(daemonHeight).toBeGreaterThan(0);
+  expect(callCount).toBeGreaterThanOrEqual(1);
+  expect(lastStatus).not.toBeNull();
+  expect(lastStatus!.last_packet.status).toBe("OK");
+
+  // cached value is accessible and matches
+  expect(wallets.connectionStatus?.last_packet.status).toBe("OK");
+  expect(
+    wallets.connectionStatusOpened.connectionStatus?.last_packet.status,
+  ).toBe("OK");
+  expect(wallets.connectionStatusOpened.isConnected).toBe(true);
+
+  // unwatch stops updates
+  const countBeforeUnwatch = callCount;
+  wallets.unwatchConnectionStatus();
+  await Bun.sleep(1000);
+  expect(callCount).toBe(countBeforeUnwatch);
+
+  wallets.stopWorker();
+}, 30000);
+
+test("e: isConnected becomes false when node goes down", async () => {
+  const dir = `${OUT}/e`;
+  await rm(dir, { force: true, recursive: true });
+  await mkdir(dir, { recursive: true });
+
+  const path = `${dir}/ScanSettings.json`;
+  await writeScanSettings(
+    {
+      wallets: [{ primary_address: kp1.addr }],
+      node_url: URL,
+      start_height: 0,
+    },
+    path,
+  );
+
+  let lastStatus: ConnectionStatus | null = null;
+  const wallets = await openWallets({
+    scan_settings_path: path,
+    pathPrefix: `${dir}/`,
+    connectionStatusIntervalMs: 500,
+    onConnectionStatusChange: (s) => {
+      lastStatus = s;
+    },
+    no_stats: true,
+  });
+  if (!wallets) throw new Error("expected wallets");
+
+  // wait for initial connection
+  await Bun.sleep(2000);
+  expect(wallets.connectionStatusOpened.isConnected).toBe(true);
+
+  // kill monerod, fetcher should fail on next rpc
+  proc.kill(9);
+
+  // wait for the next fetch attempt to fail and write connection_failed
+  let connected = true;
+  const deadline = Date.now() + 15000;
+  while (Date.now() < deadline) {
+    await Bun.sleep(500);
+    if (!wallets.connectionStatusOpened.isConnected) {
+      connected = false;
+      break;
+    }
+  }
+  expect(connected).toBe(false);
+  expect(lastStatus!.last_packet.status).not.toBe("OK");
+
+  wallets.stopWorker();
+}, 30000);
 
 afterAll(() => {
   if (proc) {
