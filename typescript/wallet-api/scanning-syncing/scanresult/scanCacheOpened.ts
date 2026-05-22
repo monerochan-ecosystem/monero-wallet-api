@@ -934,6 +934,8 @@ export type ManyScanCachesOpenedCreateOptions = {
   notifyMasterChanged?: CacheChangedCallback;
   no_stats?: boolean;
   workerError?: (error: unknown) => void;
+  autoRetry?: boolean;
+  retryDelayMs?: number;
   connectionStatusIntervalMs?: number;
   onConnectionStatusChange?: ((status: ConnectionStatus | null) => void) | null;
 };
@@ -1104,6 +1106,8 @@ export class ManyScanCachesOpened {
       pathPrefix,
       onConnectionStatusChange,
       connectionStatusIntervalMs,
+      autoRetry,
+      retryDelayMs,
     } = options;
     const scanSettingsOpened = await ScanSettingsOpened.create(
       scan_settings_path,
@@ -1114,7 +1118,28 @@ export class ManyScanCachesOpened {
         `no wallets in settings file. Did you supply the right path?
      are there wallets in the default '${SCAN_SETTINGS_STORE_NAME_DEFAULT}' file?`,
       );
-    const wallets = await this._buildWallets(scanSettingsOpened, options);
+
+    // wrap workerError with auto-retry
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let instance: ManyScanCachesOpened | null = null;
+    const newOptions = { ...options };
+    if (autoRetry) {
+      const originalError = options.workerError;
+      newOptions.workerError = (err: unknown) => {
+        originalError?.(err);
+        if (!retryTimer) {
+          retryTimer = setTimeout(() => {
+            retryTimer = undefined;
+            instance?.retry();
+          }, retryDelayMs ?? 1000);
+        }
+      };
+    }
+
+    const wallets = await this._buildWallets(
+      scanSettingsOpened,
+      newOptions,
+    );
     if (!wallets) return undefined;
 
     const csOpened = new ConnectionStatusOpened(
@@ -1123,12 +1148,14 @@ export class ManyScanCachesOpened {
     );
     csOpened.watch(connectionStatusIntervalMs);
 
-    return new ManyScanCachesOpened(
+    instance = new ManyScanCachesOpened(
       wallets,
       csOpened,
       scanSettingsOpened,
-      options,
+      newOptions,
     );
+
+    return instance;
   }
 
   public async buildWallets() {

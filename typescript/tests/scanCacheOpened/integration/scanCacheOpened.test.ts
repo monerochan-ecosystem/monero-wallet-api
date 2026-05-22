@@ -503,3 +503,77 @@ afterAll(() => {
     } catch {}
   }
 });
+
+test("g: autoRetry restarts worker on node failure", async () => {
+  const dir = `${OUT}/g`;
+  await rm(dir, { force: true, recursive: true });
+  await mkdir(dir, { recursive: true });
+
+  // spawn a fresh monerod
+  await Bun.$`pgrep monerod && kill -9 $(pgrep monerod) 2>/dev/null; echo "done"`;
+  const gProc = Bun.spawn(
+    [
+      MONEROD,
+      "--regtest",
+      "--offline",
+      "--fixed-difficulty",
+      "1",
+      "--rpc-bind-ip",
+      "127.0.0.1",
+      "--rpc-bind-port",
+      String(PORT),
+      "--non-interactive",
+    ],
+    { stdin: "pipe", stdout: "pipe", stderr: "pipe" },
+  );
+  await Bun.sleep(1000);
+  await waitNode();
+  await rpc("generateblocks", {
+    amount_of_blocks: 10,
+    wallet_address: kp1.addr,
+  });
+
+  const path = `${dir}/ScanSettings.json`;
+  await writeScanSettings(
+    {
+      wallets: [{ primary_address: kp1.addr }],
+      node_url: URL,
+      start_height: 0,
+      logs: "file",
+      logs_include: ["createWebworker", "coordinatorMainWorker"],
+    },
+    path,
+  );
+
+  let errorCount = 0;
+  const wallets = await openWallets({
+    scan_settings_path: path,
+    pathPrefix: `${dir}/`,
+    autoRetry: true,
+    retryDelayMs: 500,
+    workerError: () => { errorCount++; },
+    no_stats: true,
+  });
+  if (!wallets) throw new Error("expected wallets");
+
+  // wait for initial connection
+  await Bun.sleep(2000);
+  expect(wallets.wallets[0].daemon_height).toBeGreaterThan(0);
+
+  // count log files before killing node
+  const logsBefore = readdirSync(dir).filter((f) => f.endsWith(".log"));
+
+  // kill the node, worker errors and autoRetry fires retry()
+  gProc.kill(9);
+
+  // wait for retry to spawn new workers
+  await Bun.sleep(4000);
+
+  expect(errorCount).toBeGreaterThanOrEqual(1);
+
+  // new log files should have appeared (new workers spawned by retry)
+  const logsAfter = readdirSync(dir).filter((f) => f.endsWith(".log"));
+  expect(logsAfter.length).toBeGreaterThan(logsBefore.length);
+
+  wallets.stopWorker();
+}, 30000);
