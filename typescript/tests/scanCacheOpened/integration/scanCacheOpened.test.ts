@@ -367,8 +367,84 @@ test("d: connection status watcher fires and caches correctly with live node", a
   wallets.stopWorker();
 }, 30000);
 
-test("e: isConnected becomes false when node goes down", async () => {
+test("e: addViewWallet and removeWallet on ManyScanCachesOpened", async () => {
   const dir = `${OUT}/e`;
+  await rm(dir, { force: true, recursive: true });
+  await mkdir(dir, { recursive: true });
+
+  const path = `${dir}/ScanSettings.json`;
+  const sso = await ScanSettingsOpened.create(path);
+  await sso.addViewWallet(kp1.addr, kp1.vk, { wallet_name: "first" });
+  await sso.setNodeUrl(URL);
+  await sso.setStartHeight(210);
+
+  await rpc("generateblocks", {
+    amount_of_blocks: 10,
+    wallet_address: kp1.addr,
+  });
+  let resolveSync: () => void;
+  const synced = new Promise<void>((r) => {
+    resolveSync = r;
+  });
+
+  const wallets = await openWallets({
+    scan_settings_path: path,
+    pathPrefix: `${dir}/`,
+    notifyMasterChanged: (params) => {
+      const last = params.newCache.scanned_ranges.at(-1);
+      if (last && last.end >= 10) resolveSync();
+    },
+  });
+  if (!wallets) throw new Error("expected wallets");
+
+  expect(wallets.wallets.length).toBe(1);
+  expect(wallets.wallets[0].wallet_name).toBe("first");
+  expect(wallets.wallets[0].primary_address).toBe(kp1.addr);
+
+  // wait for scan to catch up
+  await synced;
+
+  // add second wallet
+  const kp2 = await makeKeypair();
+  await wallets.addViewWallet(kp2.addr, kp2.vk, {
+    wallet_name: "second",
+  });
+
+  expect(wallets.wallets.length).toBe(2);
+  expect(wallets.wallets[0].wallet_name).toBe("first");
+  expect(wallets.wallets[1].wallet_name).toBe("second");
+
+  // scan still works after rebuild (notifyMasterChanged keeps firing)
+
+  // verify on disk
+  let raw = JSON.parse(await Bun.file(path).text());
+  expect(raw.wallets.length).toBe(2);
+
+  // remove first wallet
+  await wallets.removeWallet(kp1.addr);
+  expect(wallets.wallets.length).toBe(1);
+  expect(wallets.wallets[0].wallet_name).toBe("second");
+
+  raw = JSON.parse(await Bun.file(path).text());
+  expect(raw.wallets.length).toBe(1);
+
+  // add spend wallet
+  const entropy = new Uint8Array(64);
+  crypto.getRandomValues(entropy);
+  await wallets.addSpendWallet(entropy, { wallet_name: "spendy" });
+
+  expect(wallets.wallets.length).toBe(2);
+  expect(wallets.wallets[1].wallet_name).toBe("spendy");
+  expect(wallets.wallets[1].primary_address).toBeDefined();
+
+  raw = JSON.parse(await Bun.file(path).text());
+  expect(raw.wallets.length).toBe(2);
+
+  wallets.stopWorker();
+}, 30000);
+
+test("f: isConnected becomes false when node goes down", async () => {
+  const dir = `${OUT}/f`;
   await rm(dir, { force: true, recursive: true });
   await mkdir(dir, { recursive: true });
 

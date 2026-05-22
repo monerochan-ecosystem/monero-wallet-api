@@ -1033,25 +1033,18 @@ export class ManyScanCachesOpened {
     const masterWallet = this.wallets[0];
     return await masterWallet.changeStartHeight(start_height);
   }
-  public static async create({
-    scan_settings_path,
-    pathPrefix,
-    no_worker,
-    notifyMasterChanged,
-    no_stats,
-    workerError,
-    onConnectionStatusChange,
-    connectionStatusIntervalMs,
-  }: ManyScanCachesOpenedCreateOptions) {
-    const scanSettingsOpened = await ScanSettingsOpened.create(
+  private static async _buildWallets(
+    scanSettingsOpened: ScanSettingsOpened,
+    options: ManyScanCachesOpenedCreateOptions,
+  ): Promise<ScanCacheOpened[] | undefined> {
+    const {
       scan_settings_path,
       pathPrefix,
-    );
-    if (!scanSettingsOpened.wallets || scanSettingsOpened.wallets.length === 0)
-      throw new Error(
-        `no wallets in settings file. Did you supply the right path?
-     are there wallets in the default '${SCAN_SETTINGS_STORE_NAME_DEFAULT}' file?`,
-      );
+      no_worker,
+      no_stats,
+      workerError,
+      notifyMasterChanged,
+    } = options;
     const nonHaltedWallets = scanSettingsOpened.wallets.filter(
       (wallet) => !wallet?.halted,
     );
@@ -1102,22 +1095,108 @@ export class ManyScanCachesOpened {
       openedWallets.push(onlyWallet);
     }
 
+    return openedWallets;
+  }
+
+  public static async create(options: ManyScanCachesOpenedCreateOptions) {
+    const {
+      scan_settings_path,
+      pathPrefix,
+      onConnectionStatusChange,
+      connectionStatusIntervalMs,
+    } = options;
+    const scanSettingsOpened = await ScanSettingsOpened.create(
+      scan_settings_path,
+      pathPrefix,
+    );
+    if (!scanSettingsOpened.wallets || scanSettingsOpened.wallets.length === 0)
+      throw new Error(
+        `no wallets in settings file. Did you supply the right path?
+     are there wallets in the default '${SCAN_SETTINGS_STORE_NAME_DEFAULT}' file?`,
+      );
+    const wallets = await this._buildWallets(scanSettingsOpened, options);
+    if (!wallets) return undefined;
+
     const csOpened = new ConnectionStatusOpened(
       scan_settings_path || SCAN_SETTINGS_STORE_NAME_DEFAULT,
       onConnectionStatusChange ?? null,
     );
     csOpened.watch(connectionStatusIntervalMs);
 
-    return new ManyScanCachesOpened(openedWallets, csOpened);
+    return new ManyScanCachesOpened(
+      wallets,
+      csOpened,
+      scanSettingsOpened,
+      options,
+    );
   }
-  /**
-   * feed the master wallet and therefore all wallets
-   */
+
+  public async buildWallets() {
+    for (const w of this._wallets) {
+      w.stopWorker();
+    }
+    await this._scanSettings.reload();
+    const newWallets = await ManyScanCachesOpened._buildWallets(
+      this._scanSettings,
+      this._options,
+    );
+    if (!newWallets)
+      throw new Error(
+        "no non-halted wallets left after rebuild, use addViewWallet or addSpendWallet first",
+      );
+    this._wallets = newWallets;
+  }
+
+  public async addViewWallet(
+    primary_address: string,
+    view_key: string,
+    fields?: {
+      wallet_name?: string;
+      wallet_slot?: number;
+      wallet_route?: string;
+      subaddress_index?: number;
+      halted?: boolean;
+    },
+  ) {
+    await this._scanSettings.addViewWallet(primary_address, view_key, fields);
+    await this.buildWallets();
+  }
+
+  public async addSpendWallet(
+    wallet_secret: Uint8Array,
+    fields?: {
+      wallet_name?: string;
+      wallet_slot?: number;
+      wallet_route?: string;
+      subaddress_index?: number;
+      halted?: boolean;
+    },
+  ) {
+    await this._scanSettings.addSpendWallet(wallet_secret, fields);
+    await this.buildWallets();
+  }
+
+  public async removeWallet(primary_address: string) {
+    await this._scanSettings.removeWallet(primary_address);
+    await this.buildWallets();
+  }
+
   public async feed(params: CacheChangedCallbackParameters) {
     await this.wallets[0].feed(params);
   }
+
+  private _wallets: ScanCacheOpened[] = [];
+
+  get wallets(): ScanCacheOpened[] {
+    return this._wallets;
+  }
+
   private constructor(
-    public readonly wallets: ScanCacheOpened[],
+    wallets: ScanCacheOpened[],
     public readonly connectionStatusOpened: ConnectionStatusOpened,
-  ) {}
+    private _scanSettings: ScanSettingsOpened,
+    private _options: ManyScanCachesOpenedCreateOptions,
+  ) {
+    this._wallets = wallets;
+  }
 }
