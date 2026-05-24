@@ -879,15 +879,17 @@ export class ScanCacheOpened {
       );
 
     if (!this.no_worker) {
-      const etaResult = await updateSyncETA(
-        this._cache.daemon_height,
-        this.current_height || 0,
-        this.last_eta_height,
-        this.last_eta_timestamp,
-        this.scan_settings_path,
-      );
-      this.last_eta_height = etaResult.last_height;
-      this.last_eta_timestamp = etaResult.last_timestamp;
+      if (this.current_height) {
+        const etaResult = await updateSyncETA(
+          this._cache.daemon_height,
+          this.current_height,
+          this.last_eta_height,
+          this.last_eta_timestamp,
+          this.scan_settings_path,
+        );
+        this.last_eta_height = etaResult.last_height;
+        this.last_eta_timestamp = etaResult.last_timestamp;
+      }
     }
 
     for (const listener of this.notifyListeners) {
@@ -1139,10 +1141,7 @@ export class ManyScanCachesOpened {
       };
     }
 
-    const wallets = await this._buildWallets(
-      scanSettingsOpened,
-      newOptions,
-    );
+    const wallets = await this._buildWallets(scanSettingsOpened, newOptions);
     if (!wallets) return undefined;
 
     const csOpened = new ConnectionStatusOpened(
