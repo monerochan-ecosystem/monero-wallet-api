@@ -56,10 +56,14 @@ export async function handleConnectionStatusChanges(
     }
   }
   if ("scanned_ranges" in event) {
-    //TODO: only write this to disk after blocks_buffer_changed has been handled by wallets.
-    //look for same comment in blocksBufferFetchLoop.ts
     await readWriteConnectionStatusFile((cs2) => {
-      cs2.sync = event;
+      cs2.sync = {
+        ...event,
+        // preserve eta and current_scan_height from file
+        eta: cs2.sync.eta || event.eta,
+        current_scan_height:
+          cs2.sync.current_scan_height || event.current_scan_height,
+      };
     }, scanSettingsPath);
   }
 }

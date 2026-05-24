@@ -70,50 +70,6 @@ export function emptyConnectionStatus(
   return overrides ? { ...defaultStatus, ...overrides } : defaultStatus;
 }
 
-export async function updateSyncETA(
-  daemon_height: number,
-  current_scan_height: number,
-  last_height: number | null,
-  last_timestamp: number | null,
-  scan_settings_path?: string,
-): Promise<{ last_height: number; last_timestamp: number }> {
-  const blocks_till_tip = daemon_height - current_scan_height;
-  let blocks_since_last_update: number | null = null;
-  let duration: number | null = null;
-
-  if (typeof last_height === "number") {
-    blocks_since_last_update = current_scan_height - last_height;
-  }
-
-  if (typeof last_timestamp === "number") {
-    duration = Date.now() - last_timestamp;
-  }
-
-  let eta = "00:00";
-  if (
-    blocks_since_last_update !== null &&
-    duration !== null &&
-    duration > 0 &&
-    blocks_till_tip > 0
-  ) {
-    const blocks_per_ms = blocks_since_last_update / duration;
-    const eta_ms = blocks_till_tip / blocks_per_ms;
-    eta = msToHHMM(eta_ms);
-  }
-
-  await readWriteConnectionStatusFile((cs) => {
-    cs.sync = {
-      ...cs.sync,
-      daemon_height,
-      current_scan_height,
-      eta,
-      timestamp: new Date().toISOString(),
-    };
-  }, scan_settings_path);
-
-  return { last_height: current_scan_height, last_timestamp: Date.now() };
-}
-
 export function connectionStatusFilePath(
   scan_settings_path: string = SCAN_SETTINGS_STORE_NAME_DEFAULT,
 ) {
