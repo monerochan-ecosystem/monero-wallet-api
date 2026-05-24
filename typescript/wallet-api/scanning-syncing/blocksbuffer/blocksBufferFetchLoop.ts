@@ -108,11 +108,13 @@ export async function* blocksBufferFetchLoop(
       "blocksBufferFetchLoop",
       "response: " + result_meta.block_infos.length + " blocks",
     );
+    connection_status.sync.daemon_height = result_meta.daemon_height;
     connection_status.last_packet = {
       status: "OK",
       bytes_read: get_blocks_bin.length,
       node_url: node_url,
       timestamp: new Date().toISOString(),
+      daemon_height: result_meta.daemon_height,
     };
     yield connection_status.last_packet;
     // no new blocks: at tip, sleep and retry

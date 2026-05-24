@@ -1002,6 +1002,9 @@ export class ManyScanCachesOpened {
   get connectionStatus(): ConnectionStatus | null {
     return this.connectionStatusOpened.connectionStatus;
   }
+  get daemonHeight(): number | undefined {
+    return this.connectionStatusOpened.daemonHeight;
+  }
   watchConnectionStatus(intervalMs?: number) {
     this.connectionStatusOpened.watch(intervalMs);
   }

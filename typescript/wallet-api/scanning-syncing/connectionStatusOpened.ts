@@ -44,6 +44,10 @@ export class ConnectionStatusOpened {
     return age >= 0 && age <= 10_000;
   }
 
+  get daemonHeight(): number | undefined {
+    return this._cached?.last_packet?.daemon_height;
+  }
+
   private async _poll() {
     this._cached =
       (await readConnectionStatusFile(this._path).catch(() => null)) || null;

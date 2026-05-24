@@ -17,6 +17,7 @@ export type ConnectionSatusLastPacket = {
   bytes_read: number;
   node_url: string;
   timestamp: string;
+  daemon_height?: number;
 };
 export type ConnectionStatusSync = {
   reorg_info?: ReorgInfo;
