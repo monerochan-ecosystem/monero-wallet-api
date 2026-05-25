@@ -11,6 +11,8 @@ import {
   sleep,
   type BlockInfo,
   findTipIndex,
+  readWriteConnectionStatusFile,
+  connectionStatusFilePath,
 } from "../../api";
 
 import {
@@ -27,7 +29,7 @@ import {
   SCAN_SETTINGS_STORE_NAME_DEFAULT,
   walletSettingsPlusKeys,
   type ScanSettings,
-} from "../scanSettings";
+} from "../../api";
 import {
   findRange,
   initScanCacheFile,
@@ -476,6 +478,33 @@ function logBufStatus(
     `[buf] ${label} blocks=[${bb.join(",")}] work=[${wb.join(",")}]`,
   ]);
 }
+function msToHHMM(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return "00:00";
+  const totalSeconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return `${String(hours).padStart(2, "0")}:${String(remainingMinutes).padStart(2, "0")}`;
+}
+
+function computeETA(
+  cache: ScanCache,
+  totalBlocksScanned: number,
+  scanStartTime: number,
+): string | undefined {
+  const scanProgress = lastRange(cache.scanned_ranges)?.end || 0;
+  const elapsed = Date.now() - scanStartTime;
+  const daemonHeight = cache.daemon_height;
+  if (totalBlocksScanned <= 0 || elapsed <= 0 || daemonHeight <= 0)
+    return undefined;
+  const remaining = daemonHeight - scanProgress;
+  if (remaining <= 0) return "00:00";
+  const blocksPerMs = totalBlocksScanned / elapsed;
+  if (blocksPerMs <= 0) return undefined;
+  const etaMs = remaining / blocksPerMs;
+  return msToHHMM(etaMs);
+}
+
 /**
  * coordinator main: async generator that drives the full scan cycle.
  * takes only scanSettingsPath, derives everything else internally.
@@ -494,6 +523,8 @@ export async function* coordinatorMain(
   const blocksBuffer = ctx.blocksBuffer;
   const workBuffer = ctx.workBuffer;
   const blocksGenerator = ctx.blocksGenerator;
+  let totalBlocksScanned = 0;
+  let scanStartTime = Date.now();
   let blocksPromise = blocksGenerator.next();
 
   const scanGens = new Map<
@@ -591,6 +622,12 @@ export async function* coordinatorMain(
           throw new Error(
             "[coordinatorMain] wallet config not found on process result",
           );
+        // count blocks scanned in this work item for ETA
+        const doneItem = workBuffer.find(
+          (x) => x.work_uuid === value.work_uuid,
+        );
+        const blockCount = doneItem ? doneItem.to - doneItem.from + 1 : 0;
+
         await processScanResultForWorkItem(
           value,
           workBuffer,
@@ -598,6 +635,22 @@ export async function* coordinatorMain(
           getPathPrefix(scanSettingsPath, pathPrefix),
           wc?.secret_spend_key,
         );
+
+        totalBlocksScanned += blockCount;
+        const eta = computeETA(wc.cache, totalBlocksScanned, scanStartTime);
+        // write connection status sync (includes eta)
+        if (eta) {
+          await readWriteConnectionStatusFile((cs) => {
+            cs.sync = {
+              ...cs.sync,
+              scanned_ranges: wc.cache.scanned_ranges,
+              daemon_height: wc.cache.daemon_height,
+              current_scan_height: lastRange(wc.cache.scanned_ranges)?.end || 0,
+              eta,
+              timestamp: new Date().toISOString(),
+            };
+          }, scanSettingsPath);
+        }
         const nextItem = workBuffer.find(
           (x) =>
             x.status !== "process_result_done" &&
@@ -699,6 +752,8 @@ export async function* coordinatorMainMultithreaded(
   const workBuffer = ctx.workBuffer;
 
   const blocksGenerator = ctx.blocksGenerator;
+  let totalBlocksScanned = 0;
+  let scanStartTime = Date.now();
   let blocksPromise = blocksGenerator.next();
 
   const freePorts: PortStatus[] = [];
@@ -766,6 +821,24 @@ export async function* coordinatorMainMultithreaded(
       }
       const to_be_processed = processable[0];
       if (!to_be_processed) continue;
+
+      const blockCount = to_be_processed.to - to_be_processed.from + 1;
+      totalBlocksScanned += blockCount;
+      const eta = computeETA(wallet.cache, totalBlocksScanned, scanStartTime);
+      // write connection status sync (includes eta)
+      if (eta) {
+        await readWriteConnectionStatusFile((cs) => {
+          cs.sync = {
+            ...cs.sync,
+            scanned_ranges: wallet.cache.scanned_ranges,
+            daemon_height: wallet.cache.daemon_height,
+            current_scan_height:
+              lastRange(wallet.cache.scanned_ranges)?.end || 0,
+            eta,
+            timestamp: new Date().toISOString(),
+          };
+        }, scanSettingsPath);
+      }
 
       const res = await processWorkItem(
         to_be_processed,

@@ -36,7 +36,7 @@ import {
   type GetBlockHeadersRangeParams,
 } from "../api";
 
-import { readWalletFromScanSettings } from "../scanning-syncing/scanSettings";
+import { readWalletFromScanSettings } from "../api";
 import { sleep } from "../io/sleep";
 
 /**

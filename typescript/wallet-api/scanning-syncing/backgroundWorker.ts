@@ -1,9 +1,6 @@
 import { LOCAL_NODE_DEFAULT_URL } from "../node-interaction/nodeUrl";
 import { type CacheChangedCallbackParameters } from "./scanresult/scanCache";
-import {
-  openScanSettingsFile,
-  SCAN_SETTINGS_STORE_NAME_DEFAULT,
-} from "./scanSettings";
+import { openScanSettingsFile, SCAN_SETTINGS_STORE_NAME_DEFAULT } from "../api";
 import { log, setupLoggingPath } from "../io/logging";
 import { workerMainCode } from "./worker-entrypoints/worker";
 

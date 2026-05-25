@@ -18,11 +18,6 @@ export * from "./io/atomicWrite";
 export * from "./io/sleep";
 
 export {
-  writeScanSettings,
-  readScanSettings,
-} from "./scanning-syncing/scanSettings";
-
-export {
   signTransaction,
   parseAddress,
   type ParsedAddress,
@@ -46,7 +41,9 @@ export { openWallets, openWallet } from "./scanning-syncing/openWallet";
 export * from "./scanning-syncing/blocksbuffer/blocksBufferFetchLoop";
 export * from "./scanning-syncing/blocksbuffer/blocksbufferCoordination";
 export * from "./scanning-syncing/connectionStatus";
-export * from "./scanning-syncing/scanSettings";
+export { ConnectionStatusOpened } from "./scanning-syncing/connectionStatusOpened";
+export * from "./scansettings/scanSettings";
+export { ScanSettingsOpened } from "./scansettings/scanSettingsOpened";
 export * from "./scanning-syncing/scanresult/scanResult";
 export * from "./scanning-syncing/scanresult/scanStats";
 export * from "./scanning-syncing/scanresult/scanCache";
