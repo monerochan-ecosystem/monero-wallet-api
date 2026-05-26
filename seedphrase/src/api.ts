@@ -117,6 +117,12 @@ export function walletRouteFromString(input: string): WalletRouteResult {
   if (parts.length < 4 || !parts[3]) {
     return { ok: false, error: "missing wallet_slot" };
   }
+  if (parts.length > 4) {
+    return {
+      ok: false,
+      error: "wallet route should only have 4 parts separated by /",
+    };
+  }
 
   const [identity, domain, wallet_type, wallet_slot] = parts;
 
