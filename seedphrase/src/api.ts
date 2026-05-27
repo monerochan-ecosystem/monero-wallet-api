@@ -6,28 +6,14 @@ export function generateSeedphrase(): string {
 }
 
 export function validateSeedphrase(seedphrase: string): boolean {
-  return bip39.validateMnemonic(seedphrase, wordlist);
+  return bip39.validateMnemonic(String(seedphrase), wordlist);
 }
 
 // Irreversible: Uses KDF to derive 64 bytes of key data from mnemonic + optional password.
 // returns 64 bytes of key data
-export function deriveSecretKey(
-  seedphrase: string,
-  password?: string,
-): Uint8Array {
+// use getWalletSecret, it validates user input & applies the schema of the wallet route
+function deriveSecretKey(seedphrase: string, password?: string): Uint8Array {
   return bip39.mnemonicToSeedSync(seedphrase, password);
-}
-export async function deriveSecretKeyAsync(
-  seedphrase: string,
-  password?: string,
-): Promise<Uint8Array> {
-  return await bip39.mnemonicToSeed(seedphrase, password);
-}
-export async function deriveSecretKeyWebCrypto(
-  seedphrase: string,
-  password?: string,
-): Promise<Uint8Array> {
-  return await bip39.mnemonicToSeedWebcrypto(seedphrase, password);
 }
 
 export type WalletRoute = {
@@ -80,6 +66,13 @@ export function getWalletSecret(params: GetSecretParams): Uint8Array {
     key_type !== "hotkey-comms"
   )
     throw new Error("Unsupported key type");
+
+  if (!isAlphaNumeric(identity)) {
+    throw new Error(`invalid identity, not alpha numeric: "${identity}"`);
+  }
+  if (!isValidDomainName(domain)) {
+    throw new Error(`invalid domain: "${domain}"`);
+  }
 
   return deriveSecretKey(
     seedphrase,
@@ -141,8 +134,34 @@ export function walletRouteFromString(input: string): WalletRouteResult {
     return { ok: false, error: `invalid wallet_slot: "${wallet_slot} < 0"` };
   }
 
+  if (!isAlphaNumeric(identity)) {
+    return {
+      ok: false,
+      error: `invalid identity, not alpha numeric: "${identity}"`,
+    };
+  }
+  if (!isValidDomainName(domain)) {
+    return {
+      ok: false,
+      error: `invalid domain, : "${domain}"`,
+    };
+  }
+
   return {
     ok: true,
     route: { identity, domain, wallet_type, wallet_slot },
   };
+}
+
+function isAlphaNumeric(str: string) {
+  return str.match(/^[a-z0-9]+$/i) !== null;
+}
+// strictly speaking according to the RFC 1035
+// there is a limit of 63 chars per label
+// and other rules like no leading or trailing hyphens, no dots in a row
+function isValidDomainName(str: string) {
+  if (!str || str.length === 0 || str.length > 253) {
+    return false;
+  }
+  return str.match(/^[a-z0-9.\-_]+$/i) !== null;
 }
