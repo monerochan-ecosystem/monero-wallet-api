@@ -292,12 +292,15 @@ test("g: convenience setters for wallet fields", async () => {
   raw = await readFile(path);
   expect(raw.wallets[0].wallet_slot).toBe(5);
 
-  await sso.setWalletRoute(kp.view_key.mainnet_primary, "custom/route/0");
+  await sso.setWalletRoute(
+    kp.view_key.mainnet_primary,
+    "custom/domain/single/0",
+  );
   expect(sso.getWallet(kp.view_key.mainnet_primary)?.wallet_route).toBe(
-    "custom/route/0",
+    "custom/domain/single/0",
   );
   raw = await readFile(path);
-  expect(raw.wallets[0].wallet_route).toBe("custom/route/0");
+  expect(raw.wallets[0].wallet_route).toBe("custom/domain/single/0");
 
   await sso.setSubaddressIndex(kp.view_key.mainnet_primary, 3);
   expect(sso.getWallet(kp.view_key.mainnet_primary)?.subaddress_index).toBe(3);
@@ -467,4 +470,283 @@ test("l: invalid log options in an existing file throws on create and reload", a
     `${dir}/good.json`,
   );
   await expect(sso.reload()).rejects.toThrow("invalid log function");
+});
+
+test("m: addViewWallet rejects invalid address", async () => {
+  const dir = `${OUT}/m`;
+  await rm(dir, { force: true, recursive: true });
+  await mkdir(dir, { recursive: true });
+
+  const sso = await ScanSettingsOpened.create(`${dir}/settings.json`);
+  await expect(
+    sso.addViewWallet("not-an-address", "aaaabbbbccccddddeeeeffff0000111122223333444455556666777788889999"),
+  ).rejects.toThrow("invalid monero address");
+});
+
+test("n: addViewWallet rejects invalid view key", async () => {
+  const dir = `${OUT}/n`;
+  await rm(dir, { force: true, recursive: true });
+  await mkdir(dir, { recursive: true });
+
+  const sso = await ScanSettingsOpened.create(`${dir}/settings.json`);
+  const validAddr =
+    "46YfuuruCzkGB3Q4FYMDqm6DFqWewHfXBR6yEBoBpCrwJny7rpt5hNx6mQ5LhWhwxDHkvoqouay7w5KeJrRU8yLjUgdNT1T";
+  await expect(
+    sso.addViewWallet(validAddr, "not-a-valid-key"),
+  ).rejects.toThrow("invalid secret view key");
+});
+
+test("o: setNodeUrl rejects invalid url", async () => {
+  const dir = `${OUT}/o`;
+  await rm(dir, { force: true, recursive: true });
+  await mkdir(dir, { recursive: true });
+
+  const sso = await ScanSettingsOpened.create(`${dir}/settings.json`);
+  await expect(sso.setNodeUrl("")).rejects.toThrow("invalid node URL");
+  await expect(sso.setNodeUrl("not a url")).rejects.toThrow(
+    "invalid node URL",
+  );
+  await expect(sso.setNodeUrl("ftp://bad.com")).rejects.toThrow(
+    "unsupported protocol",
+  );
+});
+
+test("p: setNodeUrl accepts valid urls", async () => {
+  const dir = `${OUT}/p`;
+  await rm(dir, { force: true, recursive: true });
+  await mkdir(dir, { recursive: true });
+
+  const sso = await ScanSettingsOpened.create(`${dir}/settings.json`);
+  await sso.setNodeUrl("http://127.0.0.1:18081");
+  expect(sso.node_url).toBe("http://127.0.0.1:18081");
+  await sso.setNodeUrl("https://xmr-01.tari.com");
+  expect(sso.node_url).toBe("https://xmr-01.tari.com");
+});
+
+test("q: addViewWallet rejects invalid wallet name", async () => {
+  const dir = `${OUT}/q`;
+  await rm(dir, { force: true, recursive: true });
+  await mkdir(dir, { recursive: true });
+
+  const sso = await ScanSettingsOpened.create(`${dir}/settings.json`);
+  const addr =
+    "46YfuuruCzkGB3Q4FYMDqm6DFqWewHfXBR6yEBoBpCrwJny7rpt5hNx6mQ5LhWhwxDHkvoqouay7w5KeJrRU8yLjUgdNT1T";
+  const key = "aaaabbbbccccddddeeeeffff0000111122223333444455556666777788889999";
+  await expect(
+    sso.addViewWallet(addr, key, { wallet_name: "a".repeat(101) }),
+  ).rejects.toThrow("100 characters");
+  await expect(
+    sso.addViewWallet(addr, key, { wallet_name: "bad<>name" }),
+  ).rejects.toThrow("alphanumeric");
+});
+
+test("r: addViewWallet rejects invalid wallet slot and subaddress",
+  async () => {
+    const dir = `${OUT}/r`;
+    await rm(dir, { force: true, recursive: true });
+    await mkdir(dir, { recursive: true });
+
+    const sso = await ScanSettingsOpened.create(`${dir}/settings.json`);
+    const addr =
+      "46YfuuruCzkGB3Q4FYMDqm6DFqWewHfXBR6yEBoBpCrwJny7rpt5hNx6mQ5LhWhwxDHkvoqouay7w5KeJrRU8yLjUgdNT1T";
+    const key =
+      "aaaabbbbccccddddeeeeffff0000111122223333444455556666777788889999";
+    await expect(
+      sso.addViewWallet(addr, key, { wallet_slot: -1 }),
+    ).rejects.toThrow("wallet slot");
+    await expect(
+      sso.addViewWallet(addr, key, { wallet_slot: 1.5 }),
+    ).rejects.toThrow("wallet slot");
+    await expect(
+      sso.addViewWallet(addr, key, { subaddress_index: -1 }),
+    ).rejects.toThrow("subaddress index");
+  },
+);
+
+test("s: addViewWallet rejects invalid wallet route", async () => {
+  const dir = `${OUT}/s`;
+  await rm(dir, { force: true, recursive: true });
+  await mkdir(dir, { recursive: true });
+
+  const sso = await ScanSettingsOpened.create(`${dir}/settings.json`);
+  const addr =
+    "46YfuuruCzkGB3Q4FYMDqm6DFqWewHfXBR6yEBoBpCrwJny7rpt5hNx6mQ5LhWhwxDHkvoqouay7w5KeJrRU8yLjUgdNT1T";
+  const key =
+    "aaaabbbbccccddddeeeeffff0000111122223333444455556666777788889999";
+  await expect(
+    sso.addViewWallet(addr, key, { wallet_route: "short/0" }),
+  ).rejects.toThrow("missing");
+  await expect(
+    sso.addViewWallet(addr, key, { wallet_route: "a/b/wrong/0" }),
+  ).rejects.toThrow("invalid wallet_type");
+});
+
+test("t: addViewWallet rejects invalid halted", async () => {
+  const dir = `${OUT}/t`;
+  await rm(dir, { force: true, recursive: true });
+  await mkdir(dir, { recursive: true });
+
+  const sso = await ScanSettingsOpened.create(`${dir}/settings.json`);
+  const addr =
+    "46YfuuruCzkGB3Q4FYMDqm6DFqWewHfXBR6yEBoBpCrwJny7rpt5hNx6mQ5LhWhwxDHkvoqouay7w5KeJrRU8yLjUgdNT1T";
+  const key =
+    "aaaabbbbccccddddeeeeffff0000111122223333444455556666777788889999";
+  await expect(
+    sso.addViewWallet(addr, key, { halted: "yesplease" as any }),
+  ).rejects.toThrow("halted");
+});
+
+test("u: setStartHeight rejects negative", async () => {
+  const dir = `${OUT}/u`;
+  await rm(dir, { force: true, recursive: true });
+  await mkdir(dir, { recursive: true });
+
+  const sso = await ScanSettingsOpened.create(`${dir}/settings.json`);
+  await expect(sso.setStartHeight(-1)).rejects.toThrow("start height");
+});
+
+test("v: setMerchantConfirmations rejects negative", async () => {
+  const dir = `${OUT}/v`;
+  await rm(dir, { force: true, recursive: true });
+  await mkdir(dir, { recursive: true });
+
+  const sso = await ScanSettingsOpened.create(`${dir}/settings.json`);
+  await expect(
+    sso.setMerchantConfirmations(-1),
+  ).rejects.toThrow("merchant_confirmations");
+});
+
+test("w: updateWallet rejects invalid fields", async () => {
+  const dir = `${OUT}/w`;
+  await rm(dir, { force: true, recursive: true });
+  await mkdir(dir, { recursive: true });
+
+  const sso = await ScanSettingsOpened.create(`${dir}/settings.json`);
+  const kp = await makeTestKeyPair();
+  await sso.addViewWallet(
+    kp.view_key.mainnet_primary,
+    kp.view_key.view_key,
+  );
+  const pa = kp.view_key.mainnet_primary;
+  await expect(sso.updateWallet(pa, { wallet_slot: -1 })).rejects.toThrow(
+    "wallet slot",
+  );
+  await expect(
+    sso.updateWallet(pa, { subaddress_index: -1 }),
+  ).rejects.toThrow("subaddress index");
+  await expect(
+    sso.updateWallet(pa, { wallet_route: "bad/0" }),
+  ).rejects.toThrow("missing");
+  await expect(
+    sso.updateWallet(pa, { wallet_name: "x".repeat(101) }),
+  ).rejects.toThrow("100 characters");
+  await expect(
+    sso.updateWallet(pa, { halted: "nope" as any }),
+  ).rejects.toThrow("halted");
+});
+
+test("x: addViewWallet persists all optional fields", async () => {
+  const dir = `${OUT}/x`;
+  await rm(dir, { force: true, recursive: true });
+  await mkdir(dir, { recursive: true });
+
+  const path = `${dir}/ScanSettings.json`;
+  const sso = await ScanSettingsOpened.create(path);
+  const kp = await makeTestKeyPair();
+  await sso.addViewWallet(
+    kp.view_key.mainnet_primary,
+    kp.view_key.view_key,
+    {
+      wallet_name: "my wallet",
+      wallet_slot: 3,
+      wallet_route: "custom/domain/single/0",
+      subaddress_index: 5,
+      halted: true,
+    },
+  );
+  const raw = await readFile(path);
+  expect(raw.wallets[0].wallet_name).toBe("my wallet");
+  expect(raw.wallets[0].wallet_slot).toBe(3);
+  expect(raw.wallets[0].wallet_route).toBe("custom/domain/single/0");
+  expect(raw.wallets[0].subaddress_index).toBe(5);
+  expect(raw.wallets[0].halted).toBe(true);
+});
+
+test("y: addSpendWallet rejects invalid wallet name", async () => {
+  const dir = `${OUT}/y`;
+  await rm(dir, { force: true, recursive: true });
+  await mkdir(dir, { recursive: true });
+
+  const sso = await ScanSettingsOpened.create(`${dir}/settings.json`);
+  const seed = new Uint8Array(64).fill(0x42);
+  await expect(
+    sso.addSpendWallet(seed, { wallet_name: "x<y" }),
+  ).rejects.toThrow("alphanumeric");
+});
+
+test("z: addSpendWallet rejects invalid wallet slot", async () => {
+  const dir = `${OUT}/z`;
+  await rm(dir, { force: true, recursive: true });
+  await mkdir(dir, { recursive: true });
+
+  const sso = await ScanSettingsOpened.create(`${dir}/settings.json`);
+  const seed = new Uint8Array(64).fill(0x42);
+  await expect(
+    sso.addSpendWallet(seed, { wallet_slot: -1 }),
+  ).rejects.toThrow("wallet slot");
+});
+
+test("aa: addSpendWallet rejects invalid wallet route", async () => {
+  const dir = `${OUT}/aa`;
+  await rm(dir, { force: true, recursive: true });
+  await mkdir(dir, { recursive: true });
+
+  const sso = await ScanSettingsOpened.create(`${dir}/settings.json`);
+  const seed = new Uint8Array(64).fill(0x42);
+  await expect(
+    sso.addSpendWallet(seed, { wallet_route: "a/b/wrong/0" }),
+  ).rejects.toThrow("invalid wallet_type");
+});
+
+test("ab: walletRouteFromString edge cases through addViewWallet", async () => {
+  const dir = `${OUT}/ab`;
+  await rm(dir, { force: true, recursive: true });
+  await mkdir(dir, { recursive: true });
+
+  const sso = await ScanSettingsOpened.create(`${dir}/settings.json`);
+  const addr =
+    "46YfuuruCzkGB3Q4FYMDqm6DFqWewHfXBR6yEBoBpCrwJny7rpt5hNx6mQ5LhWhwxDHkvoqouay7w5KeJrRU8yLjUgdNT1T";
+  const key =
+    "aaaabbbbccccddddeeeeffff0000111122223333444455556666777788889999";
+  // invalid identity (not alpha num)
+  await expect(
+    sso.addViewWallet(addr, key, { wallet_route: "bad^id/domain/single/0" }),
+  ).rejects.toThrow("identity");
+  // invalid domain (space in name)
+  await expect(
+    sso.addViewWallet(addr, key, { wallet_route: "identity/dom ain/single/0" }),
+  ).rejects.toThrow("domain");
+  // too many parts
+  await expect(
+    sso.addViewWallet(addr, key, { wallet_route: "a/b/single/0/extra" }),
+  ).rejects.toThrow("4 parts");
+  // valid route passes
+  await sso.addViewWallet(addr, key, {
+    wallet_route: "myid/example.com/single/42",
+  });
+  const raw = await readFile(`${dir}/settings.json`);
+  expect(raw.wallets[0].wallet_route).toBe(
+    "myid/example.com/single/42",
+  );
+});
+
+test("ac: setCpuWorkerCount rejects negative", async () => {
+  const dir = `${OUT}/ac`;
+  await rm(dir, { force: true, recursive: true });
+  await mkdir(dir, { recursive: true });
+
+  const sso = await ScanSettingsOpened.create(`${dir}/settings.json`);
+  await expect(sso.setCpuWorkerCount(-1)).rejects.toThrow(
+    "cpu_worker_count",
+  );
 });

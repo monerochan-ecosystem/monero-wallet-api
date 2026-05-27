@@ -1,5 +1,9 @@
 import { LOCAL_NODE_DEFAULT_URL } from "../node-interaction/nodeUrl";
-import { LOGGING_FUNCTIONS, type LogSetting, type PossibleLogs } from "../io/logging";
+import {
+  LOGGING_FUNCTIONS,
+  type LogSetting,
+  type PossibleLogs,
+} from "../io/logging";
 import {
   getPathPrefix,
   makeSpendKeyFromSeed,
@@ -88,12 +92,13 @@ export class ScanSettingsOpened {
 
   public async setNodeUrl(node_url: string) {
     await this.reload();
-    this._settings.node_url = node_url;
+    this._settings.node_url = ScanSettingsOpened._validateNodeUrl(node_url);
     await this._persist();
   }
 
   public async setStartHeight(start_height: number | null) {
     await this.reload();
+    ScanSettingsOpened._validateStartHeight(start_height);
     this._settings.start_height = start_height;
     await this._persist();
   }
@@ -102,17 +107,24 @@ export class ScanSettingsOpened {
     merchant_confirmations: number | undefined | null,
   ) {
     await this.reload();
-    this._settings.merchant_confirmations = merchant_confirmations;
-    if (merchant_confirmations === null)
+    if (
+      merchant_confirmations === undefined ||
+      merchant_confirmations === null
+    ) {
       delete this._settings.merchant_confirmations;
+    } else {
+      ScanSettingsOpened._validateMerchantConfirmations(merchant_confirmations);
+      this._settings.merchant_confirmations = merchant_confirmations;
+    }
     await this._persist();
   }
 
   public async setCpuWorkerCount(cpu_worker_count: number | undefined | null) {
     await this.reload();
-    if (cpu_worker_count === null) {
+    if (cpu_worker_count === null || cpu_worker_count === undefined) {
       delete this._settings.cpu_worker_count;
     } else {
+      ScanSettingsOpened._validateCpuWorkerCount(cpu_worker_count);
       this._settings.cpu_worker_count = cpu_worker_count;
     }
     await this._persist();
@@ -220,6 +232,15 @@ export class ScanSettingsOpened {
       halted?: boolean;
     },
   ) {
+    primary_address = primary_address.trim();
+    view_key = view_key.trim();
+    ScanSettingsOpened._validateAddress(primary_address);
+    ScanSettingsOpened._validateViewKey(view_key);
+    ScanSettingsOpened._validateWalletName(fields?.wallet_name);
+    ScanSettingsOpened._validateWalletSlot(fields?.wallet_slot);
+    ScanSettingsOpened._validateWalletRoute(fields?.wallet_route);
+    ScanSettingsOpened._validateSubaddressIndex(fields?.subaddress_index);
+    ScanSettingsOpened._validateHalted(fields?.halted);
     await this.reload();
     const existing = this.getWallet(primary_address);
     if (existing) {
@@ -227,8 +248,6 @@ export class ScanSettingsOpened {
         `wallet already exists: ${primary_address} in ${this._scan_settings_path}`,
       );
     }
-    primary_address = primary_address.trim();
-    view_key = view_key.trim();
 
     // write view key to env first
     await writeViewKeyToDotEnv(primary_address, view_key);
@@ -261,6 +280,11 @@ export class ScanSettingsOpened {
     const spend_key = await makeSpendKeyFromSeed(wallet_secret.toHex());
     const view_pair = await makeViewKey(spend_key);
     const primary_address = view_pair.mainnet_primary;
+    ScanSettingsOpened._validateWalletName(fields?.wallet_name);
+    ScanSettingsOpened._validateWalletSlot(fields?.wallet_slot);
+    ScanSettingsOpened._validateWalletRoute(fields?.wallet_route);
+    ScanSettingsOpened._validateSubaddressIndex(fields?.subaddress_index);
+    ScanSettingsOpened._validateHalted(fields?.halted);
     await this.reload();
     const existing = this.getWallet(primary_address);
     if (existing) {
@@ -318,6 +342,11 @@ export class ScanSettingsOpened {
       throw new Error(
         `wallet not found: ${primary_address} in ${this._scan_settings_path}`,
       );
+    ScanSettingsOpened._validateWalletName(fields.wallet_name);
+    ScanSettingsOpened._validateWalletSlot(fields.wallet_slot);
+    ScanSettingsOpened._validateSubaddressIndex(fields.subaddress_index);
+    ScanSettingsOpened._validateWalletRoute(fields.wallet_route);
+    ScanSettingsOpened._validateHalted(fields.halted);
     wallet.wallet_name = fields.wallet_name ?? wallet.wallet_name;
     wallet.wallet_slot = fields.wallet_slot ?? wallet.wallet_slot;
     wallet.wallet_route = fields.wallet_route ?? wallet.wallet_route;
@@ -395,8 +424,114 @@ export class ScanSettingsOpened {
     if (invalid.length > 0) {
       throw new Error(
         `invalid log function(s): ${invalid.join(", ")}. ` +
-        `valid options are: ${[...valid].join(", ")}`,
+          `valid options are: ${[...valid].join(", ")}`,
       );
+    }
+  }
+
+  private static _validateAddress(address: string): void {
+    if (!isValidMoneroAddress(address)) {
+      throw new Error(`invalid monero address: ${address}`);
+    }
+  }
+
+  private static _validateViewKey(key: string): void {
+    if (!isValidMoneroPrivateKey(key)) {
+      throw new Error(`invalid secret view key: ${key}`);
+    }
+  }
+
+  private static _validateNodeUrl(url: string): string {
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      throw new Error(`invalid node URL: ${url}`);
+    }
+    if (!["http:", "https:"].includes(parsed.protocol)) {
+      throw new Error(`unsupported protocol: ${parsed.protocol}`);
+    }
+    if (!parsed.hostname) {
+      throw new Error(`invalid node URL, missing hostname: ${url}`);
+    }
+    return url;
+  }
+
+  private static _validateStartHeight(start_height: number | null): void {
+    if (
+      start_height !== null &&
+      (typeof start_height !== "number" || start_height < 0)
+    ) {
+      throw new Error(
+        `invalid start height: ${start_height}. must be null or a number >= 0`,
+      );
+    }
+  }
+  private static _validateCpuWorkerCount(
+    cpu_worker_count: number | null,
+  ): void {
+    if (
+      cpu_worker_count !== null &&
+      (typeof cpu_worker_count !== "number" || cpu_worker_count < 0)
+    ) {
+      throw new Error(
+        `invalid cpu_worker_count: ${cpu_worker_count}. must be null or a number >= 0`,
+      );
+    }
+  }
+  private static _validateMerchantConfirmations(
+    merchant_confirmations: number | null,
+  ): void {
+    if (
+      merchant_confirmations !== null &&
+      (typeof merchant_confirmations !== "number" || merchant_confirmations < 0)
+    ) {
+      throw new Error(
+        `invalid merchant_confirmations: ${merchant_confirmations}. must be null or a number >= 0`,
+      );
+    }
+  }
+
+  private static _validateWalletName(name?: string | null): void {
+    if (name === undefined || name === null) return;
+    if (name.length > 100) {
+      throw new Error(
+        `wallet name must be 100 characters or less, got ${name.length}`,
+      );
+    }
+    if (!/^[a-zA-Z0-9 _.-]+$/.test(name)) {
+      throw new Error(
+        `wallet name must be alphanumeric with spaces, hyphens, underscores, or dots, got: ${name}`,
+      );
+    }
+  }
+
+  private static _validateWalletSlot(slot?: number | null): void {
+    if (slot === undefined || slot === null) return;
+    if (typeof slot !== "number" || slot < 0 || !Number.isInteger(slot)) {
+      throw new Error(`wallet slot must be a number >= 0, got: ${slot}`);
+    }
+  }
+
+  private static _validateSubaddressIndex(index?: number | null): void {
+    if (index === undefined || index === null) return;
+    if (typeof index !== "number" || index < 0 || !Number.isInteger(index)) {
+      throw new Error(`subaddress index must be a number >= 0, got: ${index}`);
+    }
+  }
+
+  private static _validateWalletRoute(route?: string | null): void {
+    if (route === undefined || route === null) return;
+    const result = walletRouteFromString(route);
+    if (!result.ok) {
+      throw new Error(result.error);
+    }
+  }
+
+  private static _validateHalted(halted?: boolean | null): void {
+    if (halted === undefined || halted === null) return;
+    if (typeof halted !== "boolean") {
+      throw new Error(`halted must be a boolean, got: ${halted}`);
     }
   }
 
@@ -416,4 +551,86 @@ export class ScanSettingsOpened {
   private async _persist() {
     await writeScanSettings(this._settings, this._scan_settings_path);
   }
+}
+
+function isValidMoneroAddress(address: string): boolean {
+  // basic sanity check
+  return (
+    address.length >= 95 && address.length <= 106 && isAlphaNumeric(address)
+  );
+}
+
+function isValidMoneroPrivateKey(key: string): boolean {
+  return key.length === 64 && isAlphaNumeric(key);
+}
+
+function isAlphaNumeric(str: string) {
+  return str.match(/^[a-z0-9]+$/i) !== null;
+}
+// strictly speaking according to the RFC 1035
+// there is a limit of 63 chars per label
+// and other rules like no leading or trailing hyphens, no dots in a row
+function isValidDomainName(str: string) {
+  if (!str || str.length === 0 || str.length > 253) {
+    return false;
+  }
+  return str.match(/^[a-z0-9.\-_]+$/i) !== null;
+}
+// copied from seedphrase package to not introduce a dependency
+export function walletRouteFromString(input: string) {
+  const parts = input.split("/");
+
+  if (parts.length < 1 || !parts[0]) {
+    return { ok: false, error: "missing identity" };
+  }
+  if (parts.length < 2 || !parts[1]) {
+    return { ok: false, error: "missing domain" };
+  }
+  if (parts.length < 3 || !parts[2]) {
+    return { ok: false, error: "missing wallet_type" };
+  }
+  if (parts.length < 4 || !parts[3]) {
+    return { ok: false, error: "missing wallet_slot" };
+  }
+  if (parts.length > 4) {
+    return {
+      ok: false,
+      error: "wallet route should only have 4 parts separated by /",
+    };
+  }
+
+  const [identity, domain, wallet_type, wallet_slot] = parts;
+
+  if (
+    wallet_type !== "single" &&
+    wallet_type !== "sa_multi" &&
+    wallet_type !== "pl_multi"
+  ) {
+    return { ok: false, error: `invalid wallet_type: "${wallet_type}"` };
+  }
+
+  if (Number.isNaN(parseInt(wallet_slot))) {
+    return { ok: false, error: `invalid wallet_slot: "${wallet_slot}"` };
+  }
+  if (parseInt(wallet_slot) < 0) {
+    return { ok: false, error: `invalid wallet_slot: "${wallet_slot} < 0"` };
+  }
+
+  if (!isAlphaNumeric(identity)) {
+    return {
+      ok: false,
+      error: `invalid identity, not alpha numeric: "${identity}"`,
+    };
+  }
+  if (!isValidDomainName(domain)) {
+    return {
+      ok: false,
+      error: `invalid domain, : "${domain}"`,
+    };
+  }
+
+  return {
+    ok: true,
+    route: { identity, domain, wallet_type, wallet_slot },
+  };
 }
