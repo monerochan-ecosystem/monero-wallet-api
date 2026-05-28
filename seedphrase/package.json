@@ -1,6 +1,6 @@
 {
   "name": "@spirobel/seedphrase",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "license": "MIT",
   "module": "dist/api.js",
   "type": "module",
