@@ -6,28 +6,14 @@ export function generateSeedphrase(): string {
 }
 
 export function validateSeedphrase(seedphrase: string): boolean {
-  return bip39.validateMnemonic(seedphrase, wordlist);
+  return bip39.validateMnemonic(String(seedphrase), wordlist);
 }
 
 // Irreversible: Uses KDF to derive 64 bytes of key data from mnemonic + optional password.
 // returns 64 bytes of key data
-export function deriveSecretKey(
-  seedphrase: string,
-  password?: string,
-): Uint8Array {
+// use getWalletSecret, it validates user input & applies the schema of the wallet route
+function deriveSecretKey(seedphrase: string, password?: string): Uint8Array {
   return bip39.mnemonicToSeedSync(seedphrase, password);
-}
-export async function deriveSecretKeyAsync(
-  seedphrase: string,
-  password?: string,
-): Promise<Uint8Array> {
-  return await bip39.mnemonicToSeed(seedphrase, password);
-}
-export async function deriveSecretKeyWebCrypto(
-  seedphrase: string,
-  password?: string,
-): Promise<Uint8Array> {
-  return await bip39.mnemonicToSeedWebcrypto(seedphrase, password);
 }
 
 export type WalletRoute = {
@@ -51,7 +37,15 @@ export type GetSecretParams = {
 export function getWalletSecret(params: GetSecretParams): Uint8Array {
   const { identity, domain, wallet_type, wallet_slot } = params.route;
   const seedphrase = params.seedphrase;
+  if (!validateSeedphrase(seedphrase)) {
+    throw new Error("invalid seedphrase");
+  }
   const password = params.password ?? "no_password";
+  if (!isValidPassword(password)) {
+    throw new Error(
+      "invalid password, needs to be of type string and less than 100 characters",
+    );
+  }
   const coin_name = params.coin_name;
   const key_type = params.key_type;
   if (!identity || !domain)
@@ -81,6 +75,15 @@ export function getWalletSecret(params: GetSecretParams): Uint8Array {
   )
     throw new Error("Unsupported key type");
 
+  if (!isValidIdentity(identity)) {
+    throw new Error(
+      `invalid identity, not alpha numeric & less than 20 characters: "${identity}"`,
+    );
+  }
+  if (!isValidDomainName(domain)) {
+    throw new Error(`invalid domain: "${domain}"`);
+  }
+
   return deriveSecretKey(
     seedphrase,
     `${identity}/${domain}/${wallet_type}/${wallet_slot}/${password}-${coin_name}-${key_type}`,
@@ -93,8 +96,25 @@ export const WALLET_DEFAULT_ROUTE: WalletRoute = {
   wallet_type: "single",
   wallet_slot: "0",
 };
-
 export function walletRouteToString(route: WalletRoute): string {
+  if (!isValidIdentity(route.identity)) {
+    throw new Error(
+      `invalid identity, not alpha numeric & less than 20 characters: "${route.identity}"`,
+    );
+  }
+  if (!isValidDomainName(route.domain)) {
+    throw new Error(`invalid domain: "${route.domain}"`);
+  }
+  if (
+    route.wallet_type !== "single" &&
+    route.wallet_type !== "sa_multi" &&
+    route.wallet_type !== "pl_multi"
+  ) {
+    throw new Error(`invalid wallet_type: "${route.wallet_type}"`);
+  }
+  if (Number.isNaN(parseInt(route.wallet_slot))) {
+    throw new Error(`invalid wallet_slot: "${route.wallet_slot}"`);
+  }
   return `${route.identity}/${route.domain}/${route.wallet_type}/${route.wallet_slot}`;
 }
 
@@ -141,8 +161,42 @@ export function walletRouteFromString(input: string): WalletRouteResult {
     return { ok: false, error: `invalid wallet_slot: "${wallet_slot} < 0"` };
   }
 
+  if (!isValidIdentity(identity)) {
+    return {
+      ok: false,
+      error: `invalid identity, not alpha numeric: "${identity}"`,
+    };
+  }
+  if (!isValidDomainName(domain)) {
+    return {
+      ok: false,
+      error: `invalid domain, : "${domain}"`,
+    };
+  }
+
   return {
     ok: true,
     route: { identity, domain, wallet_type, wallet_slot },
   };
+}
+export function isValidIdentity(identity: string): boolean {
+  return isAlphaNumeric(identity) && identity.length <= 20;
+}
+export function isValidPassword(password: string): boolean {
+  // 100 length sanity check. if there is a bug introduced by the library consumer
+  // that messes with user input, there is a chance getWalletSecret throws
+  return typeof password === "string" && password.length <= 100;
+}
+
+export function isAlphaNumeric(str: string) {
+  return str.match(/^[a-z0-9]+$/i) !== null;
+}
+// strictly speaking according to the RFC 1035
+// there is a limit of 63 chars per label
+// and other rules like no leading or trailing hyphens, no dots in a row
+export function isValidDomainName(str: string) {
+  if (!str || str.length === 0 || str.length > 253) {
+    return false;
+  }
+  return str.match(/^[a-z0-9.\-_]+$/i) !== null;
 }

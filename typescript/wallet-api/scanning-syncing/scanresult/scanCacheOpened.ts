@@ -326,6 +326,12 @@ export class ScanCacheOpened {
     await this._scanSettings.setLogSettings(logs, logs_include, logs_exclude);
     await this.unpause();
   }
+  public async setWalletName(name?: string) {
+    await this._scanSettings.setWalletName(
+      this.view_pair.primary_address,
+      name,
+    );
+  }
   public async retry() {
     if (this.worker) {
       this.worker.terminate();
@@ -1019,6 +1025,9 @@ export class ManyScanCachesOpened {
       logs_include,
       logs_exclude,
     );
+  }
+  public async setWalletName(primary_address: string, name?: string) {
+    await this._scanSettings.setWalletName(primary_address, name);
   }
   public async changeStartHeight(start_height: number | null) {
     if (this.wallets.length === 0) throw new Error("no wallets");
