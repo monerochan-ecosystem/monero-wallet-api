@@ -41,6 +41,11 @@ export function getWalletSecret(params: GetSecretParams): Uint8Array {
     throw new Error("invalid seedphrase");
   }
   const password = params.password ?? "no_password";
+  if (!isValidPassword(password)) {
+    throw new Error(
+      "invalid password, needs to be of type string and less than 100 characters",
+    );
+  }
   const coin_name = params.coin_name;
   const key_type = params.key_type;
   if (!identity || !domain)
@@ -176,6 +181,11 @@ export function walletRouteFromString(input: string): WalletRouteResult {
 }
 export function isValidIdentity(identity: string): boolean {
   return isAlphaNumeric(identity) && identity.length <= 20;
+}
+export function isValidPassword(password: string): boolean {
+  // 100 length sanity check. if there is a bug introduced by the library consumer
+  // that messes with user input, there is a chance getWalletSecret throws
+  return typeof password === "string" && password.length <= 100;
 }
 
 export function isAlphaNumeric(str: string) {
