@@ -37,6 +37,9 @@ export type GetSecretParams = {
 export function getWalletSecret(params: GetSecretParams): Uint8Array {
   const { identity, domain, wallet_type, wallet_slot } = params.route;
   const seedphrase = params.seedphrase;
+  if (!validateSeedphrase(seedphrase)) {
+    throw new Error("invalid seedphrase");
+  }
   const password = params.password ?? "no_password";
   const coin_name = params.coin_name;
   const key_type = params.key_type;
@@ -67,8 +70,10 @@ export function getWalletSecret(params: GetSecretParams): Uint8Array {
   )
     throw new Error("Unsupported key type");
 
-  if (!isAlphaNumeric(identity)) {
-    throw new Error(`invalid identity, not alpha numeric: "${identity}"`);
+  if (!isValidIdentity(identity)) {
+    throw new Error(
+      `invalid identity, not alpha numeric & less than 20 characters: "${identity}"`,
+    );
   }
   if (!isValidDomainName(domain)) {
     throw new Error(`invalid domain: "${domain}"`);
@@ -86,8 +91,25 @@ export const WALLET_DEFAULT_ROUTE: WalletRoute = {
   wallet_type: "single",
   wallet_slot: "0",
 };
-
 export function walletRouteToString(route: WalletRoute): string {
+  if (!isValidIdentity(route.identity)) {
+    throw new Error(
+      `invalid identity, not alpha numeric & less than 20 characters: "${route.identity}"`,
+    );
+  }
+  if (!isValidDomainName(route.domain)) {
+    throw new Error(`invalid domain: "${route.domain}"`);
+  }
+  if (
+    route.wallet_type !== "single" &&
+    route.wallet_type !== "sa_multi" &&
+    route.wallet_type !== "pl_multi"
+  ) {
+    throw new Error(`invalid wallet_type: "${route.wallet_type}"`);
+  }
+  if (Number.isNaN(parseInt(route.wallet_slot))) {
+    throw new Error(`invalid wallet_slot: "${route.wallet_slot}"`);
+  }
   return `${route.identity}/${route.domain}/${route.wallet_type}/${route.wallet_slot}`;
 }
 
@@ -134,7 +156,7 @@ export function walletRouteFromString(input: string): WalletRouteResult {
     return { ok: false, error: `invalid wallet_slot: "${wallet_slot} < 0"` };
   }
 
-  if (!isAlphaNumeric(identity)) {
+  if (!isValidIdentity(identity)) {
     return {
       ok: false,
       error: `invalid identity, not alpha numeric: "${identity}"`,
@@ -152,14 +174,17 @@ export function walletRouteFromString(input: string): WalletRouteResult {
     route: { identity, domain, wallet_type, wallet_slot },
   };
 }
+export function isValidIdentity(identity: string): boolean {
+  return isAlphaNumeric(identity) && identity.length <= 20;
+}
 
-function isAlphaNumeric(str: string) {
+export function isAlphaNumeric(str: string) {
   return str.match(/^[a-z0-9]+$/i) !== null;
 }
 // strictly speaking according to the RFC 1035
 // there is a limit of 63 chars per label
 // and other rules like no leading or trailing hyphens, no dots in a row
-function isValidDomainName(str: string) {
+export function isValidDomainName(str: string) {
   if (!str || str.length === 0 || str.length > 253) {
     return false;
   }
