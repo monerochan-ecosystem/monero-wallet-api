@@ -1029,6 +1029,9 @@ export class ManyScanCachesOpened {
   public async setWalletName(primary_address: string, name?: string) {
     await this._scanSettings.setWalletName(primary_address, name);
   }
+  public async setWalletSlot(primary_address: string, slot?: number) {
+    await this._scanSettings.setWalletSlot(primary_address, slot);
+  }
   public async changeStartHeight(start_height: number | null) {
     if (this.wallets.length === 0) throw new Error("no wallets");
     const masterWallet = this.wallets[0];
