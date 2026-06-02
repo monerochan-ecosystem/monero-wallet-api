@@ -1125,10 +1125,24 @@ export class ManyScanCachesOpened {
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
     let instance: ManyScanCachesOpened | null = null;
     const newOptions = { ...options };
+    let connectionFailedShown = false;
     if (autoRetry) {
       const originalError = options.workerError;
       newOptions.workerError = (err: unknown) => {
         originalError?.(err);
+        const msg = err instanceof Error ? err.message : String(err);
+        if (
+          csOpened.connectionStatus?.last_packet?.status ===
+          "catastrophic_reorg"
+        ) {
+          clearTimeout(retryTimer);
+          instance?.stopWorker();
+          throw new Error("catastrophic reorg, aborting ...");
+        }
+        if (msg.includes("connect") && !connectionFailedShown) {
+          connectionFailedShown = true;
+          console.error("unable to connect to node ... retrying ...");
+        }
         if (!retryTimer) {
           retryTimer = setTimeout(() => {
             retryTimer = undefined;
@@ -1143,7 +1157,15 @@ export class ManyScanCachesOpened {
 
     const csOpened = new ConnectionStatusOpened(
       scan_settings_path || SCAN_SETTINGS_STORE_NAME_DEFAULT,
-      onConnectionStatusChange ?? null,
+      autoRetry
+        ? (status) => {
+            if (status?.last_packet?.status === "OK" && connectionFailedShown) {
+              connectionFailedShown = false;
+              console.log("connection to node established");
+            }
+            if (onConnectionStatusChange) onConnectionStatusChange(status);
+          }
+        : (onConnectionStatusChange ?? null),
     );
     csOpened.watch(connectionStatusIntervalMs);
 

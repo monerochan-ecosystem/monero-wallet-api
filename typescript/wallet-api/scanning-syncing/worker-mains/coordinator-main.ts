@@ -26,7 +26,6 @@ export async function coordinatorMainWorker(
       }
     }
   } catch (error) {
-    console.error("[coordinatorMainWorker] error:", error);
     self.postMessage({ type: "ERROR", payload: error });
   }
 }

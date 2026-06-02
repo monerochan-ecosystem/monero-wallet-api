@@ -17,9 +17,9 @@ export class ConnectionStatusOpened {
     this._path = connectionStatusFilePath(scan_settings_path);
   }
 
-  watch(intervalMs = 2500) {
+  async watch(intervalMs = 2500) {
     if (this._timer) return;
-    this._poll();
+    await this._poll();
     this._timer = setInterval(() => this._poll(), intervalMs);
   }
 
