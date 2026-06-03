@@ -1139,9 +1139,15 @@ export class ManyScanCachesOpened {
           instance?.stopWorker();
           throw new Error("catastrophic reorg, aborting ...");
         }
-        if (msg.includes("connect") && !connectionFailedShown) {
-          connectionFailedShown = true;
-          console.error("unable to connect to node ... retrying ...");
+        if (
+          msg.includes("connect") ||
+          msg.includes("fetch") ||
+          msg.includes("NetworkError")
+        ) {
+          if (!connectionFailedShown) {
+            connectionFailedShown = true;
+            console.error("unable to connect to node ... retrying ...");
+          }
         }
         if (!retryTimer) {
           retryTimer = setTimeout(() => {
