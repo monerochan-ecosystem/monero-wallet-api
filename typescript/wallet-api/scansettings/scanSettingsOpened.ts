@@ -9,6 +9,7 @@ import {
   makeSpendKeyFromSeed,
   makeViewKey,
   openScanSettingsFile,
+  parseAddress,
   SCAN_SETTINGS_STORE_NAME_DEFAULT,
   SUB_ADDRESS_INDEX_DEFAULT_VALUE,
   walletSettingsPlusKeys,
@@ -430,7 +431,8 @@ export class ScanSettingsOpened {
   }
 
   private static _validateAddress(address: string): void {
-    if (!isValidMoneroAddress(address)) {
+    const parsed = parseAddress(address);
+    if ("error" in parsed) {
       throw new Error(`invalid monero address: ${address}`);
     }
   }
@@ -551,13 +553,6 @@ export class ScanSettingsOpened {
   private async _persist() {
     await writeScanSettings(this._settings, this._scan_settings_path);
   }
-}
-
-function isValidMoneroAddress(address: string): boolean {
-  // basic sanity check
-  return (
-    address.length >= 95 && address.length <= 106 && isAlphaNumeric(address)
-  );
 }
 
 function isValidMoneroPrivateKey(key: string): boolean {
