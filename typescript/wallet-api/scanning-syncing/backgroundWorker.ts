@@ -3,7 +3,6 @@ import { type CacheChangedCallbackParameters } from "./scanresult/scanCache";
 import { openScanSettingsFile, SCAN_SETTINGS_STORE_NAME_DEFAULT } from "../api";
 import { log, setupLoggingPath } from "../io/logging";
 import { workerMainCode } from "./worker-entrypoints/worker";
-
 export const CPU_POOL_SIZE = 4;
 
 export type WorkerSet = {
@@ -84,6 +83,12 @@ export async function createWebworker(
       fetchWorker: coordinationWorker,
       cpuWorkers,
       terminate: () => {
+        coordinationWorker.onmessage = null;
+        coordinationWorker.onerror = null;
+        for (const w of cpuWorkers) {
+          w.onerror = null;
+          w.onmessage = null;
+        }
         coordinationWorker.terminate();
         for (const w of cpuWorkers) w.terminate();
       },

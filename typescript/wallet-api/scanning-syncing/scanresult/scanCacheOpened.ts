@@ -377,7 +377,7 @@ export class ScanCacheOpened {
     //2. check if fee is too high
     if (feeFor10kb > max_plausible_fee) {
       throw new Error(
-        `fee too high: 
+        `fee too high:
           ${feeFor10kb} (fee for 10kb tx size) > ${max_plausible_fee} (0.001 XMR)
           most likely your node is faulty. connect to another node.
            preferably run one yourself locally.`,
@@ -409,7 +409,7 @@ export class ScanCacheOpened {
       //2. check if fee is too high
       if (feeFor10kb > max_plausible_fee) {
         throw new Error(
-          `fee too high: 
+          `fee too high:
           ${feeFor10kb} (fee for 10kb tx size) > ${max_plausible_fee} (0.001 XMR)
           most likely your node is faulty. connect to another node.
            preferably run one yourself locally.`,
@@ -777,6 +777,8 @@ export class ScanCacheOpened {
   public stopWorker() {
     if (this.worker) {
       this.worker.terminate();
+      this.worker.cpuWorkers = [];
+      this.worker.fetchWorker = undefined!;
       delete this.worker;
     }
   }
@@ -785,34 +787,35 @@ export class ScanCacheOpened {
 
     if (!this.worker && !this.no_worker) {
       this.worker = await createWebworker(
-        async (params) => await this.feed(params),
+        this.feed,
         this.scan_settings_path,
         this.pathPrefix,
-        (error) => {
-          const workerErrCB = this.workerError;
-          this.stopWorker();
-          readWriteConnectionStatusFile((cs) => {
-            if (cs?.last_packet.status === "catastrophic_reorg") return;
-            const connectionStatus: ConnectionStatus = {
-              ...cs,
-              last_packet: {
-                status: "connection_failed",
-                bytes_read: 0,
-                node_url: this.node_url,
-                timestamp: new Date().toISOString(),
-              },
-            };
-            return connectionStatus;
-          }, this.scan_settings_path).then(() => {
-            if (workerErrCB) workerErrCB(error);
-          });
-        },
+        this._onWorkerError,
       );
     }
     return await this._scanSettings.unhaltWallet(
       this.view_pair.primary_address,
     );
   }
+  private _onWorkerError = (error: unknown) => {
+    const workerErrCB = this.workerError;
+    this.stopWorker();
+    readWriteConnectionStatusFile((cs) => {
+      if (cs?.last_packet.status === "catastrophic_reorg") return;
+      const connectionStatus: ConnectionStatus = {
+        ...cs,
+        last_packet: {
+          status: "connection_failed",
+          bytes_read: 0,
+          node_url: this.node_url,
+          timestamp: new Date().toISOString(),
+        },
+      };
+      return connectionStatus;
+    }, this.scan_settings_path).then(() => {
+      if (workerErrCB) workerErrCB(error);
+    });
+  };
   /**
    * selectInputs returns array of inputs, whose sum is larger than amount
    * adds approximate fee for 10kb transaction to amount if feePerByte is supplied
@@ -1124,6 +1127,12 @@ export class ManyScanCachesOpened {
     // wrap workerError with auto-retry
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
     let instance: ManyScanCachesOpened | null = null;
+    const retryFn = async () => {
+      await instance?.buildWallets();
+      await instance?.retry();
+      clearTimeout(retryTimer);
+      retryTimer = undefined;
+    };
     const newOptions = { ...options };
     let connectionFailedShown = false;
     if (autoRetry) {
@@ -1150,10 +1159,7 @@ export class ManyScanCachesOpened {
           }
         }
         if (!retryTimer) {
-          retryTimer = setTimeout(() => {
-            retryTimer = undefined;
-            instance?.retry();
-          }, retryDelayMs ?? 1000);
+          retryTimer = setTimeout(retryFn, retryDelayMs ?? 1000);
         }
       };
     }
@@ -1186,9 +1192,7 @@ export class ManyScanCachesOpened {
   }
 
   public async buildWallets() {
-    for (const w of this._wallets) {
-      w.stopWorker();
-    }
+    this.stopWorker();
     await this._scanSettings.reload();
     const newWallets = await ManyScanCachesOpened._buildWallets(
       this._scanSettings,
