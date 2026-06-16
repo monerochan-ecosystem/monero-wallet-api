@@ -787,10 +787,10 @@ export class ScanCacheOpened {
 
     if (!this.worker && !this.no_worker) {
       this.worker = await createWebworker(
-        this.feed,
+        async (params) => await this.feed(params),
         this.scan_settings_path,
         this.pathPrefix,
-        this._onWorkerError,
+        (params) => this._onWorkerError(params),
       );
     }
     return await this._scanSettings.unhaltWallet(
