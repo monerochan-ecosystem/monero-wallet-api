@@ -20,7 +20,8 @@ export async function createWebworker(
   try {
     const resolvedPath = scan_settings_path || SCAN_SETTINGS_STORE_NAME_DEFAULT;
     const scanSettings = await openScanSettingsFile(resolvedPath);
-    await setupLoggingPath(resolvedPath, pathPrefix ?? "", "mainthread");
+    if (scanSettings?.logs !== "off" && scanSettings?.logs)
+      await setupLoggingPath(resolvedPath, pathPrefix ?? "", "mainthread");
 
     const node_url = scanSettings?.node_url || LOCAL_NODE_DEFAULT_URL;
     const cpu_worker_count =
@@ -109,34 +110,13 @@ const blob = new Blob([workerMainCode], {
   type: "text/javascript",
 });
 const url = URL.createObjectURL(blob);
-export function startWebworker(
-  handle_result?: (result: unknown) => void,
-  handle_error?: (error: unknown) => void,
-) {
-  const worker = new Worker(url, { type: "module" });
-  worker.onmessage = (event) => {
-    switch (event.data.type) {
-      case "RESULT":
-        if (handle_result) handle_result(event.data.payload);
-        break;
-      case "ERROR":
-      case "scan_error":
-        if (handle_error) handle_error(event.data.payload ?? event.data.error);
-        break;
-      case "DEBUG":
-        log("startWebworker", ["worker debug:", event.data.payload]);
-        break;
-    }
-  };
-  return worker;
-}
 
 // creates a worker via startWebworker, then waits for it to signal
 // WORKER_READY (meaning self.onmessage = handleMessage has executed).
 // after that, postMessage is safe, no race between worker startup
 // and message delivery.
 export function startWebworkerReady(): Promise<Worker> {
-  const worker = startWebworker();
+  const worker = new Worker(url, { type: "module" });
   return new Promise<Worker>((resolve) => {
     const onReady = (e: MessageEvent) => {
       if (e.data?.type === "WORKER_READY") {

@@ -30,7 +30,6 @@ export * from "./multisig/escrow";
 export * from "./multisig/MultiSigTxSigner";
 
 export {
-  startWebworker,
   createWebworker,
   makeWebworkerScript,
 } from "./scanning-syncing/backgroundWorker";

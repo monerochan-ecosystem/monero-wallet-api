@@ -83,6 +83,8 @@ export async function setupLoggingPath(
 ) {
   const scanSettings = await openScanSettingsFile(scan_settings_path);
   const logs = scanSettings?.logs;
+  if (logs === "off" || typeof logs === "undefined") return;
+
   const logs_include = scanSettings?.logs_include;
   const logs_exclude = scanSettings?.logs_exclude;
   const file_logbuffer: FileLogMessage[] = [];
@@ -174,7 +176,7 @@ export function log(fnname: string, message: any) {
 
   const { logs, logs_include, logs_exclude, file_logbuffer } = setup;
 
-  if (logs === "off") return;
+  if (logs === "off" || typeof logs === "undefined") return;
 
   // Apply include/exclude filters
   if (logs_include && logs_include.length > 0 && !logs_include.includes(fnname))
