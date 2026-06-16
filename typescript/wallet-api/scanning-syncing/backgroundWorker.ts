@@ -25,7 +25,7 @@ export async function createWebworker(
     const node_url = scanSettings?.node_url || LOCAL_NODE_DEFAULT_URL;
     const cpu_worker_count =
       typeof scanSettings?.cpu_worker_count !== "undefined"
-        ? scanSettings?.cpu_worker_count
+        ? scanSettings?.cpu_worker_count || 1
         : CPU_POOL_SIZE;
 
     // spawn CPU workers

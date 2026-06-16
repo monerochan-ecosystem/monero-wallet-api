@@ -12,7 +12,6 @@ import {
   type BlockInfo,
   findTipIndex,
   readWriteConnectionStatusFile,
-  connectionStatusFilePath,
 } from "../../api";
 
 import {
@@ -20,7 +19,7 @@ import {
   type ScanLoopInput,
   type ScanLoopYield,
 } from "./scanLoop";
-import { type WorkItem, makeWorkItem, scanLoop } from "./scanLoop";
+import { type WorkItem, makeWorkItem } from "./scanLoop";
 import {
   cullTooLargeScanHeight,
   getNonHaltedWallets,
@@ -280,29 +279,6 @@ export function reconcileWorkItemDone(
 }
 
 /**
- * one round of the select race. takes two primed promises (blocks, scan),
- * races them, returns winner info. the loser stays in flight.
- */
-export async function raceStep(
-  blocksPromise: Promise<IteratorResult<BlocksBufferLoopResult>>,
-  scanPromise: Promise<IteratorResult<ScanLoopYield, void>>,
-): Promise<{
-  src: "blocks" | "scan";
-  value:
-    | IteratorResult<BlocksBufferLoopResult>
-    | IteratorResult<ScanLoopYield, void>;
-  done: boolean;
-}> {
-  const winner = await Promise.race([
-    blocksPromise.then((v) => ({ src: "blocks" as const, value: v })),
-    scanPromise.then((v) => ({ src: "scan" as const, value: v })),
-  ]);
-  const value = winner.value;
-  const done = !!winner.value.done;
-  return { src: winner.src, value, done };
-}
-
-/**
  * handle a yield from the blocks buffer fetch loop.
  */
 export async function handleBlocksYield(
@@ -318,57 +294,6 @@ export async function handleBlocksYield(
   return { isBlocksBufferChanged: false };
 }
 
-/**
- * process a scan result for a completed work item.
- * updates the cache, writes to disk, marks work item done, reconciles.
- */
-export async function processScanResultForWorkItem(
-  value: ScanLoopYield,
-  workBuffer: WorkItem[],
-  blocksBuffer: GetBlocksBinBufferItem[],
-  pathPrefix: string,
-  secret_spend_key?: string,
-): Promise<void> {
-  if (value.type !== "Ready" || !value.result || !value.work_uuid) return;
-
-  const item = await markWorkItemAsDone(value, workBuffer);
-  log("processScanResultForWorkItem", `item_work_uuid=${item?.work_uuid}`);
-
-  if (!item || item.status !== "scanwork_done")
-    throw new Error(
-      "[processScanResultForWorkItem] item not found or not scanwork not done. item_status=" +
-        item?.status,
-    );
-
-  const firstBlock = item.batch.get_blocks_result_meta.block_infos[item.from];
-  log("processScanResultForWorkItem", [
-    `block_infos.length=${item.batch.get_blocks_result_meta.block_infos.length} firstBlock=${firstBlock?.block_height} firstBlockHash=${firstBlock?.block_hash?.slice(0, 8)}`,
-  ]);
-  log("processScanResultForWorkItem", [
-    `block_infos.length=${item.batch.get_blocks_result_meta.block_infos.length} from=${item.from} to=${item.to}`,
-  ]);
-  const lastBlock = item.batch.get_blocks_result_meta.block_infos[item.to];
-  const cache = item.walletConfig.cache;
-
-  await processScanResult({
-    from_height: firstBlock.block_height,
-    to_height: lastBlock.block_height,
-    result: value.result,
-    scanCache: cache,
-    secret_spend_key,
-  });
-
-  await writeCacheToFile(cache, pathPrefix);
-  item.status = "process_result_done";
-  reconcileWorkItemDone(blocksBuffer, workBuffer);
-  //because cache is tied to the workitems by reference,
-  // the following workitems will have the most recent cache
-  //TODO: if we do cpu workers we need to be sure to wait with the processing at the top of this functon
-  // until all workitems for this wallet before it (to the left of it) are done
-  //  the cpu worker loop generator will have to ensure the order of this
-  // currently as a sideeffect of the work scheduling function on fetch result aka blocks buffer changed,
-  // this is already implicitly handled
-}
 /**
  * process a scan result for a completed work item.
  * updates the cache, writes to disk, marks work item done, reconciles blockbuffer with this.
@@ -505,179 +430,6 @@ function computeETA(
   return msToHHMM(etaMs);
 }
 
-/**
- * coordinator main: async generator that drives the full scan cycle.
- * takes only scanSettingsPath, derives everything else internally.
- * yields events for some of the underlying generator events,
- * look at CoordinatorEvent, processing not decoupled from cpu bound scan work,
- * as this single threaded, there is no point
- */
-export async function* coordinatorMain(
-  scanSettingsPath?: string,
-  pathPrefix?: string,
-): AsyncGenerator<CoordinatorEvent> {
-  const ctx = await setupCoordinator(scanSettingsPath, pathPrefix);
-  if (!ctx)
-    throw new Error("[coordinatorMain] findWorkToBeDone returned false");
-  const work_to_be_done = ctx.work_to_be_done;
-  const blocksBuffer = ctx.blocksBuffer;
-  const workBuffer = ctx.workBuffer;
-  const blocksGenerator = ctx.blocksGenerator;
-  let totalBlocksScanned = 0;
-  let scanStartTime = Date.now();
-  let blocksPromise = blocksGenerator.next();
-
-  const scanGens = new Map<
-    string,
-    AsyncGenerator<ScanLoopYield, void, ScanLoopInput>
-  >();
-
-  const scanPromises = new Map<
-    string,
-    Promise<IteratorResult<ScanLoopYield, void>>
-  >();
-
-  for (const wc of work_to_be_done.wallet_configs) {
-    scanGens.set(
-      wc.primary_address,
-      scanLoop({
-        primary_address: wc.primary_address,
-        secret_view_key: wc.secret_view_key,
-        secret_spend_key: wc.secret_spend_key,
-        subaddress_index: wc.subaddress_index,
-      }),
-    );
-  }
-
-  // prime all scan generators
-  // ( technically no need to do this as loop + scan generator + workbuffer structure mean it will happen automatically)
-  for (const [, gen] of scanGens) {
-    await gen.next();
-  }
-
-  while (true) {
-    const races: Promise<{
-      src: "blocks" | "scan";
-      addr?: string;
-      value: any;
-    }>[] = [blocksPromise.then((v) => ({ src: "blocks" as const, value: v }))];
-    for (const [addr, p] of scanPromises) {
-      races.push(p.then((v) => ({ src: "scan" as const, addr, value: v })));
-    }
-
-    const winner = await Promise.race(races);
-
-    log("coordinatorMain", [
-      "winner=" + winner.src + " addr=" + String(winner.addr ?? "").slice(0, 8),
-    ]);
-
-    if (winner.src === "blocks") {
-      const result = winner.value.value as BlocksBufferLoopResult;
-      const { isBlocksBufferChanged } = await handleBlocksYield(
-        result,
-        scanSettingsPath,
-      );
-      if (isBlocksBufferChanged) {
-        makeWorkItemsForAllWallets(
-          work_to_be_done.wallet_configs,
-          blocksBuffer,
-          workBuffer,
-        );
-        // start scan promises for wallets that now have work
-        for (const wc of work_to_be_done.wallet_configs) {
-          const addr = wc.primary_address;
-          if (scanPromises.has(addr)) continue;
-          const gen = scanGens.get(addr);
-          log("coordinatorMain", ["scanGens.get(addr)", gen]);
-          if (!gen) continue;
-          const item = workBuffer.find(
-            (x) =>
-              x.status === "fresh" && x.walletConfig.primary_address === addr,
-          );
-
-          if (item) {
-            item.status = "scanwork_in_progress";
-            scanPromises.set(addr, gen.next(item));
-          }
-        }
-        logBufStatus(blocksBuffer, workBuffer, scanPromises, "after_blocks");
-        yield { type: "blocks_buffer_changed" };
-      } else {
-        logBufStatus(blocksBuffer, workBuffer, scanPromises, "fetch_conn");
-        yield { type: "connection_status", status: result };
-      }
-      blocksPromise = blocksGenerator.next();
-    } else {
-      const addr = winner.addr!;
-      const gen = scanGens.get(addr)!;
-      const value = winner.value.value as ScanLoopYield;
-
-      if (value.type === "InProgress") {
-        scanPromises.set(addr, gen.next());
-      } else if (value.type === "Ready") {
-        const wc = work_to_be_done.wallet_configs.find(
-          (x) => x.primary_address === addr,
-        );
-        if (!wc)
-          throw new Error(
-            "[coordinatorMain] wallet config not found on process result",
-          );
-        // count blocks scanned in this work item for ETA
-        const doneItem = workBuffer.find(
-          (x) => x.work_uuid === value.work_uuid,
-        );
-        const blockCount = doneItem ? doneItem.to - doneItem.from + 1 : 0;
-
-        await processScanResultForWorkItem(
-          value,
-          workBuffer,
-          blocksBuffer,
-          getPathPrefix(scanSettingsPath, pathPrefix),
-          wc?.secret_spend_key,
-        );
-
-        totalBlocksScanned += blockCount;
-        const eta = computeETA(wc.cache, totalBlocksScanned, scanStartTime);
-        // write connection status sync (includes eta)
-        if (eta) {
-          await readWriteConnectionStatusFile((cs) => {
-            cs.sync = {
-              ...cs.sync,
-              scanned_ranges: wc.cache.scanned_ranges,
-              daemon_height: wc.cache.daemon_height,
-              current_scan_height: lastRange(wc.cache.scanned_ranges)?.end || 0,
-              eta,
-              timestamp: new Date().toISOString(),
-            };
-          }, scanSettingsPath);
-        }
-        const nextItem = workBuffer.find(
-          (x) =>
-            x.status !== "process_result_done" &&
-            x.walletConfig.primary_address === addr,
-        );
-        if (nextItem) {
-          scanPromises.set(addr, gen.next(nextItem));
-        } else {
-          scanPromises.delete(addr);
-        }
-        logBufStatus(blocksBuffer, workBuffer, scanPromises, "after_scan");
-        yield {
-          type: "scan_ready",
-          address: addr,
-          result: value,
-          newCache: wc.cache,
-          changed_outputs: [],
-        };
-
-        // signal idle when no scans active and nothing buffered
-        if (scanPromises.size === 0 && blocksBuffer.length === 0) {
-          yield { type: "all_idle" };
-        }
-      }
-    }
-  }
-}
 export async function setupCoordinator(
   scanSettingsPath?: string,
   pathPrefix?: string,
@@ -735,12 +487,9 @@ export async function* coordinatorMainMultithreaded(
   cpuPorts?: MessagePort[],
 ): AsyncGenerator<CoordinatorEvent> {
   if (!cpuPorts || cpuPorts.length === 0) {
-    // throw new Error(
-    //   "[coordinatorMain Multithreaded] cpuPorts empty, there must be at least cpu worker",
-    // );
-    log("coordinatorMainMultithreaded", "fallback to single-threaded");
-    yield* coordinatorMain(scanSettingsPath, pathPrefix);
-    return;
+    throw new Error(
+      "[coordinatorMain Multithreaded] cpuPorts empty, there must be at least cpu worker",
+    );
   }
   const ctx = await setupCoordinator(scanSettingsPath, pathPrefix);
   if (!ctx)

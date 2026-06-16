@@ -16,7 +16,7 @@ import { atomicWrite } from "./atomicWrite";
  *   "logs_include": ["blocksBufferFetchLoop", "makeWorkItemsFromBlocksBuffer", "logBufStatus"]
  *     -> block fetching, reconciliation, buffer state.
  *
- *   "logs_include": ["processScanResult", "processWorkItem", "processScanResultForWorkItem"]
+ *   "logs_include": ["processScanResult", "processWorkItem"]
  *     -> result processing, cache updates, reorg detection.
  *
  *   "logs_include": ["handleConnectionStatusChanges", "handleScanError"]
@@ -32,7 +32,6 @@ export const LOGGING_FUNCTIONS = [
   "workToBeDoneForBatch",
   "makeWorkItemsFromBlocksBuffer",
   "reconcileWorkItemDone",
-  "processScanResultForWorkItem",
   "processWorkItem",
   "logBufStatus",
   "coordinatorMain",
