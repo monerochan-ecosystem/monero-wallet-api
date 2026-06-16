@@ -15,8 +15,13 @@ self.addEventListener("unhandledrejection", (e) =>
 let SCAN_SETTINGS_PATH: string | undefined;
 let PATH_PREFIX: string | undefined;
 let cpuPort: MessagePort | undefined;
+const cpu_worker_status = { cancel: false };
 let multisig_dkg: DistributedKeyGenerator | undefined;
 export function CPU_PORT_HANDLER(pe: MessageEvent) {
+  if (pe.data === "cancel") {
+    cpu_worker_status.cancel = true;
+    return;
+  }
   if (!cpuPort)
     throw new Error("[cpubound] cpuPort is undefined in port.onmessage");
   log("CPU_PORT_HANDLER", "new workitem msg received");
@@ -24,7 +29,7 @@ export function CPU_PORT_HANDLER(pe: MessageEvent) {
     type: "WORKSTART",
     work_uuid: pe.data.work_uuid,
   });
-  handleCpuboundScanTry(pe.data, cpuPort).then((result) => {
+  handleCpuboundScanTry(pe.data, cpu_worker_status).then((result) => {
     log("CPU_PORT_HANDLER", "work finished, sending result");
     if (!cpuPort)
       throw new Error("[cpubound] cpuPort is undefined in port.onmessage");

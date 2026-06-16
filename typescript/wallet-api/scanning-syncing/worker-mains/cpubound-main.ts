@@ -9,7 +9,7 @@ import { type ScanLoopInput, type ScanLoopYield } from "../scanresult/scanLoop";
 let callcounter = 0;
 export async function handleCpuboundScan(
   msg: ScanLoopInput,
-  port?: MessagePort,
+  cpu_worker_status: CpuWorkerStatus,
 ): Promise<ScanLoopYield> {
   callcounter++;
   log("handleCpuboundScan", "callcounter=" + callcounter);
@@ -28,10 +28,6 @@ export async function handleCpuboundScan(
   );
   const walletConfig = msg.walletConfig;
   const item = msg;
-  if (!port) {
-    log("handleCpuboundScan", "no port!");
-    throw new Error("[cpubound] no port");
-  }
 
   log(
     "handleCpuboundScan",
@@ -110,6 +106,11 @@ export async function handleCpuboundScan(
         heightto,
       ]);
     }
+    if (cpu_worker_status.cancel) {
+      cpu_worker_status.cancel = false;
+      log("handleCpuboundScan", ["cpu work canceled"]);
+      return { type: "Ready" };
+    }
     await sleep(10); // make sure the loop is not tight
   }
 
@@ -126,15 +127,20 @@ export async function handleCpuboundScan(
     result: scanResult,
   };
 }
-export function handleCpuboundScanTry(msg: ScanLoopInput, port?: MessagePort) {
+export function handleCpuboundScanTry(
+  msg: ScanLoopInput,
+  cpu_worker_status: CpuWorkerStatus,
+) {
   try {
-    return handleCpuboundScan(msg, port);
+    return handleCpuboundScan(msg, cpu_worker_status);
   } catch (err) {
     console.error("[cpubound] error", err);
     throw err;
   }
 }
-
+export type CpuWorkerStatus = {
+  cancel: boolean;
+};
 export function sendFromCpuWorker(port: MessagePort, msg: ScanLoopYield) {
   port.postMessage(msg);
 }
