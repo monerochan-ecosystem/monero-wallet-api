@@ -83,6 +83,9 @@ export async function createWebworker(
       fetchWorker: coordinationWorker,
       cpuWorkers,
       terminate: () => {
+        for (const p of cpuPorts) {
+          p.close();
+        }
         coordinationWorker.onmessage = null;
         coordinationWorker.onerror = null;
         for (const w of cpuWorkers) {
@@ -90,6 +93,7 @@ export async function createWebworker(
           w.onmessage = null;
         }
         coordinationWorker.terminate();
+
         for (const w of cpuWorkers) w.terminate();
       },
     };
@@ -101,15 +105,14 @@ export async function createWebworker(
 export function makeWebworkerScript(): string {
   return workerMainCode;
 }
-
+const blob = new Blob([workerMainCode], {
+  type: "text/javascript",
+});
+const url = URL.createObjectURL(blob);
 export function startWebworker(
   handle_result?: (result: unknown) => void,
   handle_error?: (error: unknown) => void,
 ) {
-  const blob = new Blob([workerMainCode], {
-    type: "text/javascript",
-  });
-  const url = URL.createObjectURL(blob);
   const worker = new Worker(url, { type: "module" });
   worker.onmessage = (event) => {
     switch (event.data.type) {
