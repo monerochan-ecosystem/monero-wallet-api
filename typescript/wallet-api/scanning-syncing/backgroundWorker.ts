@@ -1,6 +1,10 @@
 import { LOCAL_NODE_DEFAULT_URL } from "../node-interaction/nodeUrl";
 import { type CacheChangedCallbackParameters } from "./scanresult/scanCache";
-import { openScanSettingsFile, SCAN_SETTINGS_STORE_NAME_DEFAULT } from "../api";
+import {
+  openScanSettingsFile,
+  SCAN_SETTINGS_STORE_NAME_DEFAULT,
+  sleep,
+} from "../api";
 import { log, setupLoggingPath } from "../io/logging";
 import { workerMainCode } from "./worker-entrypoints/worker";
 export const CPU_POOL_SIZE = 4;
@@ -53,6 +57,7 @@ export async function createWebworker(
       };
       cpuWorkers.push(cpuWorker);
       cpuPorts.push(channel.port2);
+      await sleep(50);
     }
 
     const coordinationWorker = await startWebworkerReady();
@@ -62,11 +67,9 @@ export async function createWebworker(
         scan_settings_path: resolvedPath,
         pathPrefix,
         role: "coordinator",
-        node_url,
-        start_height: 0,
       },
       cpuPorts,
-    ); // transfer CPU port2s to coordination worker
+    ); // transfer CPU ports to coordination worker
     log("createWebworker", [
       "coordinator worker started, node_url=" + node_url,
       ", cpuPorts=" + cpuPorts.length,
@@ -92,10 +95,9 @@ export async function createWebworker(
         for (const w of cpuWorkers) {
           w.onerror = null;
           w.onmessage = null;
+          w.terminate();
         }
         coordinationWorker.terminate();
-
-        for (const w of cpuWorkers) w.terminate();
       },
     };
   } catch (error) {

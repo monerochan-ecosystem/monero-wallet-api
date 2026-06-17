@@ -192,10 +192,7 @@ export class ScanCacheOpened {
   }
 
   public async changeStartHeight(start_height: number | null) {
-    if (this.worker) {
-      this.worker.terminate();
-      delete this.worker;
-    }
+    this.stopWorker();
 
     await this._scanSettings.setStartHeight(start_height);
     this._start_height = start_height;
@@ -281,10 +278,8 @@ export class ScanCacheOpened {
     node_url?: string,
     start_height?: number | null,
   ) {
-    if (this.worker) {
-      this.worker.terminate();
-      delete this.worker;
-    }
+    this.stopWorker();
+
     if (node_url !== undefined) {
       await this._scanSettings.setNodeUrl(node_url);
       this.node_url = node_url;
@@ -298,19 +293,14 @@ export class ScanCacheOpened {
     await this.unpause();
   }
   public async changeNodeUrl(node_url: string) {
-    if (this.worker) {
-      this.worker.terminate();
-      delete this.worker;
-    }
+    this.stopWorker();
 
     await this._scanSettings.setNodeUrl(node_url);
     this.node_url = node_url;
     await this.unpause();
   }
   public async setMerchantConfirmations(merchant_confirmations: number | null) {
-    this.stopWorker();
     await this._scanSettings.setMerchantConfirmations(merchant_confirmations);
-    await this.unpause();
   }
   public async setCpuWorkerCount(cpu_worker_count: number | undefined) {
     this.stopWorker();
@@ -322,7 +312,7 @@ export class ScanCacheOpened {
     logs_include?: PossibleLogs[] | null,
     logs_exclude?: PossibleLogs[] | null,
   ) {
-    this.stopWorker();
+    await this.stopWorker();
     await this._scanSettings.setLogSettings(logs, logs_include, logs_exclude);
     await this.unpause();
   }
@@ -333,10 +323,7 @@ export class ScanCacheOpened {
     );
   }
   public async retry() {
-    if (this.worker) {
-      this.worker.terminate();
-      delete this.worker;
-    }
+    this.stopWorker();
     //  scansettings  so external changes (e.g. from a sidebar frontend instance) are picked up
     await this._scanSettings.reload();
     const walletStillExists = this._scanSettings.walletExists(
@@ -588,10 +575,7 @@ export class ScanCacheOpened {
       if (sendResult.status !== "OK")
         throw new Error("send raw transaction rpc returned error");
       // before writing the scan cache, we stop the worker to avoid a race
-      if (this.worker) {
-        this.worker.terminate();
-        delete this.worker;
-      }
+      this.stopWorker();
 
       // write txlog to cache + update pending_spent_utxos (affects stats + spendability)
       await writeCacheFileDefaultLocationThrows({
@@ -642,10 +626,7 @@ export class ScanCacheOpened {
       return sendResult;
     } catch (e) {
       // before writing the scan cache, we stop the worker to avoid a race
-      if (this.worker) {
-        this.worker.terminate();
-        delete this.worker;
-      }
+      this.stopWorker();
       // write txlog error to cache
       await writeCacheFileDefaultLocationThrows({
         primary_address: this.primary_address,
@@ -771,7 +752,7 @@ export class ScanCacheOpened {
     };
   }
   public async pause() {
-    if (this.worker) this.worker.terminate();
+    this.stopWorker();
     return await this._scanSettings.haltWallet(this.view_pair.primary_address);
   }
   public stopWorker() {
@@ -1159,7 +1140,7 @@ export class ManyScanCachesOpened {
           }
         }
         if (!retryTimer) {
-          retryTimer = setTimeout(retryFn, retryDelayMs ?? 1000);
+          retryTimer = setTimeout(retryFn, retryDelayMs ?? 5000);
         }
       };
     }
