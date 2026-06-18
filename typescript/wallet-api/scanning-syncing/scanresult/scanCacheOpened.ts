@@ -1,4 +1,5 @@
 import {
+  get_info,
   NodeUrl,
   signTransaction,
   ViewPair,
@@ -1110,7 +1111,15 @@ export class ManyScanCachesOpened {
     let instance: ManyScanCachesOpened | null = null;
     const retryFn = async () => {
       await instance?.buildWallets();
-      await instance?.retry();
+      const node_url = instance?.node_url;
+      if (!node_url) throw new Error("No nodeurl set, can't retry connection");
+
+      const getinfo_result = await get_info(node_url)
+        .then((r) => {
+          r?.status === "OK";
+        })
+        .catch(() => false);
+      if (getinfo_result) await instance?.retry();
       clearTimeout(retryTimer);
       retryTimer = undefined;
     };
