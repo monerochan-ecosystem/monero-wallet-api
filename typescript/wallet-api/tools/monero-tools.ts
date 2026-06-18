@@ -172,7 +172,7 @@ export function parseDestination(destination: string): string {
   const url = new URL(destination);
   return getDomainWithTLD(url.hostname);
 }
-export const OPEN_DOMAINS = ["monerochan.city"];
+export const OPEN_DOMAINS = ["monerochan.cash"];
 // this validity check should happen in the contentscript when the link is clicked,
 // not in the background script
 // -> tor circuit is separated & compartmentalized
