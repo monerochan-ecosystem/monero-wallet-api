@@ -1,5 +1,4 @@
 import { ed25519, x25519 } from "@noble/curves/ed25519.js";
-import { numberToBytesLE } from "@noble/curves/utils.js";
 import { blake3 } from "@noble/hashes/blake3.js";
 import { vk_from_entropy } from "../api";
 
