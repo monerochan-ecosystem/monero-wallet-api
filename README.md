@@ -1,5 +1,11 @@
 # monero-wallet-api
 
+## install 
+
+```bash
+bun add @spirobel/monero-wallet-api
+```
+
 ## quick start
 
 ```ts

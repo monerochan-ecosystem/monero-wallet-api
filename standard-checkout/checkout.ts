@@ -618,7 +618,7 @@ async function walletInfoRoute(req: Request) {
         browser.
       </p>
       <a
-        href="https://monerochan.city"
+        href="https://monerochan.cash"
         class="install-btn"
         target="_blank"
         rel="noopener noreferrer"

@@ -82,8 +82,12 @@ export class ViewPair extends WasmProcessor {
       };
     };
     let init_viewpair_result: { network: NETWORKS } | undefined = undefined;
+    let init_viewpair_error: ErrorResponse | undefined = undefined;
     viewPair.readFromWasmMemory = (ptr, len) => {
       init_viewpair_result = JSON.parse(viewPair.readString(ptr, len));
+    };
+    viewPair.readErrorFromWasmMemory = (ptr, len) => {
+      init_viewpair_error = JSON.parse(viewPair.readString(ptr, len));
     };
     //@ts-ignore
     tinywasi.instance.exports.init_viewpair(
@@ -91,12 +95,17 @@ export class ViewPair extends WasmProcessor {
       secret_view_key.length,
       subaddress_index,
     );
+
+    if (init_viewpair_error && "error" in init_viewpair_error) {
+      throw new Error(
+        `primary-address-not-valid (${primary_address.slice(0, 8)}...${primary_address.slice(-8)})`,
+      );
+    }
     if (!init_viewpair_result) {
       throw new Error("Failed to init viewpair");
-    } else {
-      //@ts-ignore
-      viewPair._network = init_viewpair_result.network;
     }
+    //@ts-ignore
+    viewPair._network = init_viewpair_result.network;
     return viewPair;
   }
   /**

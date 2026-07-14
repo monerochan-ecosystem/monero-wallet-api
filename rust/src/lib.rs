@@ -114,8 +114,6 @@ pub extern "C" fn init_viewpair(
 ) {
   let primary_address = input_string(primary_address_string_len);
   let secret_view_key = input_string(secret_view_key_string_len);
-  let viewpair =
-    init_viewpair_from_viewpk_primary(primary_address.as_str(), secret_view_key.as_str());
   let address = if let Some(val) =
     monero_wallet::address::MoneroAddress::from_str_with_unchecked_network(primary_address.as_str())
       .ok()
@@ -129,6 +127,7 @@ pub extern "C" fn init_viewpair(
     output_error_string(&error_json);
     return;
   };
+  let viewpair = init_viewpair_from_viewpk_primary(&address, secret_view_key.as_str());
   match address.network() {
     Network::Mainnet => output_string(&json!({"network": "mainnet"}).to_string()),
     Network::Stagenet => output_string(&json!({"network": "stagenet"}).to_string()),
@@ -460,19 +459,13 @@ pub extern "C" fn get_blocks_bin_scan_one_block(block_index: u32) {
   }
 }
 ///rust API
-pub fn init_viewpair_from_viewpk_primary(primary_address: &str, secret_view_key: &str) -> ViewPair {
+pub fn init_viewpair_from_viewpk_primary(
+  address: &monero_wallet::address::MoneroAddress,
+  secret_view_key: &str,
+) -> ViewPair {
   let view_key_bytes = <[u8; 32]>::from_hex(secret_view_key).unwrap();
   monero_wallet::ViewPair::new(
-    monero_wallet::address::MoneroAddress::from_str_with_unchecked_network(primary_address)
-      .map_err(|e| {
-        eprintln!(
-          "There is an issue with the primary address that you provided: {}",
-          primary_address.to_string()
-        );
-        eprintln!("{}", e.to_string());
-      })
-      .unwrap()
-      .spend(),
+    address.spend(),
     Zeroizing::new(Scalar::from_canonical_bytes(view_key_bytes).unwrap()),
   )
   .unwrap()

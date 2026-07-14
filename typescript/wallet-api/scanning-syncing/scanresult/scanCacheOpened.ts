@@ -1,4 +1,5 @@
 import {
+  get_info,
   NodeUrl,
   signTransaction,
   ViewPair,
@@ -192,10 +193,7 @@ export class ScanCacheOpened {
   }
 
   public async changeStartHeight(start_height: number | null) {
-    if (this.worker) {
-      this.worker.terminate();
-      delete this.worker;
-    }
+    this.stopWorker();
 
     await this._scanSettings.setStartHeight(start_height);
     this._start_height = start_height;
@@ -281,10 +279,8 @@ export class ScanCacheOpened {
     node_url?: string,
     start_height?: number | null,
   ) {
-    if (this.worker) {
-      this.worker.terminate();
-      delete this.worker;
-    }
+    this.stopWorker();
+
     if (node_url !== undefined) {
       await this._scanSettings.setNodeUrl(node_url);
       this.node_url = node_url;
@@ -298,19 +294,14 @@ export class ScanCacheOpened {
     await this.unpause();
   }
   public async changeNodeUrl(node_url: string) {
-    if (this.worker) {
-      this.worker.terminate();
-      delete this.worker;
-    }
+    this.stopWorker();
 
     await this._scanSettings.setNodeUrl(node_url);
     this.node_url = node_url;
     await this.unpause();
   }
   public async setMerchantConfirmations(merchant_confirmations: number | null) {
-    this.stopWorker();
     await this._scanSettings.setMerchantConfirmations(merchant_confirmations);
-    await this.unpause();
   }
   public async setCpuWorkerCount(cpu_worker_count: number | undefined) {
     this.stopWorker();
@@ -322,7 +313,7 @@ export class ScanCacheOpened {
     logs_include?: PossibleLogs[] | null,
     logs_exclude?: PossibleLogs[] | null,
   ) {
-    this.stopWorker();
+    await this.stopWorker();
     await this._scanSettings.setLogSettings(logs, logs_include, logs_exclude);
     await this.unpause();
   }
@@ -333,10 +324,7 @@ export class ScanCacheOpened {
     );
   }
   public async retry() {
-    if (this.worker) {
-      this.worker.terminate();
-      delete this.worker;
-    }
+    this.stopWorker();
     //  scansettings  so external changes (e.g. from a sidebar frontend instance) are picked up
     await this._scanSettings.reload();
     const walletStillExists = this._scanSettings.walletExists(
@@ -377,7 +365,7 @@ export class ScanCacheOpened {
     //2. check if fee is too high
     if (feeFor10kb > max_plausible_fee) {
       throw new Error(
-        `fee too high: 
+        `fee too high:
           ${feeFor10kb} (fee for 10kb tx size) > ${max_plausible_fee} (0.001 XMR)
           most likely your node is faulty. connect to another node.
            preferably run one yourself locally.`,
@@ -409,7 +397,7 @@ export class ScanCacheOpened {
       //2. check if fee is too high
       if (feeFor10kb > max_plausible_fee) {
         throw new Error(
-          `fee too high: 
+          `fee too high:
           ${feeFor10kb} (fee for 10kb tx size) > ${max_plausible_fee} (0.001 XMR)
           most likely your node is faulty. connect to another node.
            preferably run one yourself locally.`,
@@ -588,10 +576,7 @@ export class ScanCacheOpened {
       if (sendResult.status !== "OK")
         throw new Error("send raw transaction rpc returned error");
       // before writing the scan cache, we stop the worker to avoid a race
-      if (this.worker) {
-        this.worker.terminate();
-        delete this.worker;
-      }
+      this.stopWorker();
 
       // write txlog to cache + update pending_spent_utxos (affects stats + spendability)
       await writeCacheFileDefaultLocationThrows({
@@ -642,10 +627,7 @@ export class ScanCacheOpened {
       return sendResult;
     } catch (e) {
       // before writing the scan cache, we stop the worker to avoid a race
-      if (this.worker) {
-        this.worker.terminate();
-        delete this.worker;
-      }
+      this.stopWorker();
       // write txlog error to cache
       await writeCacheFileDefaultLocationThrows({
         primary_address: this.primary_address,
@@ -771,12 +753,14 @@ export class ScanCacheOpened {
     };
   }
   public async pause() {
-    if (this.worker) this.worker.terminate();
+    this.stopWorker();
     return await this._scanSettings.haltWallet(this.view_pair.primary_address);
   }
   public stopWorker() {
     if (this.worker) {
       this.worker.terminate();
+      this.worker.cpuWorkers = [];
+      this.worker.fetchWorker = undefined!;
       delete this.worker;
     }
   }
@@ -788,31 +772,32 @@ export class ScanCacheOpened {
         async (params) => await this.feed(params),
         this.scan_settings_path,
         this.pathPrefix,
-        (error) => {
-          const workerErrCB = this.workerError;
-          this.stopWorker();
-          readWriteConnectionStatusFile((cs) => {
-            if (cs?.last_packet.status === "catastrophic_reorg") return;
-            const connectionStatus: ConnectionStatus = {
-              ...cs,
-              last_packet: {
-                status: "connection_failed",
-                bytes_read: 0,
-                node_url: this.node_url,
-                timestamp: new Date().toISOString(),
-              },
-            };
-            return connectionStatus;
-          }, this.scan_settings_path).then(() => {
-            if (workerErrCB) workerErrCB(error);
-          });
-        },
+        (params) => this._onWorkerError(params),
       );
     }
     return await this._scanSettings.unhaltWallet(
       this.view_pair.primary_address,
     );
   }
+  private _onWorkerError = (error: unknown) => {
+    const workerErrCB = this.workerError;
+    this.stopWorker();
+    readWriteConnectionStatusFile((cs) => {
+      if (cs?.last_packet.status === "catastrophic_reorg") return;
+      const connectionStatus: ConnectionStatus = {
+        ...cs,
+        last_packet: {
+          status: "connection_failed",
+          bytes_read: 0,
+          node_url: this.node_url,
+          timestamp: new Date().toISOString(),
+        },
+      };
+      return connectionStatus;
+    }, this.scan_settings_path).then(() => {
+      if (workerErrCB) workerErrCB(error);
+    });
+  };
   /**
    * selectInputs returns array of inputs, whose sum is larger than amount
    * adds approximate fee for 10kb transaction to amount if feePerByte is supplied
@@ -1029,6 +1014,9 @@ export class ManyScanCachesOpened {
   public async setWalletName(primary_address: string, name?: string) {
     await this._scanSettings.setWalletName(primary_address, name);
   }
+  public async setWalletSlot(primary_address: string, slot?: number) {
+    await this._scanSettings.setWalletSlot(primary_address, slot);
+  }
   public async changeStartHeight(start_height: number | null) {
     if (this.wallets.length === 0) throw new Error("no wallets");
     const masterWallet = this.wallets[0];
@@ -1121,16 +1109,47 @@ export class ManyScanCachesOpened {
     // wrap workerError with auto-retry
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
     let instance: ManyScanCachesOpened | null = null;
+    const retryFn = async () => {
+      await instance?.buildWallets();
+      const node_url = instance?.node_url;
+      if (!node_url) throw new Error("No nodeurl set, can't retry connection");
+
+      const getinfo_result = await get_info(node_url)
+        .then((r) => {
+          r?.status === "OK";
+        })
+        .catch(() => false);
+      if (getinfo_result) await instance?.retry();
+      clearTimeout(retryTimer);
+      retryTimer = undefined;
+    };
     const newOptions = { ...options };
+    let connectionFailedShown = false;
     if (autoRetry) {
       const originalError = options.workerError;
       newOptions.workerError = (err: unknown) => {
         originalError?.(err);
+        const msg = err instanceof Error ? err.message : String(err);
+        if (
+          csOpened.connectionStatus?.last_packet?.status ===
+          "catastrophic_reorg"
+        ) {
+          clearTimeout(retryTimer);
+          instance?.stopWorker();
+          throw new Error("catastrophic reorg, aborting ...");
+        }
+        if (
+          msg.includes("connect") ||
+          msg.includes("fetch") ||
+          msg.includes("NetworkError")
+        ) {
+          if (!connectionFailedShown) {
+            connectionFailedShown = true;
+            console.error("unable to connect to node ... retrying ...");
+          }
+        }
         if (!retryTimer) {
-          retryTimer = setTimeout(() => {
-            retryTimer = undefined;
-            instance?.retry();
-          }, retryDelayMs ?? 1000);
+          retryTimer = setTimeout(retryFn, retryDelayMs ?? 5000);
         }
       };
     }
@@ -1140,7 +1159,15 @@ export class ManyScanCachesOpened {
 
     const csOpened = new ConnectionStatusOpened(
       scan_settings_path || SCAN_SETTINGS_STORE_NAME_DEFAULT,
-      onConnectionStatusChange ?? null,
+      autoRetry
+        ? (status) => {
+            if (status?.last_packet?.status === "OK" && connectionFailedShown) {
+              connectionFailedShown = false;
+              console.log("connection to node established");
+            }
+            if (onConnectionStatusChange) onConnectionStatusChange(status);
+          }
+        : (onConnectionStatusChange ?? null),
     );
     csOpened.watch(connectionStatusIntervalMs);
 
@@ -1155,9 +1182,7 @@ export class ManyScanCachesOpened {
   }
 
   public async buildWallets() {
-    for (const w of this._wallets) {
-      w.stopWorker();
-    }
+    this.stopWorker();
     await this._scanSettings.reload();
     const newWallets = await ManyScanCachesOpened._buildWallets(
       this._scanSettings,

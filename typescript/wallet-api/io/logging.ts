@@ -16,7 +16,7 @@ import { atomicWrite } from "./atomicWrite";
  *   "logs_include": ["blocksBufferFetchLoop", "makeWorkItemsFromBlocksBuffer", "logBufStatus"]
  *     -> block fetching, reconciliation, buffer state.
  *
- *   "logs_include": ["processScanResult", "processWorkItem", "processScanResultForWorkItem"]
+ *   "logs_include": ["processScanResult", "processWorkItem"]
  *     -> result processing, cache updates, reorg detection.
  *
  *   "logs_include": ["handleConnectionStatusChanges", "handleScanError"]
@@ -32,7 +32,6 @@ export const LOGGING_FUNCTIONS = [
   "workToBeDoneForBatch",
   "makeWorkItemsFromBlocksBuffer",
   "reconcileWorkItemDone",
-  "processScanResultForWorkItem",
   "processWorkItem",
   "logBufStatus",
   "coordinatorMain",
@@ -84,6 +83,8 @@ export async function setupLoggingPath(
 ) {
   const scanSettings = await openScanSettingsFile(scan_settings_path);
   const logs = scanSettings?.logs;
+  if (logs === "off" || typeof logs === "undefined") return;
+
   const logs_include = scanSettings?.logs_include;
   const logs_exclude = scanSettings?.logs_exclude;
   const file_logbuffer: FileLogMessage[] = [];
@@ -175,7 +176,7 @@ export function log(fnname: string, message: any) {
 
   const { logs, logs_include, logs_exclude, file_logbuffer } = setup;
 
-  if (logs === "off") return;
+  if (logs === "off" || typeof logs === "undefined") return;
 
   // Apply include/exclude filters
   if (logs_include && logs_include.length > 0 && !logs_include.includes(fnname))

@@ -1,9 +1,12 @@
 import { LOCAL_NODE_DEFAULT_URL } from "../node-interaction/nodeUrl";
 import { type CacheChangedCallbackParameters } from "./scanresult/scanCache";
-import { openScanSettingsFile, SCAN_SETTINGS_STORE_NAME_DEFAULT } from "../api";
+import {
+  openScanSettingsFile,
+  SCAN_SETTINGS_STORE_NAME_DEFAULT,
+  sleep,
+} from "../api";
 import { log, setupLoggingPath } from "../io/logging";
 import { workerMainCode } from "./worker-entrypoints/worker";
-
 export const CPU_POOL_SIZE = 4;
 
 export type WorkerSet = {
@@ -21,12 +24,13 @@ export async function createWebworker(
   try {
     const resolvedPath = scan_settings_path || SCAN_SETTINGS_STORE_NAME_DEFAULT;
     const scanSettings = await openScanSettingsFile(resolvedPath);
-    await setupLoggingPath(resolvedPath, pathPrefix ?? "", "mainthread");
+    if (scanSettings?.logs !== "off" && scanSettings?.logs)
+      await setupLoggingPath(resolvedPath, pathPrefix ?? "", "mainthread");
 
     const node_url = scanSettings?.node_url || LOCAL_NODE_DEFAULT_URL;
     const cpu_worker_count =
       typeof scanSettings?.cpu_worker_count !== "undefined"
-        ? scanSettings?.cpu_worker_count
+        ? scanSettings?.cpu_worker_count || 1
         : CPU_POOL_SIZE;
 
     // spawn CPU workers
@@ -53,6 +57,7 @@ export async function createWebworker(
       };
       cpuWorkers.push(cpuWorker);
       cpuPorts.push(channel.port2);
+      await sleep(50);
     }
 
     const coordinationWorker = await startWebworkerReady();
@@ -62,11 +67,9 @@ export async function createWebworker(
         scan_settings_path: resolvedPath,
         pathPrefix,
         role: "coordinator",
-        node_url,
-        start_height: 0,
       },
       cpuPorts,
-    ); // transfer CPU port2s to coordination worker
+    ); // transfer CPU ports to coordination worker
     log("createWebworker", [
       "coordinator worker started, node_url=" + node_url,
       ", cpuPorts=" + cpuPorts.length,
@@ -84,8 +87,17 @@ export async function createWebworker(
       fetchWorker: coordinationWorker,
       cpuWorkers,
       terminate: () => {
+        for (const p of cpuPorts) {
+          p.close();
+        }
+        coordinationWorker.onmessage = null;
+        coordinationWorker.onerror = null;
+        for (const w of cpuWorkers) {
+          w.onerror = null;
+          w.onmessage = null;
+          w.terminate();
+        }
         coordinationWorker.terminate();
-        for (const w of cpuWorkers) w.terminate();
       },
     };
   } catch (error) {
@@ -96,39 +108,17 @@ export async function createWebworker(
 export function makeWebworkerScript(): string {
   return workerMainCode;
 }
-
-export function startWebworker(
-  handle_result?: (result: unknown) => void,
-  handle_error?: (error: unknown) => void,
-) {
-  const blob = new Blob([workerMainCode], {
-    type: "text/javascript",
-  });
-  const url = URL.createObjectURL(blob);
-  const worker = new Worker(url, { type: "module" });
-  worker.onmessage = (event) => {
-    switch (event.data.type) {
-      case "RESULT":
-        if (handle_result) handle_result(event.data.payload);
-        break;
-      case "ERROR":
-      case "scan_error":
-        if (handle_error) handle_error(event.data.payload ?? event.data.error);
-        break;
-      case "DEBUG":
-        log("startWebworker", ["worker debug:", event.data.payload]);
-        break;
-    }
-  };
-  return worker;
-}
+const blob = new Blob([workerMainCode], {
+  type: "text/javascript",
+});
+const url = URL.createObjectURL(blob);
 
 // creates a worker via startWebworker, then waits for it to signal
 // WORKER_READY (meaning self.onmessage = handleMessage has executed).
 // after that, postMessage is safe, no race between worker startup
 // and message delivery.
 export function startWebworkerReady(): Promise<Worker> {
-  const worker = startWebworker();
+  const worker = new Worker(url, { type: "module" });
   return new Promise<Worker>((resolve) => {
     const onReady = (e: MessageEvent) => {
       if (e.data?.type === "WORKER_READY") {
