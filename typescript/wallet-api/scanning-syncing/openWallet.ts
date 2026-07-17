@@ -12,6 +12,9 @@ import { openScanSettingsFile, writeWalletToScanSettings } from "../api";
  * @param options.no_worker to feed the ManyScanCachesOpened manually with .feed(params) from CacheChangedCallbackParams
  * @param options.no_stats to disable creation of stats file with aggregated information e.g. amount per wallet / subaddress
  * @param options.notifyMasterChanged pass the output of this to another (no_worker) instance to feed
+ * @param options.logs "console" | "file" | "console-and-file" | "off"
+ * @param options.logs_include function names to include (e.g. handleCpuboundScan, blocksBufferFetchLoop)
+ * @param options.logs_exclude function names to exclude
  * @returns Promise<ManyScanCachesOpened>
  */
 export async function openWallets(options?: ManyScanCachesOpenedCreateOptions) {

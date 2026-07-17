@@ -916,6 +916,9 @@ export type ManyScanCachesOpenedCreateOptions = {
   retryDelayMs?: number;
   connectionStatusIntervalMs?: number;
   onConnectionStatusChange?: ((status: ConnectionStatus | null) => void) | null;
+  logs?: LogSetting;
+  logs_include?: PossibleLogs[];
+  logs_exclude?: PossibleLogs[];
 };
 export class ManyScanCachesOpened {
   get start_height(): number | null {
@@ -934,7 +937,7 @@ export class ManyScanCachesOpened {
     node_url?: string,
     start_height?: number | null,
   ) {
-    if (this.wallets.length === 0) throw new Error("no wallets");
+    if (this.wallets.length === 0) return;
     const masterWallet = this.wallets[0];
     return await masterWallet.changeNodeUrlAndStartHeight(
       node_url,
@@ -942,18 +945,18 @@ export class ManyScanCachesOpened {
     );
   }
   public async retry() {
-    if (this.wallets.length === 0) throw new Error("no wallets");
+    if (this.wallets.length === 0) return;
     const masterWallet = this.wallets[0];
     return await masterWallet.retry();
   }
   public stopWorker() {
-    if (this.wallets.length === 0) throw new Error("no wallets");
+    if (this.wallets.length === 0) return;
     const masterWallet = this.wallets[0];
     return masterWallet.stopWorker();
   }
 
   public async changeNodeUrl(node_url: string) {
-    if (this.wallets.length === 0) throw new Error("no wallets");
+    if (this.wallets.length === 0) return;
     const masterWallet = this.wallets[0];
     return await masterWallet.changeNodeUrl(node_url);
   }
@@ -966,16 +969,13 @@ export class ManyScanCachesOpened {
     return this.wallets[0]?.cpu_worker_count;
   }
   get logs(): LogSetting | undefined {
-    if (this.wallets.length === 0) return undefined;
-    return this.wallets[0]?.logs;
+    return this._scanSettings.logs;
   }
   get logs_include(): PossibleLogs[] | undefined {
-    if (this.wallets.length === 0) return undefined;
-    return this.wallets[0]?.logs_include;
+    return this._scanSettings.logs_include;
   }
   get logs_exclude(): PossibleLogs[] | undefined {
-    if (this.wallets.length === 0) return undefined;
-    return this.wallets[0]?.logs_exclude;
+    return this._scanSettings.logs_exclude;
   }
   get connectionStatus(): ConnectionStatus | null {
     return this.connectionStatusOpened.connectionStatus;
@@ -990,13 +990,13 @@ export class ManyScanCachesOpened {
     this.connectionStatusOpened.unwatch();
   }
   public async setMerchantConfirmations(merchant_confirmations: number | null) {
-    if (this.wallets.length === 0) throw new Error("no wallets");
+    if (this.wallets.length === 0) return;
     return await this.wallets[0].setMerchantConfirmations(
       merchant_confirmations,
     );
   }
   public async setCpuWorkerCount(cpu_worker_count: number | undefined) {
-    if (this.wallets.length === 0) throw new Error("no wallets");
+    if (this.wallets.length === 0) return;
     return await this.wallets[0].setCpuWorkerCount(cpu_worker_count);
   }
   public async setLogSettings(
@@ -1004,8 +1004,7 @@ export class ManyScanCachesOpened {
     logs_include?: PossibleLogs[] | null,
     logs_exclude?: PossibleLogs[] | null,
   ) {
-    if (this.wallets.length === 0) throw new Error("no wallets");
-    return await this.wallets[0].setLogSettings(
+    return await this._scanSettings.setLogSettings(
       logs,
       logs_include,
       logs_exclude,
@@ -1018,7 +1017,7 @@ export class ManyScanCachesOpened {
     await this._scanSettings.setWalletSlot(primary_address, slot);
   }
   public async changeStartHeight(start_height: number | null) {
-    if (this.wallets.length === 0) throw new Error("no wallets");
+    if (this.wallets.length === 0) return;
     const masterWallet = this.wallets[0];
     return await masterWallet.changeStartHeight(start_height);
   }
@@ -1100,18 +1099,42 @@ export class ManyScanCachesOpened {
       scan_settings_path,
       pathPrefix,
     );
-    if (!scanSettingsOpened.wallets || scanSettingsOpened.wallets.length === 0)
-      throw new Error(
-        `no wallets in settings file. Did you supply the right path?
-     are there wallets in the default '${SCAN_SETTINGS_STORE_NAME_DEFAULT}' file?`,
+
+    // persist log options into ScanSettings.json before workers start
+    if (
+      options.logs !== undefined ||
+      options.logs_include !== undefined ||
+      options.logs_exclude !== undefined
+    ) {
+      await scanSettingsOpened.setLogSettings(
+        options.logs !== undefined ? options.logs : scanSettingsOpened.logs,
+        options.logs_include !== undefined
+          ? options.logs_include
+          : scanSettingsOpened.logs_include,
+        options.logs_exclude !== undefined
+          ? options.logs_exclude
+          : scanSettingsOpened.logs_exclude,
       );
+    }
 
     // wrap workerError with auto-retry
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
     let instance: ManyScanCachesOpened | null = null;
     const retryFn = async () => {
-      await instance?.buildWallets();
-      const node_url = instance?.node_url;
+      // no wallets means idle, do not rebuild or restart workers
+      if (!instance || instance.wallets.length === 0) {
+        clearTimeout(retryTimer);
+        retryTimer = undefined;
+        return;
+      }
+      await instance.buildWallets();
+      // still empty after rebuild, stay idle
+      if (instance.wallets.length === 0) {
+        clearTimeout(retryTimer);
+        retryTimer = undefined;
+        return;
+      }
+      const node_url = instance.node_url;
       if (!node_url) throw new Error("No nodeurl set, can't retry connection");
 
       const getinfo_result = await get_info(node_url)
@@ -1148,14 +1171,14 @@ export class ManyScanCachesOpened {
             console.error("unable to connect to node ... retrying ...");
           }
         }
-        if (!retryTimer) {
+        // only schedule retry when we still have wallets to scan
+        if (!retryTimer && instance && instance.wallets.length > 0) {
           retryTimer = setTimeout(retryFn, retryDelayMs ?? 5000);
         }
       };
     }
 
-    const wallets = await this._buildWallets(scanSettingsOpened, newOptions);
-    if (!wallets) return undefined;
+    const wallets = (await this._buildWallets(scanSettingsOpened, newOptions)) ?? [];
 
     const csOpened = new ConnectionStatusOpened(
       scan_settings_path || SCAN_SETTINGS_STORE_NAME_DEFAULT,
@@ -1184,15 +1207,17 @@ export class ManyScanCachesOpened {
   public async buildWallets() {
     this.stopWorker();
     await this._scanSettings.reload();
+    // empty after reload: stay idle, do not open ScanCacheOpened or start workers
+    const remaining = this._scanSettings.wallets.filter((w) => !w?.halted);
+    if (remaining.length === 0) {
+      this._wallets = [];
+      return;
+    }
     const newWallets = await ManyScanCachesOpened._buildWallets(
       this._scanSettings,
       this._options,
     );
-    if (!newWallets)
-      throw new Error(
-        "no non-halted wallets left after rebuild, use addViewWallet or addSpendWallet first",
-      );
-    this._wallets = newWallets;
+    this._wallets = newWallets ?? [];
   }
 
   public async addViewWallet(
@@ -1225,11 +1250,24 @@ export class ManyScanCachesOpened {
   }
 
   public async removeWallet(primary_address: string) {
+    // shut down worker first, then only rebuild if non-halted wallets remain
+    this.stopWorker();
     await this._scanSettings.removeWallet(primary_address);
-    await this.buildWallets();
+    await this._scanSettings.reload();
+    const remaining = this._scanSettings.wallets.filter((w) => !w?.halted);
+    if (remaining.length === 0) {
+      this._wallets = [];
+      return;
+    }
+    const newWallets = await ManyScanCachesOpened._buildWallets(
+      this._scanSettings,
+      this._options,
+    );
+    this._wallets = newWallets ?? [];
   }
 
   public async feed(params: CacheChangedCallbackParameters) {
+    if (this.wallets.length === 0) return;
     await this.wallets[0].feed(params);
   }
 
