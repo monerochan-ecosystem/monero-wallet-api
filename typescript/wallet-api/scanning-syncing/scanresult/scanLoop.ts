@@ -53,7 +53,7 @@ export function makeWorkItem(
 export type ScanLoopIteratorResult = IteratorYieldResult<ScanLoopYield>;
 export type ScanLoopInput = WorkItem | "cancel" | undefined;
 export type ScanLoopYield = {
-  type: "Ready" | "InProgress";
+  type: "Ready" | "InProgress" | "Canceled";
   work_uuid?: string;
   result?: ScanResult;
 };

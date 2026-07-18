@@ -375,6 +375,7 @@ export type CoordinatorEvent =
       changed_outputs: { output: any; change_reason: string }[];
     }
   | { type: "all_idle" }
+  | { type: "shutdown_done" }
   | { type: "error"; error: Error };
 
 function logBufStatus(
@@ -433,6 +434,7 @@ function computeETA(
 export async function setupCoordinator(
   scanSettingsPath?: string,
   pathPrefix?: string,
+  stopSync?: AbortSignal,
 ) {
   const work_to_be_done = await findWorkToBeDone(scanSettingsPath, pathPrefix);
   if (!work_to_be_done) return false;
@@ -442,6 +444,7 @@ export async function setupCoordinator(
       startHeight: work_to_be_done.start_height,
       anchor_range: work_to_be_done.anchor_range,
       scanSettingsPath,
+      stopSync,
     });
 
   const workBuffer: WorkItem[] = [];
@@ -474,8 +477,43 @@ export type BlocksBufferRacer = {
   src: "blocks";
   value: BlocksBufferIteratorResult;
 };
+export type ShutdownRacer = { src: "shutdown" };
 export type ScanLoopRacer = ScanLoopYield;
-export type Racers = BlocksBufferRacer | ScanLoopRacer;
+export type Racers = BlocksBufferRacer | ScanLoopRacer | ShutdownRacer;
+
+// flip inflight work back to fresh so a restart can reschedule it
+export function resetInProgressWorkItems(workBuffer: WorkItem[]) {
+  for (const item of workBuffer) {
+    if (item.status === "scanwork_in_progress") {
+      item.status = "fresh";
+      item.result = undefined;
+    }
+  }
+}
+
+// tell busy cpu ports to cancel and wait for their promises (with timeout)
+export async function cancelBusyCpuPorts(
+  ports: PortStatus[],
+  timeoutMs = 3000,
+) {
+  const busy = ports.filter((ps) => ps.promise);
+  for (const ps of busy) {
+    try {
+      sendToCpuWorker(ps.port, "cancel");
+    } catch (err) {
+      log("cancelBusyCpuPorts", ["send cancel failed", String(err)]);
+    }
+  }
+  if (busy.length === 0) return;
+  await Promise.race([
+    Promise.allSettled(busy.map((ps) => ps.promise!)),
+    sleep(timeoutMs),
+  ]);
+  for (const ps of ports) {
+    ps.promise = null;
+  }
+}
+
 /**
  * coordinator main (multithreaded): dispatches scan work to CPU workers
  * via MessagePorts, processes results in order per wallet.
@@ -485,13 +523,14 @@ export async function* coordinatorMainMultithreaded(
   scanSettingsPath?: string,
   pathPrefix?: string,
   cpuPorts?: MessagePort[],
+  stopSync?: AbortSignal,
 ): AsyncGenerator<CoordinatorEvent> {
   if (!cpuPorts || cpuPorts.length === 0) {
     throw new Error(
       "[coordinatorMain Multithreaded] cpuPorts empty, there must be at least cpu worker",
     );
   }
-  const ctx = await setupCoordinator(scanSettingsPath, pathPrefix);
+  const ctx = await setupCoordinator(scanSettingsPath, pathPrefix, stopSync);
   if (!ctx)
     throw new Error(
       "[coordinatorMain Multithreaded] findWorkToBeDone returned false",
@@ -514,8 +553,29 @@ export async function* coordinatorMainMultithreaded(
 
     freePorts.push(ps);
   }
+
+  // resolve when main thread asks us to shut down
+  const shutdownPromise = new Promise<ShutdownRacer>((resolve) => {
+    if (stopSync?.aborted) {
+      resolve({ src: "shutdown" });
+      return;
+    }
+    stopSync?.addEventListener(
+      "abort",
+      () => resolve({ src: "shutdown" }),
+      { once: true },
+    );
+  });
+
   let race_count = 0;
   while (true) {
+    if (stopSync?.aborted) {
+      log("coordinatorMainMultithreaded", ["shutdown signal, draining"]);
+      await cancelBusyCpuPorts(freePorts);
+      resetInProgressWorkItems(workBuffer);
+      yield { type: "shutdown_done" };
+      return;
+    }
     race_count++;
     log("coordinatorMainMultithreaded", ["race_count", race_count]);
     await scheduleWorkOnCpuPorts(freePorts, workBuffer);
@@ -529,11 +589,31 @@ export async function* coordinatorMainMultithreaded(
         src: "blocks" as const,
         value: v as BlocksBufferIteratorResult,
       })),
+      shutdownPromise,
     ];
     log("coordinatorMainMultithreaded", ["races", races]);
     const winner = await Promise.race(races);
     log("coordinatorMainMultithreaded", "cpu ports status");
+
+    if ("src" in winner && winner.src === "shutdown") {
+      log("coordinatorMainMultithreaded", ["shutdown won race, draining"]);
+      await cancelBusyCpuPorts(freePorts);
+      resetInProgressWorkItems(workBuffer);
+      yield { type: "shutdown_done" };
+      return;
+    }
+
     if ("src" in winner && winner.src === "blocks") {
+      // fetch loop returned (done) on abort, treat as shutdown
+      if (winner.value.done) {
+        log("coordinatorMainMultithreaded", [
+          "blocks generator done, draining",
+        ]);
+        await cancelBusyCpuPorts(freePorts);
+        resetInProgressWorkItems(workBuffer);
+        yield { type: "shutdown_done" };
+        return;
+      }
       const result = winner.value.value;
       const { isBlocksBufferChanged } = await handleBlocksYield(
         result,
@@ -633,6 +713,16 @@ export async function scheduleWorkOnCpuPorts(
         | { type: "WORKSTART"; work_uuid: string };
       // handle the result here:
       log("scheduleWorkOnCpuPorts", ["onmessage result", msg]);
+      // cancel ack may omit work_uuid when idle, but inflight cancel carries it
+      if (msg.type === "Canceled") {
+        if (item.status === "scanwork_in_progress") {
+          item.status = "fresh";
+          item.result = undefined;
+        }
+        port_status.promise = null;
+        resolve_port(msg as ScanLoopYield);
+        return;
+      }
       if (msg.work_uuid !== item.work_uuid) {
         log("scheduleWorkOnCpuPorts", [
           "wrong work_uuid in msg msg.work_uuid=",

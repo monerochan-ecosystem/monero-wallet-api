@@ -65,6 +65,10 @@ export async function* blocksBufferFetchLoop(
   yield connection_status.last_packet;
 
   while (true) {
+    if (stopSync?.aborted) {
+      log("blocksBufferFetchLoop", ["aborted, exiting fetch loop"]);
+      return;
+    }
     // avoid overwriting last_packet in case of catastrophic reorg
     // this generator will block on this. coordinator should rethrow the CatastrophicReorgError
     if (connection_status.last_packet.status === "catastrophic_reorg") {
@@ -79,7 +83,12 @@ export async function* blocksBufferFetchLoop(
         timestamp: new Date().toISOString(),
       };
       yield connection_status.last_packet;
-      await sleep(5000);
+      try {
+        await sleep(5000, stopSync);
+      } catch {
+        log("blocksBufferFetchLoop", ["aborted during buffer-full sleep"]);
+        return;
+      }
       continue;
     }
     log("blocksBufferFetchLoop", [
@@ -93,6 +102,11 @@ export async function* blocksBufferFetchLoop(
     try {
       get_blocks_bin = await doRPCrequest(nodeUrl, current_range, stopSync);
     } catch (error) {
+      // abort is intentional shutdown, not a connection failure
+      if (stopSync?.aborted || isAbortError(error)) {
+        log("blocksBufferFetchLoop", ["aborted during rpc request"]);
+        return;
+      }
       connection_status.last_packet = {
         status: "connection_failed",
         bytes_read: 0,
@@ -119,7 +133,12 @@ export async function* blocksBufferFetchLoop(
     yield connection_status.last_packet;
     // no new blocks: at tip, sleep and retry
     if (!result_meta.block_infos.length) {
-      await sleep(1000);
+      try {
+        await sleep(1000, stopSync);
+      } catch {
+        log("blocksBufferFetchLoop", ["aborted during tip sleep"]);
+        return;
+      }
       continue;
     }
     const bufferItem = makeBlocksBufferItem(result_meta, get_blocks_bin);
@@ -515,4 +534,10 @@ export async function reduceStartHeightToTip(
 
 export class CatastrophicReorgError extends Error {
   name = "CatastrophicReorgError";
+}
+
+function isAbortError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const name = (error as { name?: string }).name;
+  return name === "AbortError" || name === "DOMException";
 }

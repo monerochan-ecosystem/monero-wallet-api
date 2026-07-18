@@ -12,6 +12,8 @@ export const CPU_POOL_SIZE = 4;
 export type WorkerSet = {
   fetchWorker: Worker;
   cpuWorkers: Worker[];
+  // ask coordinator to drain, then kill. timeout falls back to terminate.
+  shutdown: (timeoutMs?: number) => Promise<void>;
   terminate: () => void;
 };
 
@@ -75,29 +77,68 @@ export async function createWebworker(
       ", cpuPorts=" + cpuPorts.length,
     ]);
 
+    let shutdownResolve: (() => void) | undefined;
+    let shuttingDown = false;
+
+    const hardTerminate = () => {
+      for (const p of cpuPorts) {
+        try {
+          p.close();
+        } catch {
+          // port may already be closed
+        }
+      }
+      coordinationWorker.onmessage = null;
+      coordinationWorker.onerror = null;
+      for (const w of cpuWorkers) {
+        w.onerror = null;
+        w.onmessage = null;
+        try {
+          w.terminate();
+        } catch {
+          // already dead
+        }
+      }
+      try {
+        coordinationWorker.terminate();
+      } catch {
+        // already dead
+      }
+    };
+
     coordinationWorker.onmessage = (event) => {
       if (event.data.type === "ERROR") {
         if (handle_error) handle_error(event.data.payload);
       } else if (event.data.type === "SCAN_RESULT") {
         if (handle_result) handle_result(event.data.payload);
+      } else if (event.data.type === "SHUTDOWN_DONE") {
+        log("createWebworker", ["SHUTDOWN_DONE received"]);
+        shutdownResolve?.();
+        shutdownResolve = undefined;
       }
     };
 
     return {
       fetchWorker: coordinationWorker,
       cpuWorkers,
+      // graceful only: abort fetch, cancel cpus, wait. does not terminate.
+      shutdown: async (timeoutMs = 5000) => {
+        if (shuttingDown) return;
+        shuttingDown = true;
+        log("createWebworker", ["shutdown start, timeoutMs=", timeoutMs]);
+        const done = new Promise<void>((resolve) => {
+          shutdownResolve = resolve;
+        });
+        try {
+          coordinationWorker.postMessage({ type: "shutdown" });
+        } catch (err) {
+          log("createWebworker", ["post shutdown failed", String(err)]);
+          return;
+        }
+        await Promise.race([done, sleep(timeoutMs)]);
+      },
       terminate: () => {
-        for (const p of cpuPorts) {
-          p.close();
-        }
-        coordinationWorker.onmessage = null;
-        coordinationWorker.onerror = null;
-        for (const w of cpuWorkers) {
-          w.onerror = null;
-          w.onmessage = null;
-          w.terminate();
-        }
-        coordinationWorker.terminate();
+        hardTerminate();
       },
     };
   } catch (error) {

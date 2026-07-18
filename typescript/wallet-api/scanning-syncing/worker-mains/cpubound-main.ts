@@ -18,8 +18,9 @@ export async function handleCpuboundScan(
     throw new Error("[cpubound] no content msg! ( ScanLoopInput = undefined )");
   }
   if (msg === "cancel") {
+    // idle cancel: nothing in flight, just ack
     log("handleCpuboundScan", "cancel msg! ( ScanLoopInput = cancel )");
-    throw new Error("[cpubound] no content msg! ( ScanLoopInput = undefined )");
+    return { type: "Canceled" };
   }
   log(
     "handleCpuboundScan",
@@ -109,7 +110,7 @@ export async function handleCpuboundScan(
     if (cpu_worker_status.cancel) {
       cpu_worker_status.cancel = false;
       log("handleCpuboundScan", ["cpu work canceled"]);
-      return { type: "Ready" };
+      return { type: "Canceled", work_uuid: item.work_uuid };
     }
     await sleep(10); // make sure the loop is not tight
   }

@@ -1,4 +1,7 @@
-import { coordinatorMainWorker } from "./coordinator-main";
+import {
+  coordinatorMainWorker,
+  requestCoordinatorShutdown,
+} from "./coordinator-main";
 import { handleCpuboundScanTry, sendFromCpuWorker } from "./cpubound-main";
 import { log, setupLoggingPath } from "../../io/logging";
 import { multisigMainWorkerCall } from "./multisig-main";
@@ -16,21 +19,32 @@ let SCAN_SETTINGS_PATH: string | undefined;
 let PATH_PREFIX: string | undefined;
 let cpuPort: MessagePort | undefined;
 const cpu_worker_status = { cancel: false };
+// true while a scan is running so idle cancel can ack immediately
+let cpu_work_in_flight = false;
 let multisig_dkg: DistributedKeyGenerator | undefined;
 export function CPU_PORT_HANDLER(pe: MessageEvent) {
   if (pe.data === "cancel") {
-    cpu_worker_status.cancel = true;
+    if (cpu_work_in_flight) {
+      cpu_worker_status.cancel = true;
+      return;
+    }
+    // idle cancel: ack right away so coordinator drain does not hang
+    if (cpuPort) {
+      sendFromCpuWorker(cpuPort, { type: "Canceled" });
+    }
     return;
   }
   if (!cpuPort)
     throw new Error("[cpubound] cpuPort is undefined in port.onmessage");
   log("CPU_PORT_HANDLER", "new workitem msg received");
+  cpu_work_in_flight = true;
   cpuPort.postMessage({
     type: "WORKSTART",
     work_uuid: pe.data.work_uuid,
   });
   handleCpuboundScanTry(pe.data, cpu_worker_status).then((result) => {
     log("CPU_PORT_HANDLER", "work finished, sending result");
+    cpu_work_in_flight = false;
     if (!cpuPort)
       throw new Error("[cpubound] cpuPort is undefined in port.onmessage");
     cpuPort.onmessage = CPU_PORT_HANDLER;
@@ -40,6 +54,12 @@ export function CPU_PORT_HANDLER(pe: MessageEvent) {
 const handleMessage = async (e: MessageEvent) => {
   const msg = e.data;
   log("handleMessage", ["msg received", msg]);
+
+  if (msg.type === "shutdown") {
+    // only coordinator listens for this; abort fetch + race loop
+    requestCoordinatorShutdown();
+    return;
+  }
 
   if (msg.type === "setup") {
     const settingsPath =
