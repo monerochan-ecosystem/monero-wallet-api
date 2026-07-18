@@ -15,7 +15,6 @@ import {
 } from "../../api";
 
 import {
-  markWorkItemAsDone,
   type ScanLoopInput,
   type ScanLoopYield,
 } from "./scanLoop";
