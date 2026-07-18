@@ -351,6 +351,9 @@ export async function processWorkItem(
   }
 
   await writeCacheToFile(cache, pathPrefix);
+  // raw cpu ScanResult is fully merged into cache now. drop it so workBuffer
+  // does not pin all_key_images / hash strings until left-edge free.
+  item.result = undefined;
   item.status = "process_result_done";
   log("processWorkItem", `process_result_done work_uuid=${item?.work_uuid}`);
   // remove from blocksbuffer if no more work items reference it
@@ -370,7 +373,6 @@ export type CoordinatorEvent =
   | {
       type: "scan_ready";
       address: string;
-      result: ScanLoopYield;
       newCache: ScanCache;
       changed_outputs: { output: any; change_reason: string }[];
     }
@@ -477,9 +479,8 @@ export type BlocksBufferRacer = {
   src: "blocks";
   value: BlocksBufferIteratorResult;
 };
-export type ShutdownRacer = { src: "shutdown" };
 export type ScanLoopRacer = ScanLoopYield;
-export type Racers = BlocksBufferRacer | ScanLoopRacer | ShutdownRacer;
+export type Racers = BlocksBufferRacer | ScanLoopRacer;
 
 // flip inflight work back to fresh so a restart can reschedule it
 export function resetInProgressWorkItems(workBuffer: WorkItem[]) {
@@ -501,7 +502,7 @@ export async function cancelBusyCpuPorts(
     try {
       sendToCpuWorker(ps.port, "cancel");
     } catch (err) {
-      log("cancelBusyCpuPorts", ["send cancel failed", String(err)]);
+       log("cancelBusyCpuPorts", ["send cancel failed", String(err)]);
     }
   }
   if (busy.length === 0) return;
@@ -554,18 +555,6 @@ export async function* coordinatorMainMultithreaded(
     freePorts.push(ps);
   }
 
-  // resolve when main thread asks us to shut down
-  const shutdownPromise = new Promise<ShutdownRacer>((resolve) => {
-    if (stopSync?.aborted) {
-      resolve({ src: "shutdown" });
-      return;
-    }
-    stopSync?.addEventListener(
-      "abort",
-      () => resolve({ src: "shutdown" }),
-      { once: true },
-    );
-  });
 
   let race_count = 0;
   while (true) {
@@ -589,19 +578,10 @@ export async function* coordinatorMainMultithreaded(
         src: "blocks" as const,
         value: v as BlocksBufferIteratorResult,
       })),
-      shutdownPromise,
     ];
     log("coordinatorMainMultithreaded", ["races", races]);
     const winner = await Promise.race(races);
     log("coordinatorMainMultithreaded", "cpu ports status");
-
-    if ("src" in winner && winner.src === "shutdown") {
-      log("coordinatorMainMultithreaded", ["shutdown won race, draining"]);
-      await cancelBusyCpuPorts(freePorts);
-      resetInProgressWorkItems(workBuffer);
-      yield { type: "shutdown_done" };
-      return;
-    }
 
     if ("src" in winner && winner.src === "blocks") {
       // fetch loop returned (done) on abort, treat as shutdown
@@ -680,11 +660,6 @@ export async function* coordinatorMainMultithreaded(
       yield {
         type: "scan_ready",
         address: wallet.primary_address,
-        result: {
-          type: "Ready",
-          work_uuid: to_be_processed.work_uuid,
-          result: to_be_processed.result,
-        },
         newCache: wallet.cache,
         changed_outputs: res.changed_outputs,
       };
@@ -720,7 +695,8 @@ export async function scheduleWorkOnCpuPorts(
           item.result = undefined;
         }
         port_status.promise = null;
-        resolve_port(msg as ScanLoopYield);
+        // thin resolve: dont put full msg/result on the port promise on cancel
+        resolve_port({ type: "Canceled", work_uuid: item.work_uuid });
         return;
       }
       if (msg.work_uuid !== item.work_uuid) {
@@ -740,10 +716,18 @@ export async function scheduleWorkOnCpuPorts(
         log("scheduleWorkOnCpuPorts", "wrong status in msg");
         throw new Error("[scheduleWorkOnCpuPorts] wrong status in msg");
       }
+      // fat ScanResult lives only on the work item until process clears it
       item.result = msg.result;
       item.status = "scanwork_done";
+      // cpu already has its own buffer copy; process only needs meta.
+      // drop work-item bytes now; blocksBuffer still owns the batch until left-edge free.
+      item.batch = {
+        ...item.batch,
+        data: new Uint8Array(0),
+      };
       port_status.promise = null;
-      resolve_port(msg);
+      // thin resolve: race/await must not retain all_key_images via promise value
+      resolve_port({ type: msg.type, work_uuid: msg.work_uuid });
     };
     port_status.port.onmessage = onmessage;
     item.status = "scanwork_in_progress";
