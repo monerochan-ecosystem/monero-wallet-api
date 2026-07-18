@@ -45,7 +45,7 @@ export class ConnectionStatusOpened {
   }
 
   get daemonHeight(): number | undefined {
-    return this._cached?.last_packet?.daemon_height;
+    return this._cached?.sync?.daemon_height;
   }
 
   private async _poll() {
