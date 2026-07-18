@@ -936,9 +936,15 @@ export class ManyScanCachesOpened {
     if (this.wallets.length === 0) return null;
     return this.wallets[0]?.start_height;
   }
+  // overall scan tip = lagging non-halted wallet (this.wallets is already non-halted)
   get current_height(): number | null {
-    if (this.wallets.length === 0) return null;
-    return this.wallets[0]?.current_height;
+    let min: number | null = null;
+    for (const w of this.wallets) {
+      const h = w.current_height;
+      if (h == null) continue;
+      if (min == null || h < min) min = h;
+    }
+    return min;
   }
   get node_url(): string {
     if (this.wallets.length === 0) return "";
