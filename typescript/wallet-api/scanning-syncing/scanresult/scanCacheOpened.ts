@@ -756,6 +756,12 @@ export class ScanCacheOpened {
     await this.stopWorker();
     return await this._scanSettings.haltWallet(this.view_pair.primary_address);
   }
+  // debug: dump coordinator + cpu worker heaps while they are live
+  // in browser: use inspector directly, this is only useful for bun
+  public async dumpWorkerHeaps(dir?: string) {
+    if (!this.worker?.dumpHeaps) return [];
+    return await this.worker.dumpHeaps(dir);
+  }
   public async stopWorker() {
     if (this.worker) {
       const worker = this.worker;
@@ -970,6 +976,13 @@ export class ManyScanCachesOpened {
     if (this.wallets.length === 0) return;
     const masterWallet = this.wallets[0];
     return await masterWallet.stopWorker();
+  }
+
+  // debug: dump live coordinator + cpu worker heaps via master wallet workers
+ // in browser: use inspector directly, this is only useful for bun
+  public async dumpWorkerHeaps(dir?: string) {
+    if (this.wallets.length === 0) return [];
+    return await this.wallets[0].dumpWorkerHeaps(dir);
   }
 
   public async changeNodeUrl(node_url: string) {

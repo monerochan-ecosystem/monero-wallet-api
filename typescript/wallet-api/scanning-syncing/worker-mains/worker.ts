@@ -61,6 +61,33 @@ const handleMessage = async (e: MessageEvent) => {
     return;
   }
 
+  if (msg.type === "heap_snapshot") {
+    try {
+      const path =
+        typeof msg.path === "string" && msg.path.length > 0
+          ? msg.path
+          : `worker-heap-${Date.now()}.heapsnapshot`;
+      // @ts-ignore bun has generateHeapSnapshot; node has v8.writeHeapSnapshot
+      let out: string | undefined;
+      if (typeof Bun !== "undefined" && typeof (Bun as any).generateHeapSnapshot === "function") {
+        const snap = (Bun as any).generateHeapSnapshot("v8");
+        await Bun.write(path, typeof snap === "string" ? snap : JSON.stringify(snap));
+        out = path;
+      } else {
+        throw Error("in the browser use the inspector directly to observe worker memory growth")
+        // const v8 = await import("node:v8");
+        // out = v8.writeHeapSnapshot(path);
+      }
+      self.postMessage({ type: "HEAP_SNAPSHOT_DONE", path: out ?? path });
+    } catch (err) {
+      self.postMessage({
+        type: "HEAP_SNAPSHOT_ERROR",
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return;
+  }
+
   if (msg.type === "setup") {
     const settingsPath =
       msg.scan_settings_path || SCAN_SETTINGS_STORE_NAME_DEFAULT;
