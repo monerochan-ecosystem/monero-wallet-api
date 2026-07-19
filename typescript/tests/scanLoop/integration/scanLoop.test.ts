@@ -216,12 +216,12 @@ test("a: basic scan through coordinator", async () => {
 
   const gen = coordinatorMain(ctx.scanSettingsPath, `${dir}/`);
   for await (const event of gen) {
-    if (
-      event.type === "scan_ready" &&
-      event.result.result?.new_height === 210
-    ) {
-      console.log("[test a] scan ready", event.result.result?.new_height);
-      break;
+    if (event.type === "scan_ready") {
+      const end = event.newCache.scanned_ranges?.at(-1)?.end;
+      if (end !== undefined && end >= 210) {
+        console.log("[test a] scan ready", end);
+        break;
+      }
     }
   }
 
