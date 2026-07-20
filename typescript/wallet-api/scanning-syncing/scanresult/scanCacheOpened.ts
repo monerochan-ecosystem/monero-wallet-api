@@ -90,9 +90,14 @@ export class ScanCacheOpened {
   public readonly decoyRetrySizes: number[] = [20, 50, 100, 200, 500];
 
   public static async create(params: ScanCacheOpenedCreateParams) {
+    // same dir as workers / connection status: next to ScanSettings.json
+    const pathPrefix = getPathPrefix(
+      params.scan_settings_path,
+      params.pathPrefix,
+    );
     const theCatchToBeOpened = await readCacheFileDefaultLocation(
       params.primary_address,
-      params.pathPrefix,
+      pathPrefix,
     );
 
     if (!params.primary_address)
@@ -105,7 +110,7 @@ export class ScanCacheOpened {
     // use ScanSettingsOpened instead of direct scanSettings calls
     const scanSettings = await ScanSettingsOpened.create(
       params.scan_settings_path,
-      params.pathPrefix,
+      pathPrefix,
     );
     const walletSettings = scanSettings.getWallet(params.primary_address);
     if (!walletSettings)
@@ -140,7 +145,7 @@ export class ScanCacheOpened {
       params.masterCacheChanged || null,
       scanSettings.start_height,
       params.scan_settings_path,
-      params.pathPrefix,
+      pathPrefix,
       params.workerError,
     );
     if (theCatchToBeOpened) scanCacheOpen._cache = theCatchToBeOpened;
@@ -157,7 +162,7 @@ export class ScanCacheOpened {
         scanCacheOpen._cache,
         scanCacheOpen.view_pair,
         params.primary_address,
-        getPathPrefix(params.scan_settings_path, params.pathPrefix),
+        pathPrefix,
         walletSettings.subaddress_index,
         lastRange(scanCacheOpen._cache.scanned_ranges)?.end,
       );
@@ -179,12 +184,13 @@ export class ScanCacheOpened {
     return this._highest_subaddress_index;
   }
   get current_height(): number | null {
-    let current_range = findRange(
+    // progress on the range that covers start_height (start can jump;
+    // lastRange would pick a different segment and be wrong)
+    const current_range = findRange(
       this._cache.scanned_ranges,
       this._start_height || 0,
     );
-
-    return current_range?.end || null;
+    return current_range == null ? null : current_range.end;
   }
   get current_top_range_height(): number | null {
     if (typeof this._stats === "undefined" || this._stats === null)
