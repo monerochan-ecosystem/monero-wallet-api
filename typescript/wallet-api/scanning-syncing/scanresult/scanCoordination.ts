@@ -12,6 +12,7 @@ import {
   type BlockInfo,
   findTipIndex,
   readWriteConnectionStatusFile,
+  applyWalletScanProgress,
 } from "../../api";
 
 import {
@@ -632,21 +633,6 @@ export async function* coordinatorMainMultithreaded(
 
       const blockCount = to_be_processed.to - to_be_processed.from + 1;
       totalBlocksScanned += blockCount;
-      const eta = computeETA(wallet.cache, totalBlocksScanned, scanStartTime);
-      // write connection status sync (includes eta)
-      if (eta) {
-        await readWriteConnectionStatusFile((cs) => {
-          cs.sync = {
-            ...cs.sync,
-            scanned_ranges: wallet.cache.scanned_ranges,
-            daemon_height: wallet.cache.daemon_height,
-            current_scan_height:
-              lastRange(wallet.cache.scanned_ranges)?.end || 0,
-            eta,
-            timestamp: new Date().toISOString(),
-          };
-        }, scanSettingsPath);
-      }
 
       const res = await processWorkItem(
         to_be_processed,
@@ -655,6 +641,20 @@ export async function* coordinatorMainMultithreaded(
         getPathPrefix(scanSettingsPath, pathPrefix),
         wallet.secret_spend_key,
       );
+
+      // always persist wallet progress after process; eta only if we have a new one
+      // so missing eta does not wipe the previous value (no flicker)
+      const eta = computeETA(wallet.cache, totalBlocksScanned, scanStartTime);
+      await readWriteConnectionStatusFile((cs) => {
+        applyWalletScanProgress(cs, {
+          current_scan_height:
+            lastRange(wallet.cache.scanned_ranges)?.end || 0,
+          scanned_ranges: wallet.cache.scanned_ranges,
+          daemon_height: wallet.cache.daemon_height,
+          eta,
+        });
+      }, scanSettingsPath);
+
       //  log("coordinatorMainMultithreaded", "processWorkItem result");
       yield {
         type: "scan_ready",

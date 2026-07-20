@@ -8,6 +8,8 @@ export class ConnectionStatusOpened {
   private _timer: ReturnType<typeof setInterval> | undefined;
   private _cached: ConnectionStatus | null = null;
   private _prevConnected = false;
+  // notify when sync progress fields change, not only connect flip
+  private _prevSyncKey = "";
   private _path: string;
 
   constructor(
@@ -48,13 +50,28 @@ export class ConnectionStatusOpened {
     return this._cached?.sync?.daemon_height;
   }
 
+  private _syncKey(cs: ConnectionStatus | null): string {
+    const s = cs?.sync;
+    if (!s) return "";
+    return [
+      s.daemon_height ?? "",
+      s.current_scan_height ?? "",
+      s.eta ?? "",
+      s.timestamp ?? "",
+    ].join("|");
+  }
+
   private async _poll() {
     this._cached =
       (await readConnectionStatusFile(this._path).catch(() => null)) || null;
 
     const now = this.isConnected;
-    if (now !== this._prevConnected) {
-      this._prevConnected = now;
+    const syncKey = this._syncKey(this._cached);
+    const connectedChanged = now !== this._prevConnected;
+    const syncChanged = syncKey !== this._prevSyncKey;
+    this._prevConnected = now;
+    this._prevSyncKey = syncKey;
+    if (connectedChanged || syncChanged) {
       this._onChange?.(this._cached);
     }
   }

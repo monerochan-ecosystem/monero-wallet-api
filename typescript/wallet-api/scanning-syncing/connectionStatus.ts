@@ -32,6 +32,30 @@ export type ConnectionStatus = {
   sync: ConnectionStatusSync;
 };
 
+// wallet progress write: always set scan fields; only replace eta when a new one is provided
+// so a missing eta does not wipe / flicker the previous value.
+export function applyWalletScanProgress(
+  cs: ConnectionStatus,
+  progress: {
+    current_scan_height: number;
+    scanned_ranges?: CacheRange[];
+    daemon_height?: number;
+    eta?: string;
+  },
+) {
+  cs.sync.current_scan_height = progress.current_scan_height;
+  if (progress.scanned_ranges) {
+    cs.sync.scanned_ranges = progress.scanned_ranges;
+  }
+  if (typeof progress.daemon_height === "number") {
+    cs.sync.daemon_height = progress.daemon_height;
+  }
+  if (progress.eta !== undefined) {
+    cs.sync.eta = progress.eta;
+  }
+  cs.sync.timestamp = new Date().toISOString();
+}
+
 export const DEFAULT_CONNECTION_STATUS_PREFIX = "ConnectionStatus-";
 
 export function msToHHMM(ms: number): string {
