@@ -81,6 +81,9 @@ export async function* blocksBufferFetchLoop(
         bytes_read: 0,
         node_url: node_url,
         timestamp: new Date().toISOString(),
+        daemon_height:
+          connection_status.sync.daemon_height ||
+          connection_status.last_packet.daemon_height,
       };
       yield connection_status.last_packet;
       try {
@@ -112,6 +115,9 @@ export async function* blocksBufferFetchLoop(
         bytes_read: 0,
         node_url,
         timestamp: new Date().toISOString(),
+        daemon_height:
+          connection_status.sync.daemon_height ||
+          connection_status.last_packet.daemon_height,
       };
       yield connection_status.last_packet;
       throw error;
