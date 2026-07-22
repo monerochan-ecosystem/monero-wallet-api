@@ -87,7 +87,7 @@ export async function* blocksBufferFetchLoop(
       };
       yield connection_status.last_packet;
       try {
-        await sleep(5000, stopSync);
+        await sleep(1000, stopSync);
       } catch {
         log("blocksBufferFetchLoop", ["aborted during buffer-full sleep"]);
         return;
