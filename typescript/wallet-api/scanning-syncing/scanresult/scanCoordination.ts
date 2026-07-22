@@ -12,10 +12,10 @@ import {
   type BlockInfo,
   findTipIndex,
   readWriteConnectionStatusFile,
+  applyWalletScanProgress,
 } from "../../api";
 
 import {
-  markWorkItemAsDone,
   type ScanLoopInput,
   type ScanLoopYield,
 } from "./scanLoop";
@@ -351,6 +351,9 @@ export async function processWorkItem(
   }
 
   await writeCacheToFile(cache, pathPrefix);
+  // raw cpu ScanResult is fully merged into cache now. drop it so workBuffer
+  // does not pin all_key_images / hash strings until left-edge free.
+  item.result = undefined;
   item.status = "process_result_done";
   log("processWorkItem", `process_result_done work_uuid=${item?.work_uuid}`);
   // remove from blocksbuffer if no more work items reference it
@@ -370,11 +373,11 @@ export type CoordinatorEvent =
   | {
       type: "scan_ready";
       address: string;
-      result: ScanLoopYield;
       newCache: ScanCache;
       changed_outputs: { output: any; change_reason: string }[];
     }
   | { type: "all_idle" }
+  | { type: "shutdown_done" }
   | { type: "error"; error: Error };
 
 function logBufStatus(
@@ -433,6 +436,7 @@ function computeETA(
 export async function setupCoordinator(
   scanSettingsPath?: string,
   pathPrefix?: string,
+  stopSync?: AbortSignal,
 ) {
   const work_to_be_done = await findWorkToBeDone(scanSettingsPath, pathPrefix);
   if (!work_to_be_done) return false;
@@ -442,6 +446,7 @@ export async function setupCoordinator(
       startHeight: work_to_be_done.start_height,
       anchor_range: work_to_be_done.anchor_range,
       scanSettingsPath,
+      stopSync,
     });
 
   const workBuffer: WorkItem[] = [];
@@ -476,6 +481,40 @@ export type BlocksBufferRacer = {
 };
 export type ScanLoopRacer = ScanLoopYield;
 export type Racers = BlocksBufferRacer | ScanLoopRacer;
+
+// flip inflight work back to fresh so a restart can reschedule it
+export function resetInProgressWorkItems(workBuffer: WorkItem[]) {
+  for (const item of workBuffer) {
+    if (item.status === "scanwork_in_progress") {
+      item.status = "fresh";
+      item.result = undefined;
+    }
+  }
+}
+
+// tell busy cpu ports to cancel and wait for their promises (with timeout)
+export async function cancelBusyCpuPorts(
+  ports: PortStatus[],
+  timeoutMs = 3000,
+) {
+  const busy = ports.filter((ps) => ps.promise);
+  for (const ps of busy) {
+    try {
+      sendToCpuWorker(ps.port, "cancel");
+    } catch (err) {
+       log("cancelBusyCpuPorts", ["send cancel failed", String(err)]);
+    }
+  }
+  if (busy.length === 0) return;
+  await Promise.race([
+    Promise.allSettled(busy.map((ps) => ps.promise!)),
+    sleep(timeoutMs),
+  ]);
+  for (const ps of ports) {
+    ps.promise = null;
+  }
+}
+
 /**
  * coordinator main (multithreaded): dispatches scan work to CPU workers
  * via MessagePorts, processes results in order per wallet.
@@ -485,13 +524,14 @@ export async function* coordinatorMainMultithreaded(
   scanSettingsPath?: string,
   pathPrefix?: string,
   cpuPorts?: MessagePort[],
+  stopSync?: AbortSignal,
 ): AsyncGenerator<CoordinatorEvent> {
   if (!cpuPorts || cpuPorts.length === 0) {
     throw new Error(
       "[coordinatorMain Multithreaded] cpuPorts empty, there must be at least cpu worker",
     );
   }
-  const ctx = await setupCoordinator(scanSettingsPath, pathPrefix);
+  const ctx = await setupCoordinator(scanSettingsPath, pathPrefix, stopSync);
   if (!ctx)
     throw new Error(
       "[coordinatorMain Multithreaded] findWorkToBeDone returned false",
@@ -514,8 +554,17 @@ export async function* coordinatorMainMultithreaded(
 
     freePorts.push(ps);
   }
+
+
   let race_count = 0;
   while (true) {
+    if (stopSync?.aborted) {
+      log("coordinatorMainMultithreaded", ["shutdown signal, draining"]);
+      await cancelBusyCpuPorts(freePorts);
+      resetInProgressWorkItems(workBuffer);
+      yield { type: "shutdown_done" };
+      return;
+    }
     race_count++;
     log("coordinatorMainMultithreaded", ["race_count", race_count]);
     await scheduleWorkOnCpuPorts(freePorts, workBuffer);
@@ -533,7 +582,18 @@ export async function* coordinatorMainMultithreaded(
     log("coordinatorMainMultithreaded", ["races", races]);
     const winner = await Promise.race(races);
     log("coordinatorMainMultithreaded", "cpu ports status");
+
     if ("src" in winner && winner.src === "blocks") {
+      // fetch loop returned (done) on abort, treat as shutdown
+      if (winner.value.done) {
+        log("coordinatorMainMultithreaded", [
+          "blocks generator done, draining",
+        ]);
+        await cancelBusyCpuPorts(freePorts);
+        resetInProgressWorkItems(workBuffer);
+        yield { type: "shutdown_done" };
+        return;
+      }
       const result = winner.value.value;
       const { isBlocksBufferChanged } = await handleBlocksYield(
         result,
@@ -573,21 +633,6 @@ export async function* coordinatorMainMultithreaded(
 
       const blockCount = to_be_processed.to - to_be_processed.from + 1;
       totalBlocksScanned += blockCount;
-      const eta = computeETA(wallet.cache, totalBlocksScanned, scanStartTime);
-      // write connection status sync (includes eta)
-      if (eta) {
-        await readWriteConnectionStatusFile((cs) => {
-          cs.sync = {
-            ...cs.sync,
-            scanned_ranges: wallet.cache.scanned_ranges,
-            daemon_height: wallet.cache.daemon_height,
-            current_scan_height:
-              lastRange(wallet.cache.scanned_ranges)?.end || 0,
-            eta,
-            timestamp: new Date().toISOString(),
-          };
-        }, scanSettingsPath);
-      }
 
       const res = await processWorkItem(
         to_be_processed,
@@ -596,15 +641,24 @@ export async function* coordinatorMainMultithreaded(
         getPathPrefix(scanSettingsPath, pathPrefix),
         wallet.secret_spend_key,
       );
+
+      // always persist wallet progress after process; eta only if we have a new one
+      // so missing eta does not wipe the previous value (no flicker)
+      const eta = computeETA(wallet.cache, totalBlocksScanned, scanStartTime);
+      await readWriteConnectionStatusFile((cs) => {
+        applyWalletScanProgress(cs, {
+          current_scan_height:
+            lastRange(wallet.cache.scanned_ranges)?.end || 0,
+          scanned_ranges: wallet.cache.scanned_ranges,
+          daemon_height: wallet.cache.daemon_height,
+          eta,
+        });
+      }, scanSettingsPath);
+
       //  log("coordinatorMainMultithreaded", "processWorkItem result");
       yield {
         type: "scan_ready",
         address: wallet.primary_address,
-        result: {
-          type: "Ready",
-          work_uuid: to_be_processed.work_uuid,
-          result: to_be_processed.result,
-        },
         newCache: wallet.cache,
         changed_outputs: res.changed_outputs,
       };
@@ -633,6 +687,17 @@ export async function scheduleWorkOnCpuPorts(
         | { type: "WORKSTART"; work_uuid: string };
       // handle the result here:
       log("scheduleWorkOnCpuPorts", ["onmessage result", msg]);
+      // cancel ack may omit work_uuid when idle, but inflight cancel carries it
+      if (msg.type === "Canceled") {
+        if (item.status === "scanwork_in_progress") {
+          item.status = "fresh";
+          item.result = undefined;
+        }
+        port_status.promise = null;
+        // thin resolve: dont put full msg/result on the port promise on cancel
+        resolve_port({ type: "Canceled", work_uuid: item.work_uuid });
+        return;
+      }
       if (msg.work_uuid !== item.work_uuid) {
         log("scheduleWorkOnCpuPorts", [
           "wrong work_uuid in msg msg.work_uuid=",
@@ -650,10 +715,18 @@ export async function scheduleWorkOnCpuPorts(
         log("scheduleWorkOnCpuPorts", "wrong status in msg");
         throw new Error("[scheduleWorkOnCpuPorts] wrong status in msg");
       }
+      // fat ScanResult lives only on the work item until process clears it
       item.result = msg.result;
       item.status = "scanwork_done";
+      // cpu already has its own buffer copy; process only needs meta.
+      // drop work-item bytes now; blocksBuffer still owns the batch until left-edge free.
+      item.batch = {
+        ...item.batch,
+        data: new Uint8Array(0),
+      };
       port_status.promise = null;
-      resolve_port(msg);
+      // thin resolve: race/await must not retain all_key_images via promise value
+      resolve_port({ type: msg.type, work_uuid: msg.work_uuid });
     };
     port_status.port.onmessage = onmessage;
     item.status = "scanwork_in_progress";

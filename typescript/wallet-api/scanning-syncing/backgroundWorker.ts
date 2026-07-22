@@ -12,7 +12,12 @@ export const CPU_POOL_SIZE = 4;
 export type WorkerSet = {
   fetchWorker: Worker;
   cpuWorkers: Worker[];
+  // ask coordinator to drain, then kill. timeout falls back to terminate.
+  shutdown: (timeoutMs?: number) => Promise<void>;
   terminate: () => void;
+  // debug: ask coordinator + each cpu worker to write a heap snapshot
+  // in browser: use inspector directly, this is only useful for bun
+  dumpHeaps: (dir?: string) => Promise<string[]>;
 };
 
 export async function createWebworker(
@@ -75,29 +80,107 @@ export async function createWebworker(
       ", cpuPorts=" + cpuPorts.length,
     ]);
 
+    let shutdownResolve: (() => void) | undefined;
+    let shuttingDown = false;
+
+    const hardTerminate = () => {
+      for (const p of cpuPorts) {
+        try {
+          p.close();
+        } catch {
+          // port may already be closed
+        }
+      }
+      coordinationWorker.onmessage = null;
+      coordinationWorker.onerror = null;
+      for (const w of cpuWorkers) {
+        w.onerror = null;
+        w.onmessage = null;
+        try {
+          w.terminate();
+        } catch {
+          // already dead
+        }
+      }
+      try {
+        coordinationWorker.terminate();
+      } catch {
+        // already dead
+      }
+    };
+
     coordinationWorker.onmessage = (event) => {
       if (event.data.type === "ERROR") {
         if (handle_error) handle_error(event.data.payload);
       } else if (event.data.type === "SCAN_RESULT") {
         if (handle_result) handle_result(event.data.payload);
+      } else if (event.data.type === "SHUTDOWN_DONE") {
+        log("createWebworker", ["SHUTDOWN_DONE received"]);
+        shutdownResolve?.();
+        shutdownResolve = undefined;
       }
     };
+
+    // wait for one HEAP_SNAPSHOT_DONE / ERROR from a worker
+    const waitHeap = (w: Worker, path: string, timeoutMs = 15000) =>
+      new Promise<string>((resolve, reject) => {
+        const t = setTimeout(() => {
+          w.removeEventListener("message", onMsg);
+          reject(new Error("heap snapshot timeout: " + path));
+        }, timeoutMs);
+        const onMsg = (event: MessageEvent) => {
+          if (event.data?.type === "HEAP_SNAPSHOT_DONE") {
+            clearTimeout(t);
+            w.removeEventListener("message", onMsg);
+            resolve(event.data.path || path);
+          } else if (event.data?.type === "HEAP_SNAPSHOT_ERROR") {
+            clearTimeout(t);
+            w.removeEventListener("message", onMsg);
+            reject(new Error(String(event.data.error || "heap snapshot failed")));
+          }
+        };
+        w.addEventListener("message", onMsg);
+        try {
+          w.postMessage({ type: "heap_snapshot", path });
+        } catch (err) {
+          clearTimeout(t);
+          w.removeEventListener("message", onMsg);
+          reject(err);
+        }
+      });
 
     return {
       fetchWorker: coordinationWorker,
       cpuWorkers,
+      // graceful only: abort fetch, cancel cpus, wait. does not terminate.
+      shutdown: async (timeoutMs = 5000) => {
+        if (shuttingDown) return;
+        shuttingDown = true;
+        log("createWebworker", ["shutdown start, timeoutMs=", timeoutMs]);
+        const done = new Promise<void>((resolve) => {
+          shutdownResolve = resolve;
+        });
+        try {
+          coordinationWorker.postMessage({ type: "shutdown" });
+        } catch (err) {
+          log("createWebworker", ["post shutdown failed", String(err)]);
+          return;
+        }
+        await Promise.race([done, sleep(timeoutMs)]);
+      },
       terminate: () => {
-        for (const p of cpuPorts) {
-          p.close();
+        hardTerminate();
+      },
+      dumpHeaps: async (dir = ".") => {
+        const stamp = Date.now();
+        const paths: string[] = [];
+        const coordPath = `${dir}/coordinator-${stamp}.heapsnapshot`;
+        paths.push(await waitHeap(coordinationWorker, coordPath));
+        for (let i = 0; i < cpuWorkers.length; i++) {
+          const p = `${dir}/cpubound-${i}-${stamp}.heapsnapshot`;
+          paths.push(await waitHeap(cpuWorkers[i], p));
         }
-        coordinationWorker.onmessage = null;
-        coordinationWorker.onerror = null;
-        for (const w of cpuWorkers) {
-          w.onerror = null;
-          w.onmessage = null;
-          w.terminate();
-        }
-        coordinationWorker.terminate();
+        return paths;
       },
     };
   } catch (error) {

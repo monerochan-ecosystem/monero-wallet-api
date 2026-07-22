@@ -53,7 +53,7 @@ export function makeWorkItem(
 export type ScanLoopIteratorResult = IteratorYieldResult<ScanLoopYield>;
 export type ScanLoopInput = WorkItem | "cancel" | undefined;
 export type ScanLoopYield = {
-  type: "Ready" | "InProgress";
+  type: "Ready" | "InProgress" | "Canceled";
   work_uuid?: string;
   result?: ScanResult;
 };
@@ -144,24 +144,5 @@ export async function* scanLoop(
     // TODO: move scanCache forward with scanResult
     // this can not be done here, has to be done by the consumer of the generator
     // will be done by processScanResult in the consumer
-  }
-}
-
-//theoretically markWorkItemAsDone could be done in the generator as WorkItem is passed in by reference
-// but: eventually this has to be done accross CPU worker boundaries
-// so we act on the yielded scan result
-export async function markWorkItemAsDone(
-  loop_event: ScanLoopYield,
-  work_buffer: WorkItem[],
-): Promise<WorkItem | undefined> {
-  if (loop_event.type === "Ready" && loop_event.work_uuid) {
-    const work_item = work_buffer.find(
-      (w) => w.work_uuid === loop_event.work_uuid,
-    );
-    if (work_item) {
-      work_item.result = loop_event.result;
-      work_item.status = "scanwork_done";
-      return work_item;
-    }
   }
 }
