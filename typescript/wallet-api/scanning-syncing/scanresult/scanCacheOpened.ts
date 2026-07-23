@@ -1175,7 +1175,7 @@ export class ManyScanCachesOpened {
 
       const getinfo_result = await get_info(node_url)
         .then((r) => {
-          r?.status === "OK";
+          return r?.status === "OK";
         })
         .catch(() => false);
       if (getinfo_result) await instance?.retry();
