@@ -362,10 +362,15 @@ export function isConnectionError(error: unknown) {
     error &&
     typeof error === "object" &&
     (("code" in error && error.code === "ConnectionRefused") ||
-      ("errno" in error && error.errno === 0))
+      ("errno" in error && error.errno === 0) ||
+      ("message" in error &&
+        typeof error.message === "string" &&
+        (error.message.includes("Failed to fetch") ||
+          error.message.includes("ERR_INTERNET_DISCONNECTED") ||
+          error.message.includes("NetworkError"))))
   ) {
     return true;
   } else {
-    false;
+    return false;
   }
 }

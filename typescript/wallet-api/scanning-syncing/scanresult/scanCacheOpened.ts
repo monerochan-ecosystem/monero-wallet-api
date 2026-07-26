@@ -1156,31 +1156,31 @@ export class ManyScanCachesOpened {
     // wrap workerError with auto-retry
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
     let instance: ManyScanCachesOpened | null = null;
-    const retryFn = async () => {
-      // no wallets means idle, do not rebuild or restart workers
-      if (!instance || instance.wallets.length === 0) {
-        clearTimeout(retryTimer);
-        retryTimer = undefined;
-        return;
-      }
-      await instance.buildWallets();
-      // still empty after rebuild, stay idle
-      if (instance.wallets.length === 0) {
-        clearTimeout(retryTimer);
-        retryTimer = undefined;
-        return;
-      }
-      const node_url = instance.node_url;
-      if (!node_url) throw new Error("No nodeurl set, can't retry connection");
-
-      const getinfo_result = await get_info(node_url)
-        .then((r) => {
-          return r?.status === "OK";
-        })
-        .catch(() => false);
-      if (getinfo_result) await instance?.retry();
+    const clearRetryTimer = () => {
       clearTimeout(retryTimer);
       retryTimer = undefined;
+    };
+    const retryFn = async () => {
+      clearRetryTimer();
+      // no wallets means idle, do not rebuild or restart workers
+      if (!instance || instance.wallets.length === 0) return;
+
+      const node_url = instance.node_url;
+      if (!node_url) return;
+
+      // probe first; only restart workers when node is reachable
+      const getinfo_result = await get_info(node_url)
+        .then((r) => r?.status === "OK")
+        .catch(() => false);
+      if (!getinfo_result) {
+        // still down: try again later without buildWallets thrash
+        if (!retryTimer && instance.wallets.length > 0) {
+          retryTimer = setTimeout(retryFn, retryDelayMs ?? 5000);
+        }
+        return;
+      }
+
+      await instance.buildWallets();
     };
     const newOptions = { ...options };
     let connectionFailedShown = false;
@@ -1193,7 +1193,7 @@ export class ManyScanCachesOpened {
           csOpened.connectionStatus?.last_packet?.status ===
           "catastrophic_reorg"
         ) {
-          clearTimeout(retryTimer);
+          clearRetryTimer();
           instance?.stopWorker();
           throw new Error("catastrophic reorg, aborting ...");
         }
