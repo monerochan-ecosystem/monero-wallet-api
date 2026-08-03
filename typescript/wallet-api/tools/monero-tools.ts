@@ -82,12 +82,17 @@ export type SendTransactionTool = {
 export type SendTransactionToolPayload = {
   address: string;
   amount: string;
+  // when true, wallet skips counterparty validity GET and stays unverified
+  no_check: boolean;
 };
 export function parseSendTransactionToolArgs(
   args: string[],
 ): SendTransactionTool | null {
   const amount = args[1];
   const address = args[3];
+  // trailing _no_check splits into ["no", "check"] after underscore split
+  const no_check =
+    args.length >= 6 && args[args.length - 2] === "no" && args[args.length - 1] === "check";
   try {
     convertAmountBigIntThrows(amount);
   } catch (e) {
@@ -99,6 +104,7 @@ export function parseSendTransactionToolArgs(
       payload: {
         address,
         amount,
+        no_check,
       },
     };
   }
@@ -107,12 +113,18 @@ export function parseSendTransactionToolArgs(
 export function createSendTransactionToolLink(
   address: string,
   amount: string,
+  no_check: boolean = false,
 ): string {
   convertAmountBigIntThrows(amount);
-  return `${TOOL_MAGIC_STRING}001_amount_${amount}_address_${address}`;
+  const base = `${TOOL_MAGIC_STRING}001_amount_${amount}_address_${address}`;
+  return no_check ? `${base}_no_check` : base;
 }
-export function make001ToolLink(address: string, amount: string): string {
-  return createSendTransactionToolLink(address, amount);
+export function make001ToolLink(
+  address: string,
+  amount: string,
+  no_check: boolean = false,
+): string {
+  return createSendTransactionToolLink(address, amount, no_check);
 }
 
 export type CreateAndShareViewOnlyWalletTool = {
@@ -152,6 +164,7 @@ export function createToolLink(tool: MoneroTool): string {
     return createSendTransactionToolLink(
       tool.payload.address,
       tool.payload.amount,
+      tool.payload.no_check,
     );
   }
   if (tool.tool_id === "002") {
@@ -172,7 +185,6 @@ export function parseDestination(destination: string): string {
   const url = new URL(destination);
   return getDomainWithTLD(url.hostname);
 }
-export const OPEN_DOMAINS = ["monerochan.cash"];
 // this validity check should happen in the contentscript when the link is clicked,
 // not in the background script
 // -> tor circuit is separated & compartmentalized
@@ -180,16 +192,17 @@ export async function checkToolInvocationValidity(
   invo: ParsedMoneroToolInvocation,
 ): Promise<ToolInvocationValidity> {
   // send 001 fetch from destination domain to check if the address is valid
+  // _no_check on the wire skips the GET and leaves validity unverified
   if (invo.tool.tool_id == "001") {
+    if (invo.tool.payload.no_check) {
+      return "unverified";
+    }
     const link = invo[invo.found_in];
     const invo_link = new URL(link);
     const checkUrl = `${invo_link.origin}/monerochan001/${
       invo.tool.payload.address
     }`;
     try {
-      if (invo.destination_domain === OPEN_DOMAINS[0]) {
-        return "unverified";
-      }
       const result = (await (await fetch(checkUrl)).json()) as unknown;
       if (
         result &&
