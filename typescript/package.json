@@ -17,6 +17,22 @@
     "./tools": {
       "types": "./dist/tools/monero-tools.d.ts",
       "import": "./dist/tools/monero-tools.js"
+    },
+    "./tools/content": {
+      "types": "./dist/tools/content.d.ts",
+      "import": "./dist/tools/content.js"
+    },
+    "./tools/worker": {
+      "types": "./dist/tools/worker.d.ts",
+      "import": "./dist/tools/worker.js"
+    },
+    "./tools/ui": {
+      "types": "./dist/tools/ui.d.ts",
+      "import": "./dist/tools/ui.js"
+    },
+    "./tools/counterparty": {
+      "types": "./dist/tools/counterparty.d.ts",
+      "import": "./dist/tools/counterparty.js"
     }
   },
   "files": ["dist"],
