@@ -2,18 +2,25 @@ import {
   TOOL_MAGIC_STRING,
   type ToolInvocationValidity,
 } from "./globals";
-import {
+import tool001, {
   parseSendTransactionToolArgs,
   createSendTransactionToolLink,
   type SendTransactionTool,
 } from "./calls/001";
-import {
+import tool002, {
   parseCreateAndShareViewOnlyWalletToolArgs,
   createCreateAndShareViewOnlyWalletToolLink,
   type CreateAndShareViewOnlyWalletTool,
 } from "./calls/002";
 
 export { TOOL_MAGIC_STRING, type ToolInvocationValidity };
+
+export const tools = {
+  "001": tool001,
+  "002": tool002,
+};
+export type ToolId = keyof typeof tools;
+export const TOOL_IDS = Object.keys(tools) as ToolId[];
 export function parseToolLink(link: string): MoneroTool | null {
   const magic_str_index = link.lastIndexOf(TOOL_MAGIC_STRING);
   if (magic_str_index !== -1) {

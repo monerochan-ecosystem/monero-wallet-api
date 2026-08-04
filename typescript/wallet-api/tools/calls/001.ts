@@ -60,3 +60,9 @@ export const ADDRESS_VALID_RESPONSE = {
 export const ADDRESS_INVALID_RESPONSE = {
   valid_address: false,
 } as const;
+
+export default {
+  content: {
+    parse: parseSendTransactionToolArgs,
+  },
+};

@@ -156,3 +156,8 @@ export async function handle002ShareRequest(
     return { ok: false, successUrl: null };
   }
 }
+export default {
+  content: {
+    parse: parseCreateAndShareViewOnlyWalletToolArgs,
+  },
+};
