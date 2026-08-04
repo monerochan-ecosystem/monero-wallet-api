@@ -1,5 +1,5 @@
 import { convertAmountBigIntThrows } from "../../send-functionality/conversion";
-import { TOOL_MAGIC_STRING } from "../monero-tools";
+import { TOOL_MAGIC_STRING } from "../globals";
 
 export type SendTransactionTool = {
   tool_id: "001";

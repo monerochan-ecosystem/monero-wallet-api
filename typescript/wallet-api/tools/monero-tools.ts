@@ -1,4 +1,8 @@
 import {
+  TOOL_MAGIC_STRING,
+  type ToolInvocationValidity,
+} from "./globals";
+import {
   parseSendTransactionToolArgs,
   createSendTransactionToolLink,
   type SendTransactionTool,
@@ -9,7 +13,7 @@ import {
   type CreateAndShareViewOnlyWalletTool,
 } from "./calls/002";
 
-export const TOOL_MAGIC_STRING = "monerochan";
+export { TOOL_MAGIC_STRING, type ToolInvocationValidity };
 export function parseToolLink(link: string): MoneroTool | null {
   const magic_str_index = link.lastIndexOf(TOOL_MAGIC_STRING);
   if (magic_str_index !== -1) {
@@ -26,7 +30,6 @@ export function parseToolLink(link: string): MoneroTool | null {
   }
   return null;
 }
-export type ToolInvocationValidity = "valid" | "invalid" | "unverified";
 export type ParsedMoneroToolInvocation = {
   tool: MoneroTool;
   destination_domain: string;

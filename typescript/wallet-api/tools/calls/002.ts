@@ -1,8 +1,8 @@
 import type { ScanSettingOpened } from "../../api";
 import {
   TOOL_MAGIC_STRING,
-  type ParsedMoneroToolInvocation,
-} from "../monero-tools";
+  type ToolInvocationValidity,
+} from "../globals";
 
 export type CreateAndShareViewOnlyWalletTool = {
   tool_id: "002";
@@ -38,7 +38,13 @@ export function make002ToolLink(wallet_slot?: number): string {
 export type ShareViewkeyPayload = {
   viewkey: string;
   primary_address: string;
-  tool_invo: ParsedMoneroToolInvocation;
+  tool_invo: {
+    tool: { tool_id: string; payload: { wallet_slot: number } };
+    found_in: "link" | "linkText";
+    link: string;
+    linkText: string;
+    valid: ToolInvocationValidity;
+  };
 };
 export type ShareViewkeyResult = {
   ok: boolean;
