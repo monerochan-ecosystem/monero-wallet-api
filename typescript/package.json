@@ -23,6 +23,9 @@
       "import": "./dist/tools/content.js"
     }
   },
+  "browser": {
+    "./dist/actionlog/backend/sqliteBackend.js": false
+  },
   "files": ["dist"],
   "license": "MIT",
   "publishConfig": {
