@@ -237,6 +237,13 @@ export function findRangeThrows(
   if (!range) throw new Error(`range not found for value: ${value}`);
   return range;
 }
+// end of the range that contains start_height. miss means we scan from start
+export function currentScanHeightFromRanges(
+  ranges: CacheRange[],
+  start_height: number,
+): number {
+  return findRange(ranges, start_height)?.end ?? start_height ?? 0;
+}
 export type CacheRange = {
   start: number;
   end: number;
@@ -285,6 +292,7 @@ export type TxLog = {
   feeEstimate?: FeeEstimateResponse;
   sendResult?: SendRawTransactionResult;
   error?: string;
+  invocationId?: string;
 };
 
 export type ChangeReason =

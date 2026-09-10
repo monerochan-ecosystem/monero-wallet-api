@@ -30,6 +30,7 @@ import {
   type ScanSettings,
 } from "../../api";
 import {
+  currentScanHeightFromRanges,
   findRange,
   initScanCacheFile,
   lastRange,
@@ -440,6 +441,15 @@ export async function setupCoordinator(
 ) {
   const work_to_be_done = await findWorkToBeDone(scanSettingsPath, pathPrefix);
   if (!work_to_be_done) return false;
+  // bring connection status file scan height in line with / cache file / in memory state 
+  await readWriteConnectionStatusFile((cs) => {
+    applyWalletScanProgress(cs, {
+      current_scan_height: currentScanHeightFromRanges(
+        work_to_be_done.wallet_configs[0]?.cache.scanned_ranges ?? [],
+        work_to_be_done.scan_settings.start_height || 0,
+      ),
+    });
+  }, scanSettingsPath);
   const { generator: blocksGenerator, blocksBuffer } =
     await setupBlocksBufferGenerator({
       nodeUrl: work_to_be_done.scan_settings.node_url,
@@ -647,8 +657,10 @@ export async function* coordinatorMainMultithreaded(
       const eta = computeETA(wallet.cache, totalBlocksScanned, scanStartTime);
       await readWriteConnectionStatusFile((cs) => {
         applyWalletScanProgress(cs, {
-          current_scan_height:
-            lastRange(wallet.cache.scanned_ranges)?.end || 0,
+          current_scan_height: currentScanHeightFromRanges(
+            wallet.cache.scanned_ranges,
+            work_to_be_done.scan_settings.start_height || 0,
+          ),
           scanned_ranges: wallet.cache.scanned_ranges,
           daemon_height: wallet.cache.daemon_height,
           eta,
