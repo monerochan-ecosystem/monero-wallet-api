@@ -1,6 +1,7 @@
 import {
   blocksBufferFetchLoop,
   readWriteConnectionStatusFile,
+  applyLastPacket,
   type GetBlocksBinBufferItem,
   type ConnectionStatus,
   type BlocksBufferLoopResult,
@@ -46,7 +47,7 @@ export async function handleConnectionStatusChanges(
   if ("local_uuid" in event && typeof event.local_uuid === "string") return;
   if ("status" in event) {
     await readWriteConnectionStatusFile((cs2) => {
-      cs2.last_packet = event;
+      applyLastPacket(cs2, event);
     }, scanSettingsPath);
     if (event.status === "catastrophic_reorg") {
       log("handleConnectionStatusChanges", "catastrophic reorg, stopping");
