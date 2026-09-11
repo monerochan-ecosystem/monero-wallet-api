@@ -159,6 +159,29 @@ export async function findWorkToBeDone(
     scan_settings,
   };
 }
+
+// slowest wallet past this batch: return its range so fetch can restart at that tip.
+export function fastForwardFetch(
+  wallet_configs: WalletConfigPlusCache[],
+  start_height: number,
+  batchEnd: number,
+): CacheRange | null {
+  if (!wallet_configs.length) return null;
+  const slowest = Math.min(
+    ...wallet_configs.map((w) =>
+      currentScanHeightFromRanges(w.cache.scanned_ranges, start_height),
+    ),
+  );
+  if (slowest <= batchEnd) return null;
+  const owner = wallet_configs.find(
+    (w) =>
+      currentScanHeightFromRanges(w.cache.scanned_ranges, start_height) ===
+      slowest,
+  );
+  return owner
+    ? findRange(owner.cache.scanned_ranges, start_height)
+    : null;
+}
 export function workToBeDoneForBatch(
   cache: ScanCache,
   batch_meta_infos: BlockInfo[],
@@ -547,10 +570,11 @@ export async function* coordinatorMainMultithreaded(
       "[coordinatorMain Multithreaded] findWorkToBeDone returned false",
     );
   const work_to_be_done = ctx.work_to_be_done;
-  const blocksBuffer = ctx.blocksBuffer;
+  let blocksBuffer = ctx.blocksBuffer;
   const workBuffer = ctx.workBuffer;
 
-  const blocksGenerator = ctx.blocksGenerator;
+  let blocksGenerator = ctx.blocksGenerator;
+  let fetchAt = work_to_be_done.start_height;
   let totalBlocksScanned = 0;
   let scanStartTime = Date.now();
   let blocksPromise = blocksGenerator.next();
@@ -651,6 +675,28 @@ export async function* coordinatorMainMultithreaded(
         getPathPrefix(scanSettingsPath, pathPrefix),
         wallet.secret_spend_key,
       );
+
+      const jumped = fastForwardFetch(
+        work_to_be_done.wallet_configs,
+        work_to_be_done.scan_settings.start_height || 0,
+        to_be_processed.batch.get_blocks_result_meta.block_infos[
+          to_be_processed.to
+        ].block_height,
+      );
+      if (jumped && jumped.end > fetchAt) {
+        await blocksGenerator.return(undefined);
+        const next = await setupBlocksBufferGenerator({
+          nodeUrl: work_to_be_done.scan_settings.node_url,
+          startHeight: jumped.end,
+          anchor_range: jumped,
+          scanSettingsPath,
+          stopSync,
+        });
+        blocksBuffer = next.blocksBuffer;
+        blocksGenerator = next.generator;
+        blocksPromise = blocksGenerator.next();
+        fetchAt = jumped.end;
+      }
 
       // always persist wallet progress after process; eta only if we have a new one
       // so missing eta does not wipe the previous value (no flicker)
