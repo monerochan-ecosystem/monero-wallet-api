@@ -684,6 +684,7 @@ export async function* coordinatorMainMultithreaded(
         ].block_height,
       );
       if (jumped && jumped.end > fetchAt) {
+        log("coordinatorMainMultithreaded", ["jump", fetchAt, "->", jumped.end]);
         await blocksGenerator.return(undefined);
         const next = await setupBlocksBufferGenerator({
           nodeUrl: work_to_be_done.scan_settings.node_url,
