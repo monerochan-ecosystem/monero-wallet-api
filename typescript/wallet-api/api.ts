@@ -41,6 +41,20 @@ export * from "./scanning-syncing/blocksbuffer/blocksBufferFetchLoop";
 export * from "./scanning-syncing/blocksbuffer/blocksbufferCoordination";
 export * from "./scanning-syncing/connectionStatus";
 export { ConnectionStatusOpened } from "./scanning-syncing/connectionStatusOpened";
+export {
+  ActionLogOpened,
+  type ActionLogOpenedCreateOptions,
+  type ActionLogBackendKind,
+  type ActionLogChangedParameters,
+  type ActionLogEvent,
+  type ActionLogEventType,
+  type ActionLogStage,
+  type InvocationState,
+  type ToolPermission,
+  type ToolNotice,
+  type ToolUiCopy,
+  type ToolWorkerContext,
+} from "./actionlog/actionLogOpened";
 export * from "./scansettings/scanSettings";
 export { ScanSettingsOpened } from "./scansettings/scanSettingsOpened";
 export * from "./scanning-syncing/scanresult/scanResult";
@@ -53,3 +67,10 @@ export * from "./keypairs-seeds/keypairs";
 export * from "./send-functionality/conversion";
 export * from "./send-functionality/inputSelection";
 export * from "./tools/monero-tools";
+export type {
+  ToolArm,
+  ToolContentZone,
+  ToolCounterpartyZone,
+  ToolWorkerZone,
+  ToolInvocationForValidate,
+} from "./tools/globals";
