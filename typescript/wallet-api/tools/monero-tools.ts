@@ -1,42 +1,53 @@
 import {
   TOOL_MAGIC_STRING,
+  type ToolArm,
   type ToolInvocationValidity,
+  type ToolPermission,
+  type ToolUiCopy,
 } from "./globals";
-import tool001, {
-  parseSendTransactionToolArgs,
-  createSendTransactionToolLink,
-  type SendTransactionTool,
-} from "./calls/001";
-import tool002, {
-  parseCreateAndShareViewOnlyWalletToolArgs,
-  createCreateAndShareViewOnlyWalletToolLink,
-  type CreateAndShareViewOnlyWalletTool,
-} from "./calls/002";
+import tool001 from "./calls/001";
+import tool002 from "./calls/002";
 
 export { TOOL_MAGIC_STRING, type ToolInvocationValidity };
+export type {
+  ToolArm,
+  ToolContentZone,
+  ToolCounterpartyZone,
+  ToolInvocationForValidate,
+  ToolWorkerZone,
+} from "./globals";
+export type {
+  ToolUiCopy,
+  ToolNotice,
+  ToolPermission,
+} from "./globals";
 
+// add a tool: import + one key here
 export const tools = {
   "001": tool001,
   "002": tool002,
-};
+} as const satisfies Record<string, ToolArm<any>>;
+
 export type ToolId = keyof typeof tools;
 export const TOOL_IDS = Object.keys(tools) as ToolId[];
-export function parseToolLink(link: string): MoneroTool | null {
-  const magic_str_index = link.lastIndexOf(TOOL_MAGIC_STRING);
-  if (magic_str_index !== -1) {
-    const link_start_index = magic_str_index + TOOL_MAGIC_STRING.length;
 
-    const tool_id = link.substring(link_start_index, link_start_index + 3);
-    const args = link
-      .substring(link_start_index + 3)
-      .split("_")
-      .slice(1);
-    if (tool_id === "001") return parseSendTransactionToolArgs(args);
-    if (tool_id === "002")
-      return parseCreateAndShareViewOnlyWalletToolArgs(args);
+export function getToolUiByPermissions(
+  permissions: ToolPermission[],
+): ToolUiCopy | null {
+  const want = new Set(permissions);
+  for (const id of Object.keys(tools) as ToolId[]) {
+    const arm = tools[id];
+    if (!arm.permissions.some((p) => want.has(p as ToolPermission))) continue;
+    if (arm.ui) return arm.ui;
   }
   return null;
 }
+
+type PayloadOf<A> = A extends ToolArm<infer P, infer _E> ? P : never;
+export type MoneroTool = {
+  [K in ToolId]: { tool_id: K; payload: PayloadOf<(typeof tools)[K]> };
+}[ToolId];
+
 export type ParsedMoneroToolInvocation = {
   tool: MoneroTool;
   destination_domain: string;
@@ -49,6 +60,31 @@ export type ParsedMoneroToolInvocation = {
   context_href: string;
   valid: ToolInvocationValidity;
 };
+
+function isToolId(id: string): id is ToolId {
+  return id in tools;
+}
+
+export function parseToolLink(link: string): MoneroTool | null {
+  const magic_str_index = link.lastIndexOf(TOOL_MAGIC_STRING);
+  if (magic_str_index === -1) return null;
+  const link_start_index = magic_str_index + TOOL_MAGIC_STRING.length;
+  const tool_id = link.substring(link_start_index, link_start_index + 3);
+  if (!isToolId(tool_id)) return null;
+  const args = link
+    .substring(link_start_index + 3)
+    .split("_")
+    .slice(1);
+  const parsed = tools[tool_id].content.recognize_parse(args);
+  return (parsed as MoneroTool | null) ?? null;
+}
+
+export function createToolLink(tool: MoneroTool): string {
+  const id = tool.tool_id as ToolId;
+  if (!isToolId(id)) throw new Error("unknown tool");
+  return tools[id].counterparty.make(tool.payload as never);
+}
+
 export function parseToolInvocation(
   link: string,
   linkText: string,
@@ -58,11 +94,9 @@ export function parseToolInvocation(
   const context_href = context_location.href;
   const link_parse = parseToolLink(link);
   if (link_parse) {
-    const destination_domain = parseDestination(link);
-
     return {
       tool: link_parse,
-      destination_domain,
+      destination_domain: parseDestination(link),
       context_domain,
       found_in: "link",
       link,
@@ -72,66 +106,33 @@ export function parseToolInvocation(
       context_href,
       valid: "unverified",
     };
-  } else {
-    const linkText_parse = parseToolLink(linkText);
-    if (linkText_parse) {
-      const destination_domain = parseDestination(linkText);
-      return {
-        tool: linkText_parse,
-        destination_domain,
-        context_domain,
-        found_in: "linkText",
-        link,
-        linkText,
-        timestamp: Date.now(),
-        invocation_id: crypto.randomUUID(),
-        context_href,
-        valid: "unverified",
-      };
-    }
   }
-
+  const linkText_parse = parseToolLink(linkText);
+  if (linkText_parse) {
+    return {
+      tool: linkText_parse,
+      destination_domain: parseDestination(linkText),
+      context_domain,
+      found_in: "linkText",
+      link,
+      linkText,
+      timestamp: Date.now(),
+      invocation_id: crypto.randomUUID(),
+      context_href,
+      valid: "unverified",
+    };
+  }
   return null;
 }
 
-export type { SendTransactionTool, SendTransactionToolPayload } from "./calls/001";
-export {
-  parseSendTransactionToolArgs,
-  createSendTransactionToolLink,
-  make001ToolLink,
-  ADDRESS_VALID_RESPONSE,
-  ADDRESS_INVALID_RESPONSE,
-} from "./calls/001";
-
-export type {
-  CreateAndShareViewOnlyWalletTool,
-  CreateAndShareViewOnlyWalletToolPayload,
-  ShareViewkeyPayload,
-  ShareViewkeyResult,
-  ShareViewkey002Pruned,
-} from "./calls/002";
-export {
-  parseCreateAndShareViewOnlyWalletToolArgs,
-  createCreateAndShareViewOnlyWalletToolLink,
-  make002ToolLink,
-  shareViewKey002,
-  potentialSuccessRedirect002,
-  handle002ShareRequest,
-} from "./calls/002";
-
-export type MoneroTool = SendTransactionTool | CreateAndShareViewOnlyWalletTool;
-export function createToolLink(tool: MoneroTool): string {
-  if (tool.tool_id === "001") {
-    return createSendTransactionToolLink(
-      tool.payload.address,
-      tool.payload.amount,
-      tool.payload.no_check,
-    );
-  }
-  if (tool.tool_id === "002") {
-    return createCreateAndShareViewOnlyWalletToolLink(tool.payload.wallet_slot);
-  }
-  throw new Error("unknown tool");
+export async function checkToolInvocationValidity(
+  invo: ParsedMoneroToolInvocation,
+): Promise<ToolInvocationValidity> {
+  const id = invo.tool.tool_id as ToolId;
+  if (!isToolId(id)) return "unverified";
+  const check = tools[id].content.validate_check;
+  if (!check) return "unverified";
+  return check(invo);
 }
 
 export function getDomainWithTLD(hostname: string): string {
@@ -145,49 +146,4 @@ export function getDomainWithTLD(hostname: string): string {
 export function parseDestination(destination: string): string {
   const url = new URL(destination);
   return getDomainWithTLD(url.hostname);
-}
-// this validity check should happen in the contentscript when the link is clicked,
-// not in the background script
-// -> tor circuit is separated & compartmentalized
-export async function checkToolInvocationValidity(
-  invo: ParsedMoneroToolInvocation,
-): Promise<ToolInvocationValidity> {
-  // send 001 fetch from destination domain to check if the address is valid
-  // _no_check on the wire skips the GET and leaves validity unverified
-  if (invo.tool.tool_id == "001") {
-    if (invo.tool.payload.no_check) {
-      return "unverified";
-    }
-    const link = invo[invo.found_in];
-    const invo_link = new URL(link);
-    const checkUrl = `${invo_link.origin}/monerochan001/${
-      invo.tool.payload.address
-    }`;
-    try {
-      const result = (await (await fetch(checkUrl)).json()) as unknown;
-      if (
-        result &&
-        typeof result === "object" &&
-        "valid_address" in result &&
-        result.valid_address === true
-      ) {
-        return "valid";
-      } else {
-        return "invalid";
-      }
-    } catch {
-      return "invalid";
-    }
-  }
-
-  // create view only wallet 002 make sure context + destination domain is the same
-  if (invo.tool.tool_id == "002") {
-    if (invo.context_domain == invo.destination_domain) {
-      return "valid";
-    } else {
-      return "invalid";
-    }
-  }
-
-  return "unverified";
 }
