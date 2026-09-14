@@ -27,6 +27,12 @@ import {
 } from "../../api";
 import { ScanSettingsOpened } from "../../scansettings/scanSettingsOpened";
 import { ConnectionStatusOpened } from "../connectionStatusOpened";
+import {
+  ActionLogOpened,
+  type ActionLogBackendKind,
+  type ExtensionMessageBus,
+} from "../../actionlog/actionLogOpened";
+import { sendToBackground } from "../../tools/globals";
 import type { LogSetting, PossibleLogs } from "../../io/logging";
 import {
   findRange,
@@ -70,6 +76,7 @@ export type CreateTransactionParams = {
   payments: Payment[];
   inputs?: Output[];
   no_fee_circuit_breaker?: boolean;
+  invocationId?: string;
 };
 export class ScanCacheOpened {
   /** how many decoys to sample per input (default 20, ring size is 11) */
@@ -602,6 +609,7 @@ export class ScanCacheOpened {
             inputs_index,
             height: this.current_height!,
             timestamp: Date.now(),
+            invocationId: params.invocationId,
           };
           const newLen = cache.tx_logs.push(txLog);
           const txLogIndex = newLen - 1;
@@ -653,6 +661,7 @@ export class ScanCacheOpened {
             inputs_index,
             height: this.current_height!,
             timestamp: Date.now(),
+            invocationId: params.invocationId,
           };
           const newLen = cache.tx_logs.push(txLog);
         },
@@ -942,10 +951,23 @@ export type ManyScanCachesOpenedCreateOptions = {
   logs?: LogSetting;
   logs_include?: PossibleLogs[];
   logs_exclude?: PossibleLogs[];
+  actionLogPath?: string;
+  actionLogBackend?: ActionLogBackendKind;
+  onActionLogChange?: (() => void) | null;
+  extensionMessageBus?: ExtensionMessageBus;
 };
+
+function defaultNotifyMasterChanged(params: CacheChangedCallbackParameters) {
+  void sendToBackground(
+    "walletCacheChanged",
+    JSON.stringify(params, (_k, v) =>
+      typeof v === "bigint" ? v.toString() : v,
+    ),
+  ).catch(() => {});
+}
 export class ManyScanCachesOpened {
   get start_height(): number | null {
-    if (this.wallets.length === 0) return null;
+    if (this.wallets.length === 0) return this._scanSettings.start_height;
     return this.wallets[0]?.start_height;
   }
   // overall scan tip = lagging non-halted wallet (this.wallets is already non-halted)
@@ -959,19 +981,28 @@ export class ManyScanCachesOpened {
     return min;
   }
   get node_url(): string {
-    if (this.wallets.length === 0) return "";
+    if (this.wallets.length === 0) return this._scanSettings.node_url ?? "";
     return this.wallets[0]?.node_url;
   }
+
   public async changeNodeUrlAndStartHeight(
     node_url?: string,
     start_height?: number | null,
   ) {
-    if (this.wallets.length === 0) return;
-    const masterWallet = this.wallets[0];
-    return await masterWallet.changeNodeUrlAndStartHeight(
-      node_url,
-      start_height,
-    );
+    if (this.actionLogOpened.extensionMessageBus === "ui") {
+      await sendToBackground("worker.changeNodeUrlAndStartHeight", {
+        node_url,
+        start_height,
+      }).catch(() => {});
+      return;
+    }
+    if (this.wallets.length === 0) {
+      if (node_url !== undefined) await this._scanSettings.setNodeUrl(node_url);
+      if (start_height !== undefined)
+        await this._scanSettings.setStartHeight(start_height);
+      return;
+    }
+    await this.wallets[0].changeNodeUrlAndStartHeight(node_url, start_height);
   }
   public async retry() {
     if (this.wallets.length === 0) return;
@@ -992,9 +1023,15 @@ export class ManyScanCachesOpened {
   }
 
   public async changeNodeUrl(node_url: string) {
-    if (this.wallets.length === 0) return;
-    const masterWallet = this.wallets[0];
-    return await masterWallet.changeNodeUrl(node_url);
+    if (this.actionLogOpened.extensionMessageBus === "ui") {
+      await sendToBackground("worker.setNodeUrl", { node_url }).catch(() => {});
+      return;
+    }
+    if (this.wallets.length === 0) {
+      await this._scanSettings.setNodeUrl(node_url);
+      return;
+    }
+    await this.wallets[0].changeNodeUrl(node_url);
   }
   get merchant_confirmations(): number | null | undefined {
     if (this.wallets.length === 0) return undefined;
@@ -1053,9 +1090,26 @@ export class ManyScanCachesOpened {
     await this._scanSettings.setWalletSlot(primary_address, slot);
   }
   public async changeStartHeight(start_height: number | null) {
-    if (this.wallets.length === 0) return;
-    const masterWallet = this.wallets[0];
-    return await masterWallet.changeStartHeight(start_height);
+    if (this.actionLogOpened.extensionMessageBus === "ui") {
+      await sendToBackground("worker.setStartHeight", {
+        start_height,
+      }).catch(() => {});
+      return;
+    }
+    if (this.wallets.length === 0) {
+      await this._scanSettings.setStartHeight(start_height);
+      return;
+    }
+    await this.wallets[0].changeStartHeight(start_height);
+  }
+
+  public async wipeWorkers() {
+    if (this.actionLogOpened.extensionMessageBus === "ui") {
+      await sendToBackground("worker.wipeWorkers", null).catch(() => {});
+      return;
+    }
+    await this.stopWorker();
+    this._wallets = [];
   }
   private static async _buildWallets(
     scanSettingsOpened: ScanSettingsOpened,
@@ -1183,6 +1237,10 @@ export class ManyScanCachesOpened {
       await instance.buildWallets();
     };
     const newOptions = { ...options };
+    // browser worker (background.ts): broadcast cache to sidebar 
+    if (!newOptions.notifyMasterChanged && !newOptions.no_worker) {
+      newOptions.notifyMasterChanged = defaultNotifyMasterChanged;
+    }
     let connectionFailedShown = false;
     if (autoRetry) {
       const originalError = options.workerError;
@@ -1230,9 +1288,22 @@ export class ManyScanCachesOpened {
     );
     csOpened.watch(connectionStatusIntervalMs);
 
+    const actionLogPath =
+      newOptions.actionLogPath ??
+      actionLogPathFromScanSettings(
+        scan_settings_path || SCAN_SETTINGS_STORE_NAME_DEFAULT,
+      );
+    const actionLogOpened = await ActionLogOpened.create({
+      path: actionLogPath,
+      backend: newOptions.actionLogBackend,
+      onChange: newOptions.onActionLogChange ?? null,
+      extensionMessageBus: newOptions.extensionMessageBus,
+    });
+
     instance = new ManyScanCachesOpened(
       wallets,
       csOpened,
+      actionLogOpened,
       scanSettingsOpened,
       newOptions,
     );
@@ -1241,6 +1312,10 @@ export class ManyScanCachesOpened {
   }
 
   public async buildWallets() {
+    if (this.actionLogOpened.extensionMessageBus === "ui") {
+      await sendToBackground("worker.buildWallets", null).catch(() => {});
+      return;
+    }
     await this.stopWorker();
     await this.reloadWalletsAfterStop();
   }
@@ -1312,9 +1387,17 @@ export class ManyScanCachesOpened {
   private constructor(
     wallets: ScanCacheOpened[],
     public readonly connectionStatusOpened: ConnectionStatusOpened,
+    public readonly actionLogOpened: ActionLogOpened,
     private _scanSettings: ScanSettingsOpened,
     private _options: ManyScanCachesOpenedCreateOptions,
   ) {
     this._wallets = wallets;
+    this.actionLogOpened.bindMco(this);
   }
+}
+
+function actionLogPathFromScanSettings(scan_settings_path: string): string {
+  const base = scan_settings_path.replace(/\.json$/i, "");
+  if (globalThis.areWeInTheBrowser === true) return "actionlog";
+  return `${base}-actionlog.sqlite`;
 }
