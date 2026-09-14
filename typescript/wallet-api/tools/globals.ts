@@ -30,7 +30,7 @@ export type ExtensionMessageByKind = {
     start_height?: number | null;
   };
   "worker.buildWallets": null;
-  "worker.wipeWorkers": null;
+  "worker.stopWorker": null;
   shareViewkeyOK: { invocationId: string };
   shareViewkeyFAILED: {
     viewkey: string;

@@ -1010,6 +1010,10 @@ export class ManyScanCachesOpened {
     return await masterWallet.retry();
   }
   public async stopWorker() {
+    if (this.actionLogOpened.extensionMessageBus === "ui") {
+      await sendToBackground("worker.stopWorker", null).catch(() => {});
+      return;
+    }
     if (this.wallets.length === 0) return;
     const masterWallet = this.wallets[0];
     return await masterWallet.stopWorker();
@@ -1103,14 +1107,6 @@ export class ManyScanCachesOpened {
     await this.wallets[0].changeStartHeight(start_height);
   }
 
-  public async wipeWorkers() {
-    if (this.actionLogOpened.extensionMessageBus === "ui") {
-      await sendToBackground("worker.wipeWorkers", null).catch(() => {});
-      return;
-    }
-    await this.stopWorker();
-    this._wallets = [];
-  }
   private static async _buildWallets(
     scanSettingsOpened: ScanSettingsOpened,
     options: ManyScanCachesOpenedCreateOptions,

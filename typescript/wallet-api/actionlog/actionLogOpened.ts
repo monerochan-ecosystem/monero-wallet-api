@@ -45,7 +45,7 @@ type BoundMco = {
     start_height?: number | null,
   ) => Promise<void>;
   buildWallets: () => Promise<void>;
-  wipeWorkers: () => Promise<void>;
+  stopWorker: () => Promise<void>;
 };
 
 function armWorker(toolId: ToolId) {
@@ -323,8 +323,8 @@ export class ActionLogOpened {
       case "worker.buildWallets":
         await this.mco?.buildWallets();
         return {};
-      case "worker.wipeWorkers":
-        await this.mco?.wipeWorkers();
+      case "worker.stopWorker":
+        await this.mco?.stopWorker();
         return {};
       case "actionLogChanged": {
         const p = env.payload as { events?: ActionLogEvent[] };
