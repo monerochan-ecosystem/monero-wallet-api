@@ -120,10 +120,6 @@ export class ActionLogIdbBackend implements ActionLogBackend {
   async reload(): Promise<void> {
     await this.loadInvocations();
   }
-
-  async close(): Promise<void> {
-    this.db.close();
-  }
 }
 
 function openDb(name: string): Promise<IDBDatabase> {

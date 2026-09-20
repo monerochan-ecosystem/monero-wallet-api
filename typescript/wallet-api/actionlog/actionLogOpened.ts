@@ -200,10 +200,6 @@ export class ActionLogOpened {
     await this.refreshUiCache();
   }
 
-  async close(): Promise<void> {
-    await this.backend.close?.();
-  }
-
   async dismiss(invocationId: string): Promise<void> {
     if (this.isUiBus()) {
       await sendToBackground("dismiss", { invocationId }).catch(() => {});

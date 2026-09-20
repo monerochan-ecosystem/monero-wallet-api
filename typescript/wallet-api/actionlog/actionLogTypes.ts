@@ -222,7 +222,6 @@ export type ActionLogBackend = {
   invocations(status?: InvocationStatus): Promise<InvocationState[]>;
   feed?(events: ActionLogEvent[]): Promise<void>;
   reload?(): Promise<void>;
-  close?(): Promise<void>;
 };
 // current invos in memory. mininext reads this once per frame.
 export class ActiveInvocations {
