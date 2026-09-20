@@ -130,6 +130,7 @@ function flatFromParsed(invo: ParsedMoneroToolInvocation) {
   };
 }
 
+/** first toolCall state transition: session_start invoked. */
 async function invoke_write(ctx: ToolWorkerContext, invo: ToolInvocationForValidate) {
   if (invo.tool.tool_id !== "001") return;
   const flat = flatFromParsed(invo as ParsedMoneroToolInvocation);
@@ -140,6 +141,7 @@ async function invoke_write(ctx: ToolWorkerContext, invo: ToolInvocationForValid
   });
 }
 
+/** second toolCall state transition: validate_result validated. */
 async function validate_write(
   ctx: ToolWorkerContext,
   invo: ToolInvocationForValidate,
@@ -169,15 +171,16 @@ function alreadyAccepted(type: string): boolean {
   );
 }
 
+/** third toolCall state transition: accept accepted. */
 async function accept_yes(
   ctx: ToolWorkerContext,
   invocationId: string,
   args: Record<string, unknown>,
 ) {
-  const tip = await ctx.log.getTip(invocationId);
-  if (!tip || alreadyAccepted(tip.type)) return;
-  const address = String(args.address ?? tip.address ?? "");
-  const amount = String(args.amount ?? tip.amount ?? "");
+  const invo = await ctx.log.invocation(invocationId);
+  if (!invo || alreadyAccepted(invo.lastType)) return;
+  const address = String(args.address ?? invo.address ?? "");
+  const amount = String(args.amount ?? invo.amount ?? "");
   const wallet_to_send_from_pa = String(args.wallet_to_send_from_pa ?? "");
   await ctx.log.append({
     type: "accept",
@@ -190,20 +193,21 @@ async function accept_yes(
   });
 }
 
+/** fourth toolCall state transition: execute_start executed. fifth: execute_result executed. */
 async function execute_run(
   ctx: ToolWorkerContext,
   invocationId: string,
   args: Record<string, unknown>,
 ) {
-  const tip = await ctx.log.getTip(invocationId);
-  if (!tip) {
-    console.error("send with no tip for invocation");
+  const invo = await ctx.log.invocation(invocationId);
+  if (!invo) {
+    console.error("send with no invocation");
     return;
   }
-  const address = String(args.address ?? tip.address ?? "");
-  const amount = String(args.amount ?? tip.amount ?? "");
+  const address = String(args.address ?? invo.address ?? "");
+  const amount = String(args.amount ?? invo.amount ?? "");
   const wallet_to_send_from_pa = String(
-    args.wallet_to_send_from_pa ?? tip.wallet_to_send_from_pa ?? "",
+    args.wallet_to_send_from_pa ?? invo.wallet_to_send_from_pa ?? "",
   );
   const toolId = "001" as const;
   await ctx.log.append({
@@ -254,13 +258,14 @@ async function execute_run(
   });
 }
 
+/** toolCall state transition: dismiss accepted. */
 async function accept_no(ctx: ToolWorkerContext, invocationId: string) {
-  const tip = await ctx.log.getTip(invocationId);
+  const invo = await ctx.log.invocation(invocationId);
   if (
-    !tip ||
-    tip.type === "dismiss" ||
-    tip.type === "execute_result" ||
-    tip.type === "aborted"
+    !invo ||
+    invo.lastType === "dismiss" ||
+    invo.lastType === "execute_result" ||
+    invo.lastType === "aborted"
   ) {
     return;
   }

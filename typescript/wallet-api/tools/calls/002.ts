@@ -39,6 +39,7 @@ function make(payload: CreateAndShareViewOnlyWalletToolPayload): string {
   return `${TOOL_MAGIC_STRING}002_create_and_share_viewkey_slot_${wallet_slot}`;
 }
 
+/** valid if both domains are the same. */
 function validate_check(
   invo: ToolInvocationForValidate,
 ): ToolInvocationValidity {
@@ -60,6 +61,7 @@ export type ShareViewkey002Pruned = {
   wallet_slot: number;
 };
 
+/** posts the viewkey. the invocation must be valid. */
 async function shareViewKey002(
   payload: ShareViewkeyPayload,
 ): Promise<ShareViewkeyResult> {
@@ -285,6 +287,7 @@ function flatFromParsed(invo: ParsedMoneroToolInvocation) {
   };
 }
 
+/** first toolCall state transition: session_start invoked. */
 async function invoke_write(ctx: ToolWorkerContext, invo: ToolInvocationForValidate) {
   if (invo.tool.tool_id !== "002") return;
   const flat = flatFromParsed(invo as ParsedMoneroToolInvocation);
@@ -295,6 +298,7 @@ async function invoke_write(ctx: ToolWorkerContext, invo: ToolInvocationForValid
   });
 }
 
+/** second toolCall state transition: validate_result validated. */
 async function validate_write(
   ctx: ToolWorkerContext,
   invo: ToolInvocationForValidate,
@@ -324,6 +328,7 @@ function isTerminalTipType(type: string): boolean {
   return type === "dismiss" || type === "execute_result" || type === "aborted";
 }
 
+/** the content payload from this invocation. missing valid is unverified. */
 function invoFromOpen(
   invocationId: string,
   open: {
@@ -354,15 +359,16 @@ function invoFromOpen(
   };
 }
 
+/** third toolCall state transition: accept accepted. */
 async function accept_yes(
   ctx: ToolWorkerContext,
   invocationId: string,
   _args: Record<string, unknown>,
 ) {
-  const tip = await ctx.log.getTip(invocationId);
-  if (!tip || alreadyAccepted(tip.type)) return;
+  const invo = await ctx.log.invocation(invocationId);
+  if (!invo || alreadyAccepted(invo.lastType)) return;
   const open =
-    (await ctx.log.getActiveInvocations()).find(
+    ctx.log.invocations("active").find(
       (o) => o.invocationId === invocationId,
     ) ?? null;
   if (!open) return;
@@ -373,13 +379,14 @@ async function accept_yes(
   });
 }
 
+/** fourth toolCall state transition: execute_start executed. execute_error executed if no port. */
 async function execute_run(
   ctx: ToolWorkerContext,
   invocationId: string,
   args: Record<string, unknown>,
 ) {
   const open =
-    (await ctx.log.getActiveInvocations()).find(
+    ctx.log.invocations("active").find(
       (o) => o.invocationId === invocationId,
     ) ?? null;
   if (!open) return;
@@ -408,6 +415,7 @@ async function execute_run(
   });
 }
 
+/** fifth toolCall state transition: execute_error executed. */
 async function execute_fail(
   ctx: ToolWorkerContext,
   payload: unknown,
@@ -422,12 +430,13 @@ async function execute_fail(
   });
 }
 
+/** fifth toolCall state transition: execute_result executed. */
 async function execute_ok(
   ctx: ToolWorkerContext,
   payload: { invocationId: string },
 ) {
-  const tip = await ctx.log.getTip(payload.invocationId);
-  if (!tip) return;
+  const invo = await ctx.log.invocation(payload.invocationId);
+  if (!invo) return;
   await ctx.log.append({
     type: "execute_result",
     stage: "executed",
@@ -437,9 +446,10 @@ async function execute_ok(
   });
 }
 
+/** toolCall state transition: dismiss accepted. */
 async function accept_no(ctx: ToolWorkerContext, invocationId: string) {
-  const tip = await ctx.log.getTip(invocationId);
-  if (!tip || isTerminalTipType(tip.type)) return;
+  const invo = await ctx.log.invocation(invocationId);
+  if (!invo || isTerminalTipType(invo.lastType)) return;
   await ctx.log.append({
     type: "dismiss",
     stage: "accepted",
@@ -448,15 +458,16 @@ async function accept_no(ctx: ToolWorkerContext, invocationId: string) {
   });
 }
 
+/** toolCall state transition: aborted. */
 async function execute_abort(
   ctx: ToolWorkerContext,
   invocationId: string,
 ) {
-  const tip = await ctx.log.getTip(invocationId);
-  if (!tip || isTerminalTipType(tip.type)) return;
+  const invo = await ctx.log.invocation(invocationId);
+  if (!invo || isTerminalTipType(invo.lastType)) return;
   await ctx.log.append({
     type: "aborted",
-    stage: tip.stage,
+    stage: invo.stage,
     invocationId,
     toolId: "002",
   });
