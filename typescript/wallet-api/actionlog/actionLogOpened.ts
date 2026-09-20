@@ -1,11 +1,10 @@
-import { ActionLogJsonlBackend } from "./backend/jsonlBackend";
-import { ActionLogMemoryBackend } from "./backend/memoryBackend";
 import {
   newEventId,
   nowTimestamp,
   type ActionLogBackend,
   type ActionLogEvent,
   type InvocationState,
+  type InvocationStatus,
   type ToolPermission,
   type ToolWorkerContext,
 } from "./actionLogTypes";
@@ -19,7 +18,7 @@ import {
   type ToolNotice,
 } from "../tools/globals";
 
-export type ActionLogBackendKind = "jsonl" | "sqlite" | "idb" | "memory";
+export type ActionLogBackendKind = "sqlite" | "idb";
 export type ExtensionMessageBus = "worker" | "ui";
 
 export type ActionLogOpenedCreateOptions = {
@@ -57,8 +56,10 @@ export class ActionLogOpened {
   private runtimeInstalled = false;
   private bus: ExtensionMessageBus | null = null;
   private mco: BoundMco | null = null;
-  private activeList: InvocationState[] = [];
+  private invocationsCache: InvocationState[] = [];
+  private activeCache: InvocationState[] = [];
   private noticeList: ToolNotice[] = [];
+  private toolCallTail = new Map<string, Promise<void>>();
 
   private constructor(
     private backend: ActionLogBackend,
@@ -85,8 +86,10 @@ export class ActionLogOpened {
     this.mco = mco;
   }
 
+  /** after a write, the invocation lists that the plates read. */
   private async refreshUiCache() {
-    this.activeList = await this.backend.getActiveInvocations();
+    this.invocationsCache = await this.backend.invocations();
+    this.activeCache = await this.backend.invocations("active");
     this.noticeList = [];
     this._onChange?.();
   }
@@ -127,23 +130,40 @@ export class ActionLogOpened {
     return event;
   }
 
-  async getBranch(invocationId: string): Promise<ActionLogEvent[]> {
-    return this.backend.getBranch(invocationId);
+  /** one invocation by id. sqlite and idb select by primary key. */
+  async invocation(invocationId: string): Promise<InvocationState | null> {
+    return this.backend.invocation(invocationId);
   }
 
-  async getTip(invocationId: string): Promise<ActionLogEvent | null> {
-    return this.backend.getTip(invocationId);
+  /** all invocations, or the active ones. */
+  invocations(status?: InvocationStatus): InvocationState[] {
+    if (!status) return [...this.invocationsCache];
+    if (status === "active") return [...this.activeCache];
+    return this.invocationsCache.filter((s) => s.lastType === status);
   }
 
-  async getActiveByToolId(toolId: ToolId): Promise<InvocationState | null> {
-    return this.backend.getActiveByToolId(toolId);
+  /** invoke and validate for one invocation id, in order. */
+  async toolCall(invo: ParsedMoneroToolInvocation): Promise<void> {
+    const id = invo.invocation_id;
+    const prev = this.toolCallTail.get(id) ?? Promise.resolve();
+    const next = prev.then(() => this.applyToolCall(invo));
+    this.toolCallTail.set(
+      id,
+      next.catch(() => {}),
+    );
+    await next;
   }
 
-  // sync plate reads (cache refreshed on every mutation / feed)
-  getActive(): InvocationState[] {
-    return [...this.activeList];
+  /** first toolCall state transition: session_start invoked when no row. second state transition: validate_result validated if valid is not unverified. */
+  private async applyToolCall(invo: ParsedMoneroToolInvocation) {
+    const w = armWorker(invo.tool.tool_id as ToolId);
+    const ctx = this.toolCtx();
+    if (!(await this.invocation(invo.invocation_id)))
+      await w?.invoke_write?.(ctx, invo);
+    if (invo.valid !== "unverified") await w?.validate_write?.(ctx, invo);
   }
 
+  /** open invocations for these permissions. the send and wallets plates show these. */
   getActiveByPermissions(permissions: ToolPermission[]): InvocationState[] {
     const want = new Set(permissions);
     const toolIds = (Object.keys(tools) as ToolId[]).filter((id) =>
@@ -152,11 +172,7 @@ export class ActionLogOpened {
       ),
     );
     const idSet = new Set(toolIds);
-    return this.activeList.filter((o) => idSet.has(o.toolId));
-  }
-
-  async getActiveInvocations(): Promise<InvocationState[]> {
-    return this.backend.getActiveInvocations();
+    return this.invocations("active").filter((o) => idSet.has(o.toolId));
   }
 
   getNoticesByPermissions(permissions: ToolPermission[]): ToolNotice[] {
@@ -332,12 +348,7 @@ export class ActionLogOpened {
         return {};
       }
       case "toolCall": {
-        const invo = env.payload as ParsedMoneroToolInvocation;
-        const id = invo.tool.tool_id as ToolId;
-        const w = armWorker(id);
-        const tip = await this.getTip(invo.invocation_id);
-        if (!tip) await w?.invoke_write?.(ctx, invo);
-        else await w?.validate_write?.(ctx, invo);
+        await this.toolCall(env.payload as ParsedMoneroToolInvocation);
         return {};
       }
       case "dismiss": {
@@ -377,18 +388,18 @@ export class ActionLogOpened {
   }
 
   private async dismissLocal(invocationId: string) {
-    const tip = await this.getTip(invocationId);
-    if (!tip) return;
-    await armWorker(tip.toolId)?.accept_no?.(this.toolCtx(), invocationId);
+    const invo = await this.invocation(invocationId);
+    if (!invo) return;
+    await armWorker(invo.toolId)?.accept_no?.(this.toolCtx(), invocationId);
   }
 
   private async executeLocal(
     invocationId: string,
     args: Record<string, unknown>,
   ) {
-    const tip = await this.getTip(invocationId);
-    if (!tip) return;
-    const w = armWorker(tip.toolId);
+    const invo = await this.invocation(invocationId);
+    if (!invo) return;
+    const w = armWorker(invo.toolId);
     const ctx = this.toolCtx();
     await w?.accept_yes?.(ctx, invocationId, args);
     await w?.execute_run?.(ctx, invocationId, args);
@@ -418,9 +429,9 @@ export class ActionLogOpened {
   }
 
   private async dispatchPortDisconnect(invocationId: string) {
-    const tip = await this.getTip(invocationId);
-    if (!tip) return;
-    await armWorker(tip.toolId)?.execute_abort?.(
+    const invo = await this.invocation(invocationId);
+    if (!invo) return;
+    await armWorker(invo.toolId)?.execute_abort?.(
       this.toolCtx(),
       invocationId,
     );
@@ -437,11 +448,6 @@ async function openBackend(
 ): Promise<ActionLogBackend> {
   if (options.backendInstance) return options.backendInstance;
   const kind = options.backend ?? defaultBackendKind();
-  if (kind === "memory") return new ActionLogMemoryBackend();
-  if (kind === "jsonl") {
-    const path = options.path ?? "actionlog.jsonl";
-    return ActionLogJsonlBackend.open(path);
-  }
   if (kind === "idb") {
     const { ActionLogIdbBackend } = await import("./backend/idbBackend");
     const path = options.path ?? "actionlog";
@@ -460,8 +466,10 @@ export type {
   ActionLogEvent,
   ActionLogEventType,
   ActionLogStage,
+  InvocationDisplayStatus,
   InvocationState,
   ToolPermission,
   ToolWorkerContext,
 } from "./actionLogTypes";
+export { Invocation } from "./actionLogTypes";
 export type { ToolNotice, ToolUiCopy } from "../tools/globals";

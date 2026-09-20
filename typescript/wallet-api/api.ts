@@ -49,6 +49,8 @@ export {
   type ActionLogEvent,
   type ActionLogEventType,
   type ActionLogStage,
+  Invocation,
+  type InvocationDisplayStatus,
   type InvocationState,
   type ToolPermission,
   type ToolNotice,

@@ -50,7 +50,14 @@ export type ActionLogEvent = {
   [key: string]: unknown;
 };
 
-export type InvocationState = {
+export type InvocationDisplayStatus =
+  | "done"
+  | "dismissed"
+  | "aborted"
+  | "failed"
+  | "in progress";
+
+export class Invocation {
   invocationId: string;
   toolId: ToolId;
   stage: ActionLogStage;
@@ -70,14 +77,74 @@ export type InvocationState = {
   wallet_to_send_from_pa?: string;
   ok?: boolean;
   error?: string;
-};
+  events: ActionLogEvent[];
+
+  /** an Invocation from stored fields or from advanceInvo. */
+  constructor(init: {
+    invocationId: string;
+    toolId: ToolId;
+    stage: ActionLogStage;
+    lastType: ActionLogEventType;
+    events?: ActionLogEvent[];
+    valid?: ToolInvocationValidity;
+    amount?: string;
+    address?: string;
+    no_check?: boolean;
+    wallet_slot?: number;
+    context_domain?: string;
+    destination_domain?: string;
+    context_href?: string;
+    found_in?: "link" | "linkText";
+    link?: string;
+    linkText?: string;
+    timestamp?: string;
+    wallet_to_send_from_pa?: string;
+    ok?: boolean;
+    error?: string;
+  }) {
+    this.invocationId = init.invocationId;
+    this.toolId = init.toolId;
+    this.stage = init.stage;
+    this.lastType = init.lastType;
+    this.events = init.events ?? [];
+    if (init.valid !== undefined) this.valid = init.valid;
+    if (init.amount !== undefined) this.amount = init.amount;
+    if (init.address !== undefined) this.address = init.address;
+    if (init.no_check !== undefined) this.no_check = init.no_check;
+    if (init.wallet_slot !== undefined) this.wallet_slot = init.wallet_slot;
+    if (init.context_domain !== undefined)
+      this.context_domain = init.context_domain;
+    if (init.destination_domain !== undefined)
+      this.destination_domain = init.destination_domain;
+    if (init.context_href !== undefined) this.context_href = init.context_href;
+    if (init.found_in !== undefined) this.found_in = init.found_in;
+    if (init.link !== undefined) this.link = init.link;
+    if (init.linkText !== undefined) this.linkText = init.linkText;
+    if (init.timestamp !== undefined) this.timestamp = init.timestamp;
+    if (init.wallet_to_send_from_pa !== undefined)
+      this.wallet_to_send_from_pa = init.wallet_to_send_from_pa;
+    if (init.ok !== undefined) this.ok = init.ok;
+    if (init.error !== undefined) this.error = init.error;
+  }
+
+  /** the label on the list and detail pages.  */
+  get status(): InvocationDisplayStatus {
+    if (this.lastType === "execute_result") return "done";
+    if (this.lastType === "dismiss") return "dismissed";
+    if (this.lastType === "aborted") return "aborted";
+    if (this.lastType === "execute_error") return "failed";
+    return "in progress";
+  }
+}
+
+export type InvocationState = Invocation;
 
 export const TERMINAL_EVENT_TYPES: ReadonlySet<ActionLogEventType> = new Set([
   "dismiss",
   "execute_result",
   "aborted",
 ]);
-// an event that makes an invo not active anymore 
+// dismiss, execute_result, and aborted end the invocation.
 export function isTerminalEventType(type: ActionLogEventType): boolean {
   return TERMINAL_EVENT_TYPES.has(type);
 }
@@ -97,25 +164,26 @@ export type ToolWorkerContext = {
   getPort: (invocationId: string) => ExtensionPort | undefined;
 };
 
-// apply event to state. the invocation holds a state; this advances that state.
+/** apply one event to the current invocation state. advances invocation state. */
 export function advanceInvo(
   prev: InvocationState | null,
   event: ActionLogEvent,
 ): InvocationState {
-  const base: InvocationState = prev ?? {
-    invocationId: event.invocationId,
-    toolId: event.toolId,
-    stage: event.stage,
-    lastType: event.type,
-  };
-  const next: InvocationState = {
-    ...base,
+  const next = new Invocation({
+    ...(prev ?? {
+      invocationId: event.invocationId,
+      toolId: event.toolId,
+      stage: event.stage,
+      lastType: event.type,
+      events: [],
+    }),
     invocationId: event.invocationId,
     toolId: event.toolId,
     stage: event.stage,
     lastType: event.type,
     timestamp: event.timestamp,
-  };
+    events: [...(prev?.events ?? []), event],
+  });
   if (event.valid !== undefined) next.valid = event.valid;
   if (event.amount !== undefined) next.amount = event.amount;
   if (event.address !== undefined) next.address = event.address;
@@ -136,40 +204,57 @@ export function advanceInvo(
   return next;
 }
 
+/** still live. false for dismiss, execute_result, aborted. */
 export function isActive(state: InvocationState): boolean {
   return !isTerminalEventType(state.lastType);
 }
 
+export type InvocationStatus = "active" | ActionLogEventType;
+
+/** the status column: active, or lastType when the invocation ended. */
+export function invocationStatus(state: InvocationState): InvocationStatus {
+  return isActive(state) ? "active" : state.lastType;
+}
+
 export type ActionLogBackend = {
   append(event: ActionLogEvent): Promise<void>;
-  getBranch(invocationId: string): Promise<ActionLogEvent[]>;
-  getTip(invocationId: string): Promise<ActionLogEvent | null>;
-  getActiveByToolId(toolId: ToolId): Promise<InvocationState | null>;
-  getActiveInvocations(): Promise<InvocationState[]>;
+  invocation(invocationId: string): Promise<InvocationState | null>;
+  invocations(status?: InvocationStatus): Promise<InvocationState[]>;
   feed?(events: ActionLogEvent[]): Promise<void>;
   reload?(): Promise<void>;
   close?(): Promise<void>;
 };
-
-// active invocations from the log, by id and by tool. 
-// a jsonl file is only a list of events. it cannot tell you what is still active.
-// walk the events into this object and keep it up to date on each append.
+// current invos in memory. mininext reads this once per frame.
 export class ActiveInvocations {
   byInvocation = new Map<string, InvocationState>();
   byTool = new Map<ToolId, string>();
 
+  /** update the invo for this event. byTool keeps one live invo per tool. */
   apply(event: ActionLogEvent) {
     const prev = this.byInvocation.get(event.invocationId) ?? null;
     const next = advanceInvo(prev, event);
-    if (!isActive(next)) {
-      this.byInvocation.delete(event.invocationId);
-      if (this.byTool.get(event.toolId) === event.invocationId) {
-        this.byTool.delete(event.toolId);
-      }
-      return;
-    }
     this.byInvocation.set(event.invocationId, next);
-    this.byTool.set(event.toolId, event.invocationId);
+    if (isActive(next)) {
+      this.byTool.set(event.toolId, event.invocationId);
+      return next;
+    }
+    if (this.byTool.get(event.toolId) === event.invocationId) {
+      this.byTool.delete(event.toolId);
+    }
+    return next;
+  }
+
+  /** invocations from sqlite or idb into byInvocation and byTool. */
+  loadStates(states: InvocationState[]) {
+    this.clear();
+    for (const state of states) {
+      const invo = new Invocation({
+        ...state,
+        events: state.events ?? [],
+      });
+      this.byInvocation.set(invo.invocationId, invo);
+      if (isActive(invo)) this.byTool.set(invo.toolId, invo.invocationId);
+    }
   }
 
   clear() {
@@ -177,13 +262,23 @@ export class ActiveInvocations {
     this.byTool.clear();
   }
 
-  getActiveByToolId(toolId: ToolId): InvocationState | null {
-    const id = this.byTool.get(toolId);
-    if (!id) return null;
-    return this.byInvocation.get(id) ?? null;
+  /** the invocation for this id. */
+  invocation(invocationId: string): InvocationState | null {
+    return this.byInvocation.get(invocationId) ?? null;
   }
 
-  getActiveInvocations(): InvocationState[] {
-    return [...this.byInvocation.values()];
+  /** all invocations, or filter. active reads byTool (one live invo per tool). */
+  invocations(status?: InvocationStatus): InvocationState[] {
+    if (status === "active") {
+      const out: InvocationState[] = [];
+      for (const id of this.byTool.values()) {
+        const s = this.byInvocation.get(id);
+        if (s) out.push(s);
+      }
+      return out;
+    }
+    const all = [...this.byInvocation.values()];
+    if (!status) return all;
+    return all.filter((s) => invocationStatus(s) === status);
   }
 }
