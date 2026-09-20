@@ -29,10 +29,6 @@ export type ActionLogOpenedCreateOptions = {
   extensionMessageBus?: ExtensionMessageBus;
 };
 
-export type ActionLogChangedParameters = {
-  events: ActionLogEvent[];
-};
-
 type BoundMco = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   feed: (params: any) => Promise<void>;
@@ -111,8 +107,8 @@ export class ActionLogOpened {
     return this.bus === "ui";
   }
 
-  private broadcastEvents(events: ActionLogEvent[]) {
-    void sendToBackground("actionLogChanged", { events }).catch(() => {});
+  private broadcastActionLogChanged() {
+    void sendToBackground("actionLogChanged", null).catch(() => {});
   }
 
   async append(
@@ -126,7 +122,7 @@ export class ActionLogOpened {
     } as ActionLogEvent;
     await this.backend.append(event);
     await this.refreshUiCache();
-    this.broadcastEvents([event]);
+    this.broadcastActionLogChanged();
     return event;
   }
 
@@ -187,17 +183,6 @@ export class ActionLogOpened {
       return;
     }
     await this.dismissNoticeLocal(noticeId);
-  }
-
-  async feed(params: ActionLogChangedParameters): Promise<void> {
-    if (this.backend.feed) {
-      await this.backend.feed(params.events);
-    } else {
-      for (const event of params.events) {
-        await this.backend.append(event);
-      }
-    }
-    await this.refreshUiCache();
   }
 
   async dismiss(invocationId: string): Promise<void> {
@@ -278,11 +263,10 @@ export class ActionLogOpened {
   }): Promise<{ events?: ActionLogEvent[] } | void> {
     if (!env?.kind) return {};
     if (env.kind === "actionLogChanged") {
-      const p = env.payload as { events?: ActionLogEvent[] };
       if (this.backend.reload) {
         await this.backend.reload();
         await this.refreshUiCache();
-      } else if (p?.events) await this.feed({ events: p.events });
+      }
       return {};
     }
     if (env.kind === "walletCacheChanged") {
@@ -338,11 +322,6 @@ export class ActionLogOpened {
       case "worker.stopWorker":
         await this.mco?.stopWorker();
         return {};
-      case "actionLogChanged": {
-        const p = env.payload as { events?: ActionLogEvent[] };
-        if (p?.events) await this.feed({ events: p.events });
-        return {};
-      }
       case "toolCall": {
         await this.toolCall(env.payload as ParsedMoneroToolInvocation);
         return {};

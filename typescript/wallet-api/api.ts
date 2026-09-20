@@ -45,7 +45,6 @@ export {
   ActionLogOpened,
   type ActionLogOpenedCreateOptions,
   type ActionLogBackendKind,
-  type ActionLogChangedParameters,
   type ActionLogEvent,
   type ActionLogEventType,
   type ActionLogStage,

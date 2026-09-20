@@ -220,7 +220,6 @@ export type ActionLogBackend = {
   append(event: ActionLogEvent): Promise<void>;
   invocation(invocationId: string): Promise<InvocationState | null>;
   invocations(status?: InvocationStatus): Promise<InvocationState[]>;
-  feed?(events: ActionLogEvent[]): Promise<void>;
   reload?(): Promise<void>;
 };
 // current invos in memory. mininext reads this once per frame.

@@ -109,14 +109,6 @@ export class ActionLogIdbBackend implements ActionLogBackend {
     });
   }
 
-  async feed(events: ActionLogEvent[]): Promise<void> {
-    for (const event of events) {
-      const invo = this.active.invocation(event.invocationId);
-      if (invo?.events.some((e) => e.id === event.id)) continue;
-      await this.append(event);
-    }
-  }
-
   async reload(): Promise<void> {
     await this.loadInvocations();
   }

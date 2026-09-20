@@ -21,7 +21,7 @@ export type ExtensionMessageByKind = {
   dismiss: { invocationId: string };
   dismissNotice: { noticeId: string };
   openSidebar: null;
-  actionLogChanged: { events?: unknown[] };
+  actionLogChanged: null;
   walletCacheChanged: string;
   "worker.setNodeUrl": { node_url?: string };
   "worker.setStartHeight": { start_height?: number | null };
