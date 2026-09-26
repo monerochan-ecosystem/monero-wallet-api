@@ -139,10 +139,25 @@ export async function checkToolInvocationValidity(
 }
 
 export function getDomainWithTLD(hostname: string): string {
+  // strip one pair of brackets from bracketed ipv6 literals first
+  const bare =
+    hostname.startsWith("[") && hostname.endsWith("]")
+      ? hostname.slice(1, -1)
+      : hostname;
+  // the loopback spellings name the host users call localhost.
+  // one bucket for all three, or one dev server derives three wallets.
+  if (bare === "127.0.0.1" || bare === "::1") return "localhost";
   // lower case, then split on "." and drop empty pieces from a stray dot
-  const parts = hostname.toLowerCase().split(".").filter(Boolean);
+  const parts = bare.toLowerCase().split(".").filter(Boolean);
   // for localhost or single-part hostnames, return as-is
-  if (parts.length <= 1) return hostname;
+  if (parts.length <= 1) return bare;
+  // ip literals are not domain names. the psl would chop them into
+  // meaningless tails (127.0.0.1 becomes 0.1, and two different lan hosts
+  // can land in one bucket). return them unchanged.
+  // ipv4 has only numeric labels. numeric tlds do not exist.
+  if (parts.every((p) => /^\d+$/.test(p))) return bare;
+  // ipv6 has colons, dns names never do
+  if (bare.includes(":")) return bare;
 
   // if nothing in the list matches, the psl says pretend the rule was "*". the suffix is the last label only.
   let suffixLen = 1;
