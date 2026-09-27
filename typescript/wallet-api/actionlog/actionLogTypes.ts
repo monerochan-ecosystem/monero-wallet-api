@@ -127,9 +127,10 @@ export class Invocation {
     if (init.error !== undefined) this.error = init.error;
   }
 
-  /** the label on the list and detail pages.  */
+  /** the label on the list and detail pages. a failed send is failed, not done. */
   get status(): InvocationDisplayStatus {
-    if (this.lastType === "execute_result") return "done";
+    if (this.lastType === "execute_result")
+      return this.ok === false ? "failed" : "done";
     if (this.lastType === "dismiss") return "dismissed";
     if (this.lastType === "aborted") return "aborted";
     if (this.lastType === "execute_error") return "failed";
