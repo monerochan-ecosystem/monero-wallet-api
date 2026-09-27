@@ -573,6 +573,7 @@ export class ScanCacheOpened {
     let maybeInputs: Output[] = [];
     let maybeFeeEstimate: FeeEstimateResponse;
     let maybeSendResult: SendRawTransactionResult;
+    let maybeSignedTx: string | undefined;
     try {
       const { selectedInputs, feeEstimate } =
         await this.calculateFeeAndSelectInputs(params);
@@ -584,6 +585,7 @@ export class ScanCacheOpened {
         feeEstimate,
       );
       const signedTx = await this.signTransaction(unsignedTx);
+      maybeSignedTx = signedTx;
       const sendResult = await this.sendTransaction(signedTx);
       maybeSendResult = sendResult;
       if (sendResult.status !== "OK")
@@ -610,6 +612,7 @@ export class ScanCacheOpened {
             height: this.current_height!,
             timestamp: Date.now(),
             invocationId: params.invocationId,
+            signed_tx: signedTx,
           };
           const newLen = cache.tx_logs.push(txLog);
           const txLogIndex = newLen - 1;
@@ -662,8 +665,9 @@ export class ScanCacheOpened {
             height: this.current_height!,
             timestamp: Date.now(),
             invocationId: params.invocationId,
+            signed_tx: maybeSignedTx,
           };
-          const newLen = cache.tx_logs.push(txLog);
+          cache.tx_logs.push(txLog);
         },
       });
       const newCache = await readCacheFileDefaultLocation(
@@ -674,10 +678,7 @@ export class ScanCacheOpened {
         throw new Error(
           `cache not found for primary address: ${this.primary_address}, and path prefix: ${this.pathPrefix}`,
         );
-      const changed_outputs: ChangedOutput[] = maybeInputs.map((input) => ({
-        change_reason: "spent",
-        output: input,
-      }));
+      const changed_outputs: ChangedOutput[] = [];
       await this.feed({
         newCache,
         changed_outputs,
@@ -688,6 +689,205 @@ export class ScanCacheOpened {
 
       throw e;
     }
+  }
+
+  private outputsForIndexes(indexes: string[]): Output[] {
+    const byId = new Map(
+      this.spendableInputs().map((output) => [
+        String(output.index_on_blockchain),
+        output,
+      ]),
+    );
+    const selected: Output[] = [];
+    for (const id of indexes) {
+      const output = byId.get(id);
+      if (!output) throw new Error(`input not spendable: ${id}`);
+      selected.push(output);
+    }
+    if (!selected.length) throw new Error("no inputs selected");
+    return selected;
+  }
+
+  public async makeSignSend(params: {
+    payments: Payment[];
+    input_indexes: string[];
+  }) {
+    // an empty list means the wallet selects the inputs
+    if (!params.input_indexes.length) {
+      return this.makeSignSendTransaction({
+        payments: params.payments,
+      });
+    }
+    return this.makeSignSendTransaction({
+      payments: params.payments,
+      inputs: this.outputsForIndexes(params.input_indexes),
+    });
+  }
+
+  public async sweepSignSend(params: {
+    address: string;
+    input_indexes: string[];
+  }) {
+    const inputs = params.input_indexes.length
+      ? this.outputsForIndexes(params.input_indexes)
+      : this.spendableInputs();
+    if (!inputs.length) throw new Error("no inputs selected");
+    const feeEstimate = await this.getFeeEstimate();
+    const unsignedTx = await this.makeSweepTransactionFromSelectedInputs(
+      params.address,
+      inputs,
+      feeEstimate,
+    );
+    const signedTx = await this.signTransaction(unsignedTx);
+    const payments: Payment[] = [{ address: params.address, amount: "0" }];
+    const sendResult = await this.sendTransaction(signedTx);
+    if (sendResult.status !== "OK") {
+      await this.recordSend({
+        payments,
+        inputs,
+        signedTx,
+        feeEstimate,
+        sendResult,
+        error: "send raw transaction rpc returned error",
+        lockInputs: false,
+      });
+      throw new Error("send raw transaction rpc returned error");
+    }
+    await this.recordSend({
+      payments,
+      inputs,
+      signedTx,
+      feeEstimate,
+      sendResult,
+      lockInputs: true,
+    });
+    return sendResult;
+  }
+
+  public async rebroadcastTx(txLogIndex: number) {
+    const txlog = this._cache.tx_logs?.[txLogIndex];
+    if (!txlog?.signed_tx) throw new Error("no signed tx to rebroadcast");
+    const inputs = txlog.inputs_index
+      .map((id) => this._cache.outputs[id])
+      .filter((output) => output);
+    if (
+      inputs.length &&
+      inputs.every((output) => typeof output.spent_in_tx_hash === "string")
+    )
+      throw new Error("inputs already spent on chain");
+    const sendResult = await this.sendTransaction(txlog.signed_tx);
+    await this.stopWorker();
+    await writeCacheFileDefaultLocationThrows({
+      primary_address: this.primary_address,
+      pathPrefix: this.pathPrefix,
+      writeCallback: async (cache) => {
+        const row = cache.tx_logs?.[txLogIndex];
+        if (!row) throw new Error("tx log missing");
+        row.sendResult = sendResult;
+        if (sendResult.status === "OK") {
+          row.error = undefined;
+          if (!cache.pending_spent_utxos) cache.pending_spent_utxos = {};
+          for (const inputId of row.inputs_index)
+            cache.pending_spent_utxos[inputId] = txLogIndex;
+        } else {
+          row.error = sendResult.reason || "rebroadcast failed";
+        }
+      },
+    });
+    const newCache = await readCacheFileDefaultLocation(
+      this.primary_address,
+      this.pathPrefix,
+    );
+    if (!newCache) throw new Error("cache not found after rebroadcast");
+    await this.feed({ newCache, changed_outputs: [] });
+    await this.unpause();
+    return sendResult;
+  }
+
+  get failed_txs() {
+    const logs = this._cache.tx_logs || [];
+    const rows: { index: number; txlog: TxLog; inputs: Output[] }[] = [];
+    for (let index = 0; index < logs.length; index++) {
+      const txlog = logs[index];
+      if (!txlog || txlog.hidden_on_send_plate) continue;
+      if (txlog.sendResult?.status === "OK") continue;
+      const inputs = txlog.inputs_index
+        .map((id) => this._cache.outputs[id])
+        .filter((output) => output);
+      if (
+        inputs.length &&
+        inputs.every((output) => typeof output.spent_in_tx_hash === "string")
+      )
+        continue;
+      rows.push({ index, txlog, inputs });
+    }
+    return rows;
+  }
+
+  private async recordSend(args: {
+    payments: Payment[];
+    inputs: Output[];
+    signedTx: string;
+    feeEstimate: FeeEstimateResponse;
+    sendResult: SendRawTransactionResult;
+    error?: string;
+    lockInputs: boolean;
+  }) {
+    await this.stopWorker();
+    await writeCacheFileDefaultLocationThrows({
+      primary_address: this.primary_address,
+      pathPrefix: this.pathPrefix,
+      writeCallback: async (cache) => {
+        if (!cache.tx_logs) cache.tx_logs = [];
+        if (!cache.pending_spent_utxos) cache.pending_spent_utxos = {};
+        const inputs_index = args.inputs.map((input) =>
+          String(input.index_on_blockchain),
+        );
+        const txLog: TxLog = {
+          sendResult: args.sendResult,
+          error: args.error,
+          feeEstimate: args.feeEstimate,
+          payments: args.payments,
+          node_url: this.node_url,
+          inputs_index,
+          height: this.current_height!,
+          timestamp: Date.now(),
+          signed_tx: args.signedTx,
+        };
+        const txLogIndex = cache.tx_logs.push(txLog) - 1;
+        if (!args.lockInputs) return;
+        for (const inputId of inputs_index)
+          cache.pending_spent_utxos![inputId] = txLogIndex;
+      },
+    });
+    const newCache = await readCacheFileDefaultLocation(
+      this.primary_address,
+      this.pathPrefix,
+    );
+    if (!newCache) throw new Error("cache not found after send");
+    const changed_outputs: ChangedOutput[] = args.lockInputs
+      ? args.inputs.map((output) => ({ change_reason: "spent", output }))
+      : [];
+    await this.feed({ newCache, changed_outputs });
+    await this.unpause();
+  }
+
+  public async dismissSendPlate() {
+    await this.stopWorker();
+    await writeCacheFileDefaultLocationThrows({
+      primary_address: this.primary_address,
+      pathPrefix: this.pathPrefix,
+      writeCallback: async (cache) => {
+        for (const row of cache.tx_logs || []) row.hidden_on_send_plate = true;
+      },
+    });
+    const newCache = await readCacheFileDefaultLocation(
+      this.primary_address,
+      this.pathPrefix,
+    );
+    if (!newCache) throw new Error("cache not found after dismiss");
+    await this.feed({ newCache, changed_outputs: [] });
+    await this.unpause();
   }
   /**
    * makeStandardTransaction
@@ -1037,6 +1237,60 @@ export class ManyScanCachesOpened {
     }
     await this.wallets[0].changeNodeUrl(node_url);
   }
+
+  private walletByAddress(primary_address: string) {
+    const wallet = this.wallets.find(
+      (row) => row.primary_address === primary_address,
+    );
+    if (!wallet) throw new Error("wallet not found");
+    return wallet;
+  }
+
+  public async makeSignSend(params: {
+    primary_address: string;
+    payments: { address: string; amount: string }[];
+    input_indexes: string[];
+  }) {
+    if (this.actionLogOpened.extensionMessageBus === "ui") {
+      await sendToBackground("worker.makeSignSend", params).catch(() => {});
+      return;
+    }
+    return this.walletByAddress(params.primary_address).makeSignSend(params);
+  }
+
+  public async sweepSignSend(params: {
+    primary_address: string;
+    address: string;
+    input_indexes: string[];
+  }) {
+    if (this.actionLogOpened.extensionMessageBus === "ui") {
+      await sendToBackground("worker.sweepSignSend", params).catch(() => {});
+      return;
+    }
+    return this.walletByAddress(params.primary_address).sweepSignSend(params);
+  }
+
+  public async rebroadcastTx(params: {
+    primary_address: string;
+    tx_log_index: number;
+  }) {
+    if (this.actionLogOpened.extensionMessageBus === "ui") {
+      await sendToBackground("worker.rebroadcastTx", params).catch(() => {});
+      return;
+    }
+    return this.walletByAddress(params.primary_address).rebroadcastTx(
+      params.tx_log_index,
+    );
+  }
+
+  public async dismissSendPlate(params: { primary_address: string }) {
+    if (this.actionLogOpened.extensionMessageBus === "ui") {
+      await sendToBackground("worker.dismissSendPlate", params).catch(() => {});
+      return;
+    }
+    return this.walletByAddress(params.primary_address).dismissSendPlate();
+  }
+
   get merchant_confirmations(): number | null | undefined {
     if (this.wallets.length === 0) return undefined;
     return this.wallets[0]?.merchant_confirmations;
@@ -1078,14 +1332,24 @@ export class ManyScanCachesOpened {
   }
   public async setLogSettings(
     logs?: LogSetting | null,
-    logs_include?: PossibleLogs[] | null,
-    logs_exclude?: PossibleLogs[] | null,
+    logs_include?: string[] | null,
+    logs_exclude?: string[] | null,
   ) {
-    return await this._scanSettings.setLogSettings(
+    if (this.actionLogOpened.extensionMessageBus === "ui") {
+      await sendToBackground("worker.setLogSettings", {
+        logs,
+        logs_include,
+        logs_exclude,
+      }).catch(() => {});
+    }
+    await this._scanSettings.setLogSettings(
       logs,
-      logs_include,
-      logs_exclude,
+      logs_include as PossibleLogs[] | null,
+      logs_exclude as PossibleLogs[] | null,
     );
+    if (this.actionLogOpened.extensionMessageBus === "ui") return;
+    for (const wallet of this.wallets) await wallet.stopWorker();
+    for (const wallet of this.wallets) await wallet.unpause();
   }
   public async setWalletName(primary_address: string, name?: string) {
     await this._scanSettings.setWalletName(primary_address, name);

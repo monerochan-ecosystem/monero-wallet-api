@@ -293,6 +293,8 @@ export type TxLog = {
   sendResult?: SendRawTransactionResult;
   error?: string;
   invocationId?: string;
+  signed_tx?: string;
+  hidden_on_send_plate?: boolean;
 };
 
 export type ChangeReason =

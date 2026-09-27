@@ -13,6 +13,7 @@ import type { ParsedMoneroToolInvocation } from "../tools/monero-tools";
 import {
   getExtensionRuntime,
   sendToBackground,
+  type ExtensionMessageByKind,
   type ExtensionMessageKind,
   type ExtensionPort,
   type ToolNotice,
@@ -29,6 +30,11 @@ export type ActionLogOpenedCreateOptions = {
   extensionMessageBus?: ExtensionMessageBus;
 };
 
+type WorkerMessageResult =
+  | { events?: ActionLogEvent[] }
+  | { tx_logs: unknown }
+  | void;
+
 type BoundMco = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   feed: (params: any) => Promise<void>;
@@ -41,6 +47,26 @@ type BoundMco = {
   ) => Promise<void>;
   buildWallets: () => Promise<void>;
   stopWorker: () => Promise<void>;
+  makeSignSend: (params: {
+    primary_address: string;
+    payments: { address: string; amount: string }[];
+    input_indexes: string[];
+  }) => Promise<unknown>;
+  sweepSignSend: (params: {
+    primary_address: string;
+    address: string;
+    input_indexes: string[];
+  }) => Promise<unknown>;
+  rebroadcastTx: (params: {
+    primary_address: string;
+    tx_log_index: number;
+  }) => Promise<unknown>;
+  dismissSendPlate: (params: { primary_address: string }) => Promise<unknown>;
+  setLogSettings: (
+    logs?: "console" | "file" | "console-and-file" | "off" | null,
+    logs_include?: string[] | null,
+    logs_exclude?: string[] | null,
+  ) => Promise<unknown>;
 };
 
 function armWorker(toolId: ToolId) {
@@ -154,9 +180,28 @@ export class ActionLogOpened {
   private async applyToolCall(invo: ParsedMoneroToolInvocation) {
     const w = armWorker(invo.tool.tool_id as ToolId);
     const ctx = this.toolCtx();
-    if (!(await this.invocation(invo.invocation_id)))
+    const isNew = !(await this.invocation(invo.invocation_id));
+    if (isNew) {
+      // a new call takes over its permission category. older active calls of the same permission are dismissed
+      await this.dismissOthersOfSamePermission(invo);
       await w?.invoke_write?.(ctx, invo);
+    }
     if (invo.valid !== "unverified") await w?.validate_write?.(ctx, invo);
+  }
+
+  /** only the newest active call per permission category stays open. */
+  private async dismissOthersOfSamePermission(
+    invo: ParsedMoneroToolInvocation,
+  ) {
+    const id = invo.tool.tool_id as ToolId;
+    const perms = (tools[id]?.permissions as readonly string[]) ?? [];
+    if (!perms.length) return;
+    await this.refreshUiCache();
+    const open = this.getActiveByPermissions(perms as ToolPermission[]);
+    for (const row of open) {
+      if (row.invocationId === invo.invocation_id) continue;
+      await this.dismiss(row.invocationId);
+    }
   }
 
   /** open invocations for these permissions. the send and wallets plates show these. */
@@ -212,7 +257,7 @@ export class ActionLogOpened {
     handle: (
       env: { kind: ExtensionMessageKind; payload: unknown },
       sender?: { tab?: { windowId?: number } },
-    ) => Promise<{ events?: ActionLogEvent[] } | void>,
+    ) => Promise<WorkerMessageResult>,
   ) {
     const rt = getExtensionRuntime();
     if (!rt) return;
@@ -221,7 +266,7 @@ export class ActionLogOpened {
         msg as { kind: ExtensionMessageKind; payload: unknown },
         sender as { tab?: { windowId?: number } } | undefined,
       ).then((result) => {
-        sendResponse?.(result ?? {});
+        if (result !== undefined) sendResponse?.(result);
         return result;
       });
       void done;
@@ -280,13 +325,16 @@ export class ActionLogOpened {
       await this.mco?.feed(raw);
       return {};
     }
-    return {};
+    // Unhandled kinds (worker.* queries especially) get no answer here.
+    // The worker answers, and the first answer wins. A local {} would win
+    // the race and hide the worker response.
+    return;
   }
 
   private async handleWorkerMessage(
     env: { kind: ExtensionMessageKind; payload: unknown },
     sender?: { tab?: { windowId?: number } },
-  ): Promise<{ events?: ActionLogEvent[] } | void> {
+  ): Promise<WorkerMessageResult> {
     if (!env?.kind) return {};
     const ctx = this.toolCtx();
     switch (env.kind) {
@@ -322,6 +370,62 @@ export class ActionLogOpened {
       case "worker.stopWorker":
         await this.mco?.stopWorker();
         return {};
+      case "worker.makeSignSend": {
+        const p = env.payload as ExtensionMessageByKind["worker.makeSignSend"];
+        await this.mco?.makeSignSend(p);
+        return {};
+      }
+      case "worker.sweepSignSend": {
+        const p = env.payload as ExtensionMessageByKind["worker.sweepSignSend"];
+        await this.mco?.sweepSignSend(p);
+        return {};
+      }
+      case "worker.rebroadcastTx": {
+        const p = env.payload as ExtensionMessageByKind["worker.rebroadcastTx"];
+        await this.mco?.rebroadcastTx(p);
+        return {};
+      }
+      case "worker.dismissSendPlate": {
+        const p = env.payload as ExtensionMessageByKind["worker.dismissSendPlate"];
+        await this.mco?.dismissSendPlate(p);
+        return {};
+      }
+      case "worker.setLogSettings": {
+        const p = env.payload as ExtensionMessageByKind["worker.setLogSettings"];
+        await this.mco?.setLogSettings(
+          p?.logs,
+          p?.logs_include,
+          p?.logs_exclude,
+        );
+        return {};
+      }
+      case "worker.getTxLogs": {
+        const wallets = (
+          this.mco as unknown as {
+            wallets?: {
+              primary_address: string;
+              tx_logs: Record<string, unknown>[];
+            }[];
+          } | null
+        )?.wallets;
+        const rows = (wallets ?? []).map((w) => ({
+          primary_address: w.primary_address,
+          tx_logs: (w.tx_logs ?? []).map(
+            (t: Record<string, unknown>, index: number) => {
+              const out: Record<string, unknown> = { ...t, index };
+              delete out.signed_tx;
+              return out;
+            },
+          ),
+        }));
+        // chrome messages must be plain JSON. cache rows can hold bigints.
+        const clean = JSON.parse(
+          JSON.stringify(rows, (_k, v) =>
+            typeof v === "bigint" ? v.toString() : v,
+          ),
+        );
+        return { tx_logs: clean };
+      }
       case "toolCall": {
         await this.toolCall(env.payload as ParsedMoneroToolInvocation);
         return {};

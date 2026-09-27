@@ -31,6 +31,29 @@ export type ExtensionMessageByKind = {
   };
   "worker.buildWallets": null;
   "worker.stopWorker": null;
+  "worker.makeSignSend": {
+    primary_address: string;
+    payments: { address: string; amount: string }[];
+    input_indexes: string[];
+  };
+  "worker.sweepSignSend": {
+    primary_address: string;
+    address: string;
+    input_indexes: string[];
+  };
+  "worker.rebroadcastTx": {
+    primary_address: string;
+    tx_log_index: number;
+  };
+  "worker.dismissSendPlate": {
+    primary_address: string;
+  };
+  "worker.setLogSettings": {
+    logs?: "console" | "file" | "console-and-file" | "off" | null;
+    logs_include?: string[] | null;
+    logs_exclude?: string[] | null;
+  };
+  "worker.getTxLogs": null;
   shareViewkeyOK: { invocationId: string };
   shareViewkeyFAILED: {
     viewkey: string;
