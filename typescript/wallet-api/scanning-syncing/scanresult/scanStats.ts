@@ -192,17 +192,19 @@ export function processFoundTransactions(
     }
     // handle spent case
     if (output.spent_in_tx_hash) {
-      const spent_utxo_value = cache.pending_spent_utxos
-        ? cache.pending_spent_utxos[output.index_on_blockchain]
-        : null;
+      const spentIndex = cache.pending_spent_utxos
+        ? cache.pending_spent_utxos[String(output.index_on_blockchain)]
+        : undefined;
+      // index 0 is a real log. do not treat it as missing.
       const txlog =
-        cache.tx_logs && spent_utxo_value
-          ? cache.tx_logs[spent_utxo_value]
+        cache.tx_logs && spentIndex !== undefined
+          ? cache.tx_logs[spentIndex]
           : undefined;
       const spentTx = stats.found_transactions[output.spent_in_tx_hash];
       if (spentTx) {
         spentTx.amount -= output.amount;
         spentTx.inputs.push(output);
+        if (!spentTx.txlog && txlog) spentTx.txlog = txlog;
       } else {
         stats.found_transactions[output.spent_in_tx_hash] = {
           status: { status: "pending", unlock_height: 0 },
