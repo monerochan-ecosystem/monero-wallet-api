@@ -221,6 +221,7 @@ async function execute_run(
   });
 
   let ok = false;
+  let error: string | undefined;
   try {
     const wallets = ctx.getWallets?.() as
       | {
@@ -245,6 +246,7 @@ async function execute_run(
   } catch (e) {
     console.error(e);
     ok = false;
+    error = e instanceof Error ? e.message : String(e);
   }
   await ctx.log.append({
     type: "execute_result",
@@ -252,6 +254,7 @@ async function execute_run(
     invocationId,
     toolId,
     ok,
+    ...(error ? { error } : {}),
     address,
     amount,
     wallet_to_send_from_pa,
@@ -261,9 +264,13 @@ async function execute_run(
 /** toolCall state transition: dismiss accepted. */
 async function accept_no(ctx: ToolWorkerContext, invocationId: string) {
   const invo = await ctx.log.invocation(invocationId);
+  // once the user accepted, execution is in flight. a late dismiss (the send
+  // plate clears the form right after execute) must not flip the entry to dismissed
   if (
     !invo ||
     invo.lastType === "dismiss" ||
+    invo.lastType === "accept" ||
+    invo.lastType === "execute_start" ||
     invo.lastType === "execute_result" ||
     invo.lastType === "aborted"
   ) {

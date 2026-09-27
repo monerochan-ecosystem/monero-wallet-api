@@ -325,7 +325,15 @@ function alreadyAccepted(type: string): boolean {
 }
 
 function isTerminalTipType(type: string): boolean {
-  return type === "dismiss" || type === "execute_result" || type === "aborted";
+  // accept and execute_start count as terminal for dismiss: the user accepted,
+  // execution is in flight, a late dismiss must not flip the entry
+  return (
+    type === "dismiss" ||
+    type === "accept" ||
+    type === "execute_start" ||
+    type === "execute_result" ||
+    type === "aborted"
+  );
 }
 
 /** the content payload from this invocation. missing valid is unverified. */
