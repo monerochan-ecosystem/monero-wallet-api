@@ -16,6 +16,11 @@ export * from "./node-interaction/jsonEndpoints";
 export * from "./io/readDir";
 export * from "./io/atomicWrite";
 export * from "./io/sleep";
+export {
+  LOGGING_FUNCTIONS,
+  type PossibleLogs,
+  type LogSetting,
+} from "./io/logging";
 
 export {
   signTransaction,
@@ -75,3 +80,4 @@ export type {
   ToolWorkerZone,
   ToolInvocationForValidate,
 } from "./tools/globals";
+export { sendToBackground } from "./tools/globals";
