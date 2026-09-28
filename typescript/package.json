@@ -1,6 +1,6 @@
 {
   "name": "@spirobel/monero-wallet-api",
-  "version": "0.5.5",
+  "version": "0.6.0",
   "main": "dist/api.js",
   "module": "dist/api.js",
   "devDependencies": {
