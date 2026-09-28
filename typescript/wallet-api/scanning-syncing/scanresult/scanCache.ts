@@ -237,6 +237,13 @@ export function findRangeThrows(
   if (!range) throw new Error(`range not found for value: ${value}`);
   return range;
 }
+// end of the range that contains start_height. miss means we scan from start
+export function currentScanHeightFromRanges(
+  ranges: CacheRange[],
+  start_height: number,
+): number {
+  return findRange(ranges, start_height)?.end ?? start_height ?? 0;
+}
 export type CacheRange = {
   start: number;
   end: number;
@@ -285,6 +292,9 @@ export type TxLog = {
   feeEstimate?: FeeEstimateResponse;
   sendResult?: SendRawTransactionResult;
   error?: string;
+  invocationId?: string;
+  signed_tx?: string;
+  hidden_on_send_plate?: boolean;
 };
 
 export type ChangeReason =
@@ -362,10 +372,15 @@ export function isConnectionError(error: unknown) {
     error &&
     typeof error === "object" &&
     (("code" in error && error.code === "ConnectionRefused") ||
-      ("errno" in error && error.errno === 0))
+      ("errno" in error && error.errno === 0) ||
+      ("message" in error &&
+        typeof error.message === "string" &&
+        (error.message.includes("Failed to fetch") ||
+          error.message.includes("ERR_INTERNET_DISCONNECTED") ||
+          error.message.includes("NetworkError"))))
   ) {
     return true;
   } else {
-    false;
+    return false;
   }
 }

@@ -358,10 +358,14 @@ test(
         pathPrefix: `${REORG_DIR}/`,
         no_stats: true,
         notifyMasterChanged: async (params) => {
-          if (params.newCache.reorg_info) {
+          if (
+            params.newCache.primary_address === address &&
+            params.newCache.reorg_info
+          ) {
             resolveReorg();
             return;
           }
+          if (params.newCache.primary_address !== address) return;
           const last = params.newCache.scanned_ranges.at(-1);
           if (last && last.end >= 5) {
             resolveSynced();
@@ -468,6 +472,7 @@ test(
         pathPrefix: `${REORG_DIR}/`,
         no_stats: true,
         notifyMasterChanged: async (params) => {
+          if (params.newCache.primary_address !== address0) return;
           const last = params.newCache.scanned_ranges.at(-1);
           if (last && last.end >= TOTAL_BLOCKS && !syncedCalled) {
             syncedCalled = true;

@@ -72,7 +72,11 @@ export async function processScanResult(
           removed_outputs: [],
           reverted_spends: [],
         };
-      } else {
+      } else if (
+        !cache.reorg_info.split_heights.some(
+          (s) => s.block_hash === split_height.block_hash,
+        )
+      ) {
         cache.reorg_info.split_heights.push(split_height);
       }
 
@@ -98,11 +102,19 @@ export async function processScanResult(
         const [key_image] = Object.entries(cache.own_key_images).find(
           ([own_key_image, globalid]) => globalid === id,
         ) || [""]; // if this is viewonly the key_image will be empty
-        cache.reorg_info.removed_outputs.push({
-          old_output_state,
-          key_image,
-          split_height,
-        });
+        if (
+          !cache.reorg_info.removed_outputs.some(
+            (r) =>
+              r.old_output_state.index_on_blockchain ===
+              old_output_state.index_on_blockchain,
+          )
+        ) {
+          cache.reorg_info.removed_outputs.push({
+            old_output_state,
+            key_image,
+            split_height,
+          });
+        }
 
         // 2. remove from outputs and own_key_images
         delete cache.outputs[id];
@@ -118,11 +130,19 @@ export async function processScanResult(
           ([own_key_image, globalid]) => globalid === id,
         ) || [""]; // if this is viewonly the key_image will be empty
         const old_output_state = Object.assign({}, old_output_state_pointer);
-        cache.reorg_info.reverted_spends.push({
-          old_output_state,
-          key_image, // in this case key_image only used here, does not get removed
-          split_height,
-        });
+        if (
+          !cache.reorg_info.reverted_spends.some(
+            (r) =>
+              r.old_output_state.index_on_blockchain ===
+              old_output_state.index_on_blockchain,
+          )
+        ) {
+          cache.reorg_info.reverted_spends.push({
+            old_output_state,
+            key_image, // in this case key_image only used here, does not get removed
+            split_height,
+          });
+        }
 
         // remove spend info from original cache (if output still exists
         // it may have been deleted above in the removed_outputs loop)

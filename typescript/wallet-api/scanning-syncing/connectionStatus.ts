@@ -53,7 +53,45 @@ export function applyWalletScanProgress(
   if (progress.eta !== undefined) {
     cs.sync.eta = progress.eta;
   }
-  cs.sync.timestamp = new Date().toISOString();
+  const now = new Date().toISOString();
+  cs.sync.timestamp = now;
+  // finished batch is a heartbeat so buffer-full catch-up does not look dead
+  if (cs.last_packet) {
+    cs.last_packet.timestamp = now;
+  }
+}
+
+// idle tip: ok packet has daemon height but no work item wrote sync yet
+export function applyLastPacket(
+  cs: ConnectionStatus,
+  packet: ConnectionSatusLastPacket,
+) {
+  cs.last_packet = packet;
+  if (packet.status === "OK" && typeof packet.daemon_height === "number") {
+    cs.sync.daemon_height = packet.daemon_height;
+    if (!cs.sync.current_scan_height) {
+      cs.sync.current_scan_height = packet.daemon_height;
+    }
+  }
+}
+
+export function isConnectedFromStatus(
+  cs: ConnectionStatus | null | undefined,
+): boolean {
+  if (!cs?.last_packet) return false;
+  const { status, timestamp } = cs.last_packet;
+  // fetch paused on purpose while cpu drains the buffer. not a drop.
+  if (status === "blocks_buffer_full") return true;
+  if (status !== "OK") return false;
+  // catching up: slow get_blocks_bin is not a drop. 10s rule is for tip idle only.
+  const behind =
+    cs.sync.daemon_height > 0 &&
+    cs.sync.current_scan_height > 0 &&
+    cs.sync.daemon_height - cs.sync.current_scan_height > 100;
+  if (behind) return true;
+  if (!timestamp) return false;
+  const age = Date.now() - new Date(timestamp).getTime();
+  return age >= 0 && age <= 10_000;
 }
 
 export const DEFAULT_CONNECTION_STATUS_PREFIX = "ConnectionStatus-";

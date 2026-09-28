@@ -1,6 +1,6 @@
 {
   "name": "@spirobel/monero-wallet-api",
-  "version": "0.5.5",
+  "version": "0.6.0",
   "main": "dist/api.js",
   "module": "dist/api.js",
   "devDependencies": {
@@ -17,7 +17,14 @@
     "./tools": {
       "types": "./dist/tools/monero-tools.d.ts",
       "import": "./dist/tools/monero-tools.js"
+    },
+    "./tools/content": {
+      "types": "./dist/tools/content.d.ts",
+      "import": "./dist/tools/content.js"
     }
+  },
+  "browser": {
+    "./dist/actionlog/backend/sqliteBackend.js": false
   },
   "files": ["dist"],
   "license": "MIT",

@@ -1,8 +1,9 @@
 import {
   readConnectionStatusFile,
   connectionStatusFilePath,
+  isConnectedFromStatus,
   type ConnectionStatus,
-} from "../api";
+} from "./connectionStatus";
 
 export class ConnectionStatusOpened {
   private _timer: ReturnType<typeof setInterval> | undefined;
@@ -37,13 +38,7 @@ export class ConnectionStatusOpened {
   }
 
   get isConnected(): boolean {
-    const cs = this._cached;
-    if (!cs?.last_packet) return false;
-    const { status, timestamp } = cs.last_packet;
-    if (status !== "OK" && status !== "blocks_buffer_full") return false;
-    if (!timestamp) return false;
-    const age = Date.now() - new Date(timestamp).getTime();
-    return age >= 0 && age <= 10_000;
+    return isConnectedFromStatus(this._cached);
   }
 
   get daemonHeight(): number | undefined {

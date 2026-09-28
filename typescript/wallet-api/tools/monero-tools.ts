@@ -1,24 +1,56 @@
-import type { ScanSettingOpened } from "../api";
-import { convertAmountBigIntThrows } from "../send-functionality/conversion";
+import {
+  TOOL_MAGIC_STRING,
+  type ToolArm,
+  type ToolInvocationValidity,
+  type ToolPermission,
+  type ToolUiCopy,
+} from "./globals";
+import tool001 from "./calls/001";
+import tool002 from "./calls/002";
+import { publicSuffixRules } from "./public-suffix-list";
 
-export const TOOL_MAGIC_STRING = "monerochan";
-export function parseToolLink(link: string): MoneroTool | null {
-  const magic_str_index = link.lastIndexOf(TOOL_MAGIC_STRING);
-  if (magic_str_index !== -1) {
-    const link_start_index = magic_str_index + TOOL_MAGIC_STRING.length;
+const publicSuffixSet = new Set<string>(publicSuffixRules);
 
-    const tool_id = link.substring(link_start_index, link_start_index + 3);
-    const args = link
-      .substring(link_start_index + 3)
-      .split("_")
-      .slice(1);
-    if (tool_id === "001") return parseSendTransactionToolArgs(args);
-    if (tool_id === "002")
-      return parseCreateAndShareViewOnlyWalletToolArgs(args);
+export { TOOL_MAGIC_STRING, type ToolInvocationValidity };
+export type {
+  ToolArm,
+  ToolContentZone,
+  ToolCounterpartyZone,
+  ToolInvocationForValidate,
+  ToolWorkerZone,
+} from "./globals";
+export type {
+  ToolUiCopy,
+  ToolNotice,
+  ToolPermission,
+} from "./globals";
+
+// add a tool: import + one key here
+export const tools = {
+  "001": tool001,
+  "002": tool002,
+} as const satisfies Record<string, ToolArm<any>>;
+
+export type ToolId = keyof typeof tools;
+export const TOOL_IDS = Object.keys(tools) as ToolId[];
+
+export function getToolUiByPermissions(
+  permissions: ToolPermission[],
+): ToolUiCopy | null {
+  const want = new Set(permissions);
+  for (const id of Object.keys(tools) as ToolId[]) {
+    const arm = tools[id];
+    if (!arm.permissions.some((p) => want.has(p as ToolPermission))) continue;
+    if (arm.ui) return arm.ui;
   }
   return null;
 }
-export type ToolInvocationValidity = "valid" | "invalid" | "unverified";
+
+type PayloadOf<A> = A extends ToolArm<infer P, infer _E> ? P : never;
+export type MoneroTool = {
+  [K in ToolId]: { tool_id: K; payload: PayloadOf<(typeof tools)[K]> };
+}[ToolId];
+
 export type ParsedMoneroToolInvocation = {
   tool: MoneroTool;
   destination_domain: string;
@@ -31,6 +63,31 @@ export type ParsedMoneroToolInvocation = {
   context_href: string;
   valid: ToolInvocationValidity;
 };
+
+function isToolId(id: string): id is ToolId {
+  return id in tools;
+}
+
+export function parseToolLink(link: string): MoneroTool | null {
+  const magic_str_index = link.lastIndexOf(TOOL_MAGIC_STRING);
+  if (magic_str_index === -1) return null;
+  const link_start_index = magic_str_index + TOOL_MAGIC_STRING.length;
+  const tool_id = link.substring(link_start_index, link_start_index + 3);
+  if (!isToolId(tool_id)) return null;
+  const args = link
+    .substring(link_start_index + 3)
+    .split("_")
+    .slice(1);
+  const parsed = tools[tool_id].content.recognize_parse(args);
+  return (parsed as MoneroTool | null) ?? null;
+}
+
+export function createToolLink(tool: MoneroTool): string {
+  const id = tool.tool_id as ToolId;
+  if (!isToolId(id)) throw new Error("unknown tool");
+  return tools[id].counterparty.make(tool.payload as never);
+}
+
 export function parseToolInvocation(
   link: string,
   linkText: string,
@@ -40,11 +97,9 @@ export function parseToolInvocation(
   const context_href = context_location.href;
   const link_parse = parseToolLink(link);
   if (link_parse) {
-    const destination_domain = parseDestination(link);
-
     return {
       tool: link_parse,
-      destination_domain,
+      destination_domain: parseDestination(link),
       context_domain,
       found_in: "link",
       link,
@@ -54,290 +109,97 @@ export function parseToolInvocation(
       context_href,
       valid: "unverified",
     };
-  } else {
-    const linkText_parse = parseToolLink(linkText);
-    if (linkText_parse) {
-      const destination_domain = parseDestination(linkText);
-      return {
-        tool: linkText_parse,
-        destination_domain,
-        context_domain,
-        found_in: "linkText",
-        link,
-        linkText,
-        timestamp: Date.now(),
-        invocation_id: crypto.randomUUID(),
-        context_href,
-        valid: "unverified",
-      };
-    }
   }
-
-  return null;
-}
-export type SendTransactionTool = {
-  tool_id: "001";
-  payload: SendTransactionToolPayload;
-};
-export type SendTransactionToolPayload = {
-  address: string;
-  amount: string;
-};
-export function parseSendTransactionToolArgs(
-  args: string[],
-): SendTransactionTool | null {
-  const amount = args[1];
-  const address = args[3];
-  try {
-    convertAmountBigIntThrows(amount);
-  } catch (e) {
-    return null;
-  }
-  if (address && amount) {
+  const linkText_parse = parseToolLink(linkText);
+  if (linkText_parse) {
     return {
-      tool_id: "001",
-      payload: {
-        address,
-        amount,
-      },
+      tool: linkText_parse,
+      destination_domain: parseDestination(linkText),
+      context_domain,
+      found_in: "linkText",
+      link,
+      linkText,
+      timestamp: Date.now(),
+      invocation_id: crypto.randomUUID(),
+      context_href,
+      valid: "unverified",
     };
   }
   return null;
 }
-export function createSendTransactionToolLink(
-  address: string,
-  amount: string,
-): string {
-  convertAmountBigIntThrows(amount);
-  return `${TOOL_MAGIC_STRING}001_amount_${amount}_address_${address}`;
-}
-export function make001ToolLink(address: string, amount: string): string {
-  return createSendTransactionToolLink(address, amount);
-}
 
-export type CreateAndShareViewOnlyWalletTool = {
-  tool_id: "002";
-  payload: CreateAndShareViewOnlyWalletToolPayload;
-};
-export type CreateAndShareViewOnlyWalletToolPayload = {
-  wallet_slot: number;
-};
-export function parseCreateAndShareViewOnlyWalletToolArgs(
-  args: string[],
-): CreateAndShareViewOnlyWalletTool | null {
-  const wallet_slot = args[5];
-  if (wallet_slot && !isNaN(parseInt(wallet_slot))) {
-    return {
-      tool_id: "002",
-      payload: {
-        wallet_slot: parseInt(wallet_slot),
-      },
-    };
-  }
-  return null;
-}
-export function createCreateAndShareViewOnlyWalletToolLink(
-  wallet_slot?: number,
-): string {
-  wallet_slot = Number(wallet_slot) || 0;
-  return `${TOOL_MAGIC_STRING}002_create_and_share_viewkey_slot_${wallet_slot}`;
-}
-export function make002ToolLink(wallet_slot?: number): string {
-  return createCreateAndShareViewOnlyWalletToolLink(wallet_slot);
-}
-
-export type MoneroTool = SendTransactionTool | CreateAndShareViewOnlyWalletTool;
-export function createToolLink(tool: MoneroTool): string {
-  if (tool.tool_id === "001") {
-    return createSendTransactionToolLink(
-      tool.payload.address,
-      tool.payload.amount,
-    );
-  }
-  if (tool.tool_id === "002") {
-    return createCreateAndShareViewOnlyWalletToolLink(tool.payload.wallet_slot);
-  }
-  throw new Error("unknown tool");
+export async function checkToolInvocationValidity(
+  invo: ParsedMoneroToolInvocation,
+): Promise<ToolInvocationValidity> {
+  const id = invo.tool.tool_id as ToolId;
+  if (!isToolId(id)) return "unverified";
+  const check = tools[id].content.validate_check;
+  if (!check) return "unverified";
+  return check(invo);
 }
 
 export function getDomainWithTLD(hostname: string): string {
-  const parts = hostname.split(".");
-  // For localhost or single-part hostnames, return as-is
-  if (parts.length <= 1) return hostname;
-  // Take the last 2 parts (domain + tld).
-  return parts.slice(-2).join(".");
+  // strip one pair of brackets from bracketed ipv6 literals first
+  const bare =
+    hostname.startsWith("[") && hostname.endsWith("]")
+      ? hostname.slice(1, -1)
+      : hostname;
+  // the loopback spellings name the host users call localhost.
+  // one bucket for all three, or one dev server derives three wallets.
+  if (bare === "127.0.0.1" || bare === "::1") return "localhost";
+  // lower case, then split on "." and drop empty pieces from a stray dot
+  const parts = bare.toLowerCase().split(".").filter(Boolean);
+  // for localhost or single-part hostnames, return as-is
+  if (parts.length <= 1) return bare;
+  // ip literals are not domain names. the psl would chop them into
+  // meaningless tails (127.0.0.1 becomes 0.1, and two different lan hosts
+  // can land in one bucket). return them unchanged.
+  // ipv4 has only numeric labels. numeric tlds do not exist.
+  if (parts.every((p) => /^\d+$/.test(p))) return bare;
+  // ipv6 has colons, dns names never do
+  if (bare.includes(":")) return bare;
+
+  // if nothing in the list matches, the psl says pretend the rule was "*". the suffix is the last label only.
+  let suffixLen = 1;
+  // exception rules are the lines that start with "!". null until one of those lines matches.
+  let exceptionLen: number | null = null;
+  // i walks left to right, but we never test the left side by itself.
+  // first pass is the whole name. each next pass chops one word off the left, so the ending gets shorter.
+  for (let i = 0; i < parts.length; i++) {
+    // shop.example.co.uk is checked as itself, then example.co.uk, then co.uk, then uk.
+    // co.uk.evil.com never produces the tail "co.uk", because those words are not the ending.
+    const tail = parts.slice(i).join(".");
+    // the labels to the right of the first label of this ending. "foo.ck" gives "ck".
+    const parent = parts.slice(i + 1).join(".");
+    // how many labels this ending has. starts big, shrinks by one each pass.
+    const len = parts.length - i;
+    // exception rule, file line "!www.ck". the "!" is only the first character of that line.
+    // the name after it is not a public suffix. the suffix is the rest, so save one less label.
+    // the first hit is the longest. a later, shorter exception must not replace it.
+    if (exceptionLen === null && publicSuffixSet.has("!" + tail)) {
+      exceptionLen = len - 1;
+    }
+    // exact rule, file line "co.uk". the whole ending is the public suffix.
+    // keep it only when it has more labels than the suffix already saved. "uk" must not replace "co.uk".
+    if (publicSuffixSet.has(tail) && len > suffixLen) suffixLen = len;
+    // wildcard rule, file line "*.ck". the "*" is one label, and only the leftmost label of the rule.
+    // "foo.ck" lines up with "*.ck", so the lookup string is "*." plus parent "ck".
+    // keep it only when that lined-up suffix is longer than the one already saved.
+    if (parent && publicSuffixSet.has("*." + parent) && len > suffixLen) {
+      suffixLen = len;
+    }
+  }
+  // the psl prevailing rule: an exception wins even when an exact or wildcard match is longer.
+  // "*.ck" would make the suffix "www.ck". "!www.ck" makes the suffix "ck" instead.
+  if (exceptionLen !== null) suffixLen = exceptionLen;
+  // the whole name is already the public suffix, like "co.uk". no label sits to the left of it.
+  if (suffixLen >= parts.length) return parts.join(".");
+  // take the last 2 parts (domain + tld).
+  // keep the suffix plus the one word on its left. a 2-word suffix co.uk keeps example.co.uk
+  return parts.slice(-(suffixLen + 1)).join(".");
 }
 
 export function parseDestination(destination: string): string {
   const url = new URL(destination);
   return getDomainWithTLD(url.hostname);
-}
-export const OPEN_DOMAINS = ["monerochan.cash"];
-// this validity check should happen in the contentscript when the link is clicked,
-// not in the background script
-// -> tor circuit is separated & compartmentalized
-export async function checkToolInvocationValidity(
-  invo: ParsedMoneroToolInvocation,
-): Promise<ToolInvocationValidity> {
-  // send 001 fetch from destination domain to check if the address is valid
-  if (invo.tool.tool_id == "001") {
-    const link = invo[invo.found_in];
-    const invo_link = new URL(link);
-    const checkUrl = `${invo_link.origin}/monerochan001/${
-      invo.tool.payload.address
-    }`;
-    try {
-      if (invo.destination_domain === OPEN_DOMAINS[0]) {
-        return "unverified";
-      }
-      const result = (await (await fetch(checkUrl)).json()) as unknown;
-      if (
-        result &&
-        typeof result === "object" &&
-        "valid_address" in result &&
-        result.valid_address === true
-      ) {
-        return "valid";
-      } else {
-        return "invalid";
-      }
-    } catch {
-      return "invalid";
-    }
-  }
-
-  // create view only wallet 002 make sure context + destination domain is the same
-  if (invo.tool.tool_id == "002") {
-    if (invo.context_domain == invo.destination_domain) {
-      return "valid";
-    } else {
-      return "invalid";
-    }
-  }
-
-  return "unverified";
-}
-
-export const ADDRESS_VALID_RESPONSE = {
-  valid_address: true,
-} as const;
-
-export const ADDRESS_INVALID_RESPONSE = {
-  valid_address: false,
-} as const;
-
-export type ShareViewkeyPayload = {
-  viewkey: string;
-  primary_address: string;
-  tool_invo: ParsedMoneroToolInvocation;
-};
-export type ShareViewkeyResult = {
-  ok: boolean;
-  successUrl: string | null;
-};
-export async function shareViewKey002(
-  payload: ShareViewkeyPayload,
-): Promise<ShareViewkeyResult> {
-  const invo = payload.tool_invo;
-  if (invo.tool.tool_id !== "002")
-    return {
-      ok: false,
-      successUrl: null,
-    };
-  if (invo.valid !== "valid")
-    return {
-      ok: false,
-      successUrl: null,
-    };
-  const link = invo[invo.found_in];
-  const invo_link = new URL(link);
-  const shareVKUrl = `${invo_link.origin}/monerochan002/`;
-  const result = await fetch(shareVKUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      viewkey: payload.viewkey,
-      primary_address: payload.primary_address,
-      wallet_slot: invo.tool.payload.wallet_slot,
-    }),
-  });
-  if (result.ok) {
-    const data = (await result.json()) as {
-      ok: boolean;
-      successUrl?: string | null;
-    };
-    if (data && typeof data === "object" && "ok" in data && data.ok === true) {
-      return {
-        ok: true,
-        successUrl: data.successUrl ?? null,
-      };
-    } else {
-      return {
-        ok: false,
-        successUrl: null,
-      };
-    }
-  } else {
-    return {
-      ok: false,
-      successUrl: null,
-    };
-  }
-}
-export type ShareViewkey002Pruned = {
-  viewkey: string;
-  primary_address: string;
-  wallet_slot: number;
-};
-// client wallet side
-export async function potentialSuccessRedirect002(
-  payload: ShareViewkeyPayload,
-): Promise<ShareViewkeyResult | undefined> {
-  const shareVKresult = await shareViewKey002(payload);
-  if (shareVKresult.ok && shareVKresult.successUrl) {
-    window.location.href = shareVKresult.successUrl;
-    window.location.reload();
-  } else {
-    return shareVKresult;
-  }
-}
-
-// backend response
-
-export async function handle002ShareRequest(
-  req: Request,
-  wallets: ScanSettingOpened[],
-  parsed_cb: (parsed_body: ShareViewkey002Pruned) => Promise<void>,
-  successUrl?: string,
-): Promise<ShareViewkeyResult> {
-  try {
-    const json_body = await req.json();
-    const { viewkey, primary_address, wallet_slot } =
-      json_body as ShareViewkey002Pruned;
-
-    if (
-      typeof viewkey !== "string" ||
-      viewkey.trim().length === 0 ||
-      typeof primary_address !== "string" ||
-      primary_address.trim().length === 0 ||
-      typeof wallet_slot !== "number"
-    ) {
-      return { ok: false, successUrl: null };
-    }
-    const foundSlot = wallets.find(
-      (wallet) => wallet.wallet_slot === wallet_slot,
-    );
-    if (foundSlot) {
-      if (foundSlot.primary_address !== primary_address) {
-        return { ok: false, successUrl: null };
-      }
-    }
-    await parsed_cb({ viewkey, primary_address, wallet_slot });
-    return {
-      ok: true,
-      successUrl: successUrl ?? null,
-    };
-  } catch {
-    return { ok: false, successUrl: null };
-  }
 }
