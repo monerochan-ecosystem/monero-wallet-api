@@ -1,6 +1,6 @@
 import { ed25519, x25519 } from "@noble/curves/ed25519.js";
 import { blake3 } from "@noble/hashes/blake3.js";
-import { vk_from_entropy } from "../api";
+import { vk_from_entropy } from "../xmr3";
 
 export function makeEscrowContext(context_index: number) {
   if (Number.isNaN(parseInt(String(context_index)))) {

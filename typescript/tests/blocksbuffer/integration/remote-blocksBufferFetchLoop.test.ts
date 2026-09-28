@@ -11,11 +11,11 @@ import {
   readWriteConnectionStatusFile,
   writeScanSettings,
   connectionStatusFilePath,
-} from "../../../dist/api";
+} from "../../../dist/xmr3";
 import type {
   GetBlocksBinBufferItem,
   ConnectionStatus,
-} from "../../../dist/api";
+} from "../../../dist/xmr3";
 
 const OUTPUT_DIR = "test-data/blocksbuffer/integration/output";
 

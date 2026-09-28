@@ -1,4 +1,4 @@
-// do not import api.ts (indexedDB top-level await). tools/monero-tools.ts is 001+002 only.
+// do not import xmr3.ts (indexedDB top-level await). tools/monero-tools.ts is 001+002 only.
 import {
   checkToolInvocationValidity,
   parseToolInvocation,

@@ -13,8 +13,8 @@ import {
   type ScanCache,
   type CacheRange,
   type BlockInfo,
-} from "../../../dist/api";
-import type { Output } from "../../../dist/api";
+} from "../../../dist/xmr3";
+import type { Output } from "../../../dist/xmr3";
 
 function blockInfo(height: number, hash?: string): BlockInfo {
   return {

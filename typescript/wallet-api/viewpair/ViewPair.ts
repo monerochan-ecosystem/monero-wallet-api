@@ -34,9 +34,9 @@ import {
   get_block_headers_range,
   get_info,
   type GetBlockHeadersRangeParams,
-} from "../api";
+} from "../xmr3";
 
-import { readWalletFromScanSettings } from "../api";
+import { readWalletFromScanSettings } from "../xmr3";
 import { sleep } from "../io/sleep";
 
 /**

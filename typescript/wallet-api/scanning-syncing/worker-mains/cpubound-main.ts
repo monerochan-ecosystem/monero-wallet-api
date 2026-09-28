@@ -1,4 +1,4 @@
-import { sleep, ViewPair, type ScanResult } from "../../api";
+import { sleep, ViewPair, type ScanResult } from "../../xmr3";
 import { log } from "../../io/logging";
 import { type ScanLoopInput, type ScanLoopYield } from "../scanresult/scanLoop";
 

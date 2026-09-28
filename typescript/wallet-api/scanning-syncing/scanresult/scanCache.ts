@@ -8,7 +8,7 @@ import {
   type Output,
   type SendRawTransactionResult,
   type ViewPair,
-} from "../../api";
+} from "../../xmr3";
 import { atomicWrite } from "../../io/atomicWrite";
 import { log } from "../../io/logging";
 import type { Payment } from "../../send-functionality/inputSelection";

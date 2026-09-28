@@ -5,7 +5,7 @@ import {
   writeScanSettings,
   ScanSettingsOpened,
   makeTestKeyPair,
-} from "../../../dist/api";
+} from "../../../dist/xmr3";
 
 const OUT = "test-data/many-empty-state";
 

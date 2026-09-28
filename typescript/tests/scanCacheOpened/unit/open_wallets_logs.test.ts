@@ -4,7 +4,7 @@ import {
   openWallets,
   writeScanSettings,
   openScanSettingsFile,
-} from "../../../dist/api";
+} from "../../../dist/xmr3";
 
 const OUT = "test-data/open-wallets-logs";
 

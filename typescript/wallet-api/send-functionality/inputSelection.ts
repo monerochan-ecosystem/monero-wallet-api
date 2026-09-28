@@ -1,4 +1,4 @@
-import type { GetOutsResponseBuffer, NodeUrl, Output } from "../api";
+import type { GetOutsResponseBuffer, NodeUrl, Output } from "../xmr3";
 import type { SampledDecoys } from "./transactionBuilding";
 
 export type Payment = { address: string; amount: string };

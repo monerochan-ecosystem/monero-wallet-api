@@ -4,7 +4,7 @@ import {
   ScanSettingsOpened,
   makeTestKeyPair,
   writeScanSettings,
-} from "../../../dist/api";
+} from "../../../dist/xmr3";
 
 const OUT = "test-data/scanSettingsOpened";
 

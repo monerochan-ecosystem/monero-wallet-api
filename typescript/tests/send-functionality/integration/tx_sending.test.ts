@@ -5,7 +5,7 @@ import {
   openWallets,
   NodeUrl,
   type ManyScanCachesOpened,
-} from "../../../dist/api";
+} from "../../../dist/xmr3";
 import { type Keypair } from "../../../wallet-api/keypairs-seeds/keypairs";
 
 const MONERONODE_DIR = "tests/moneronode";

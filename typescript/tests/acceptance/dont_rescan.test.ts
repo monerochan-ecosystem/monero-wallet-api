@@ -5,7 +5,7 @@ import {
   openWallets,
   makeTestKeyPair,
   type ManyScanCachesOpened,
-} from "../../dist/api";
+} from "../../dist/xmr3";
 
 const OUT = "test-data/dont_rescan";
 const SCAN_SETTINGS_PATH = `${OUT}/ScanSettings.json`;

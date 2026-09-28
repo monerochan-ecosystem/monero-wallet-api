@@ -11,7 +11,7 @@ import {
   type ReorgInfo,
   makeTestKeyPair,
   type Keypair,
-} from "../../dist/api";
+} from "../../dist/xmr3";
 
 const MONERONODE_DIR = "tests/moneronode";
 const TEST_DATA_DIR = "test-data/reorg_handling";

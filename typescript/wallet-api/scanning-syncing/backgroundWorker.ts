@@ -4,7 +4,7 @@ import {
   openScanSettingsFile,
   SCAN_SETTINGS_STORE_NAME_DEFAULT,
   sleep,
-} from "../api";
+} from "../xmr3";
 import { log, setupLoggingPath } from "../io/logging";
 import { workerMainCode } from "./worker-entrypoints/worker";
 export const CPU_POOL_SIZE = 4;

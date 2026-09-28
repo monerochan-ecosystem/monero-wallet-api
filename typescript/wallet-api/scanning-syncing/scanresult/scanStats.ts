@@ -1,5 +1,5 @@
 import { stat } from "fs";
-import { atomicWrite, ViewPair, type Output } from "../../api";
+import { atomicWrite, ViewPair, type Output } from "../../xmr3";
 import type { ScanCache, Subaddress, TxLog } from "./scanCache";
 import { outputStatus, type OutputStatus } from "./scanResult";
 

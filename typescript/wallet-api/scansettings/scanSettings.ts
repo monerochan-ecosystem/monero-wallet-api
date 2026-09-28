@@ -1,4 +1,4 @@
-import { get_info } from "../api";
+import { get_info } from "../xmr3";
 import { atomicWrite } from "../io/atomicWrite";
 import { refreshEnvIndexedDB } from "../io/indexedDB";
 import type { LogSetting, PossibleLogs } from "../io/logging";

@@ -1,8 +1,8 @@
 {
   "name": "@spirobel/monero-wallet-api",
   "version": "0.6.0",
-  "main": "dist/api.js",
-  "module": "dist/api.js",
+  "main": "dist/xmr3.js",
+  "module": "dist/xmr3.js",
   "devDependencies": {
     "@types/bun": "latest"
   },
@@ -11,8 +11,8 @@
   },
   "exports": {
     ".": {
-      "types": "./dist/api.d.ts",
-      "import": "./dist/api.js"
+      "types": "./dist/xmr3.d.ts",
+      "import": "./dist/xmr3.js"
     },
     "./tools": {
       "types": "./dist/tools/monero-tools.d.ts",
@@ -54,7 +54,7 @@
     "clean": "rm -rf ./dist"
   },
   "type": "module",
-  "types": "dist/api.d.ts",
+  "types": "dist/xmr3.d.ts",
   "dependencies": {
     "@noble/curves": "2.2.0",
     "@noble/hashes": "2.2.0"

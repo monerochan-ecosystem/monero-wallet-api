@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { get_info } from "../wallet-api/api";
+import { get_info } from "../wallet-api/xmr3";
 import {
   STAGENET_FRESH_WALLET_HEIGHT_DEFAULT,
   writeStagenetSpendViewKeysToDotEnv,

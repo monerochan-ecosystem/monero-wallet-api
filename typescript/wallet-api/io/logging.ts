@@ -1,4 +1,4 @@
-import { getPathPrefix, openScanSettingsFile } from "../api";
+import { getPathPrefix, openScanSettingsFile } from "../xmr3";
 import { atomicWrite } from "./atomicWrite";
 
 /**

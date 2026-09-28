@@ -6,7 +6,7 @@ import {
   type FeeEstimateResponse,
   type Output,
   type SendRawTransactionResult,
-} from "../../api";
+} from "../../xmr3";
 import {
   prepareInput,
   sumPayments,
@@ -24,7 +24,7 @@ import {
   SCAN_SETTINGS_STORE_NAME_DEFAULT,
   SUB_ADDRESS_INDEX_DEFAULT_VALUE,
   walletSettingsPlusKeys,
-} from "../../api";
+} from "../../xmr3";
 import { ScanSettingsOpened } from "../../scansettings/scanSettingsOpened";
 import { ConnectionStatusOpened } from "../connectionStatusOpened";
 import {

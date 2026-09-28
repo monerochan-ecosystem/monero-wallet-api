@@ -18,7 +18,7 @@ import {
   openWallets,
   writeWalletToScanSettings,
   atomicWrite,
-} from "../../dist/api";
+} from "../../dist/xmr3";
 const MONERONODE_DIR = "tests/moneronode";
 const TEST_DATA_DIR = "test-data/escrow";
 const ESCROW_DIR = TEST_DATA_DIR;

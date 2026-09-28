@@ -12,7 +12,7 @@ import {
   type ScanCache,
   CatastrophicReorgError,
   type CoordinatorEvent,
-} from "../../../dist/api";
+} from "../../../dist/xmr3";
 
 import { makeTestKeyPair } from "../../../wallet-api/keypairs-seeds/keypairs";
 

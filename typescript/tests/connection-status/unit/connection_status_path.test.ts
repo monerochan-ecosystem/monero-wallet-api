@@ -4,7 +4,7 @@ import {
   writeConnectionStatusFile,
   readConnectionStatusDefaultLocation,
   emptyConnectionStatus,
-} from "../../../wallet-api/api";
+} from "../../../wallet-api/xmr3";
 
 const TEST_DATA_DIR = "test-data/connection_status_path";
 

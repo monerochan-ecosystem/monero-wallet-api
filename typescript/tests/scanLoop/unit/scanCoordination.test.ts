@@ -4,7 +4,7 @@
  *
  */
 import { test, expect } from "bun:test";
-import { type GetBlocksBinBufferItem, type ScanCache } from "../../../dist/api";
+import { type GetBlocksBinBufferItem, type ScanCache } from "../../../dist/xmr3";
 import {
   type WorkItem,
   makeWorkItem,
@@ -13,7 +13,7 @@ import {
 import {
   reconcileBlocksBufferChanged,
   reconcileWorkItemDone,
-} from "../../../dist/api";
+} from "../../../dist/xmr3";
 
 function makeMockBatch(
   local_uuid: string,
