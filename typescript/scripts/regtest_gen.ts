@@ -1,8 +1,6 @@
 #!/usr/bin/env bun
-import { get_info } from "../wallet-api/api";
 import { writeRegtestSpendViewKeysToDotEnvTestLocal } from "../wallet-api/keypairs-seeds/writeKeypairs";
-import { LOCAL_NODE_DEFAULT_URL } from "../wallet-api/node-interaction/nodeUrl";
-import { writeWalletToScanSettings } from "../wallet-api/scanning-syncing/scanSettings";
+import { writeWalletToScanSettings } from "../wallet-api/scansettings/scanSettings";
 
 // adds a wallet entry to RegtestScanSettings.json
 

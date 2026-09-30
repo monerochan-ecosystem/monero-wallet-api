@@ -18,8 +18,8 @@
  *   works when scanning a subset of the batch via endIndex
  */
 import { test, expect } from "bun:test";
-import { selectAnchors, findTipIndex } from "../../../dist/api";
-import type { BlockInfo, CacheRange } from "../../../dist/api";
+import { selectAnchors, findTipIndex } from "../../../dist/xmr3";
+import type { BlockInfo, CacheRange } from "../../../dist/xmr3";
 
 function bi(height: number, hash?: string): BlockInfo {
   return {

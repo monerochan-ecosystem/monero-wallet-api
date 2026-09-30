@@ -3,8 +3,8 @@ import {
   type BlockInfo,
   type CacheRange,
   type ReorgInfo,
-} from "../api";
-import { SCAN_SETTINGS_STORE_NAME_DEFAULT } from "../api";
+} from "../xmr3";
+import { SCAN_SETTINGS_STORE_NAME_DEFAULT } from "../xmr3";
 export type ConnectionStatusOptions =
   | "OK"
   | "partial_read"

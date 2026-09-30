@@ -9,7 +9,7 @@ import {
   writeScanSettings,
   makeTestKeyPair,
   type ConnectionStatus,
-} from "../../../dist/api";
+} from "../../../dist/xmr3";
 
 const OUT = "test-data/scanCacheOpened";
 const MONEROD = "tests/moneronode/monerod";

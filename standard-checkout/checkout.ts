@@ -1,9 +1,7 @@
 import { html } from "@spirobel/mininext";
 import {
   openWallets,
-  make001ToolLink,
-  ADDRESS_VALID_RESPONSE,
-  ADDRESS_INVALID_RESPONSE,
+  tools,
   convertAmountBigInt,
 } from "@spirobel/monero-wallet-api";
 import QRCode from "qrcode";
@@ -17,10 +15,7 @@ import {
   updateTxConfirmations,
   updateTxHash,
 } from "./db";
-import type { BunRequest } from "bun";
-
 const AMOUNT = "0.1337";
-const ACCEPT_AFTER_CONFIRMATIONS = 10;
 export const WALLET_CACHES_DIR = "wallet-caches";
 export const SCAN_SETTINGS_PATH = WALLET_CACHES_DIR + "/ScanSettings.json";
 
@@ -42,22 +37,17 @@ export function makeRoutes() {
     "/newsession": { GET: newSessionRoute },
     "/paymentstatus": { GET: paymentStatusRoute },
     "/monerochan001/:address": {
-      GET: async (req: BunRequest<"/monerochan001/:address">) => {
-        const sessionRow = await getCheckoutSessionByAddress(
-          req.params.address,
-        );
-        if (!sessionRow[0]?.id) return Response.json(ADDRESS_INVALID_RESPONSE);
-        return Response.json(ADDRESS_VALID_RESPONSE);
-      },
+      GET: tools["001"].counterparty.validate_route({
+        isPayAddressKnown: async (address) => {
+          const sessionRow = await getCheckoutSessionByAddress(address);
+          return !!sessionRow[0]?.id;
+        },
+      }),
     },
     "/": { GET: checkoutRoute },
     "/wallet_info": { GET: walletInfoRoute },
   };
 }
-
-Bun.serve({ port: 3004, routes: makeRoutes() });
-
-let retryScheduled = false;
 
 const wallets = await openWallets({
   scan_settings_path: SCAN_SETTINGS_PATH,
@@ -66,20 +56,7 @@ const wallets = await openWallets({
     // sync in any case to update confirmations
     await syncPaymentStatus();
   },
-  workerError: async (err) => {
-    console.log(
-      "scan worker error, typically loss of network connection, retry in 1 second",
-      err,
-    );
-    if (retryScheduled) return;
-
-    retryScheduled = true;
-    setTimeout(() => {
-      wallets?.retry();
-      retryScheduled = false;
-    }, 1000);
-  },
-  no_stats: true,
+  autoRetry: true,
 });
 const mainwallet = wallets?.wallets[0];
 async function syncPaymentStatus() {
@@ -117,10 +94,16 @@ async function syncPaymentStatus() {
 // sync payments on startup
 await syncPaymentStatus();
 
+Bun.serve({ port: 3004, routes: makeRoutes() });
+
 async function newSessionRoute() {
   const secret = crypto.randomUUID();
   const insertedRow = (
-    await createCheckoutSession(AMOUNT, secret, ACCEPT_AFTER_CONFIRMATIONS)
+    await createCheckoutSession(
+      AMOUNT,
+      secret,
+      wallets?.merchant_confirmations ?? 10,
+    )
   )[0];
 
   if (!mainwallet)
@@ -220,7 +203,7 @@ async function checkoutRoute(req: Request) {
 
   const displayAmount = sessionRow.amount;
   const address = sessionRow.address;
-  const toollink = `/wallet_info?checkoutId=${sessionId}#${make001ToolLink(address, AMOUNT)}`;
+  const toollink = `/wallet_info?checkoutId=${sessionId}#${tools["001"].counterparty.make({ address, amount: sessionRow.amount, no_check: false })}`;
   const addressQrCode = await QRCode.toDataURL(address);
   const paymentUri = `monero:${address}?tx_amount=${displayAmount}`;
   const paymentUriQrCode = await QRCode.toDataURL(paymentUri);
@@ -241,7 +224,13 @@ async function checkoutRoute(req: Request) {
         </div>
         <div class="step">
           <div class="step-content" style="text-align: center;">
-            <a href="${toollink}" class="pay-button">pay with browser wallet</a>
+            <a
+              href="${toollink}"
+              class="pay-button"
+              target="_blank"
+              rel="noopener noreferrer"
+              >pay with browser wallet</a
+            >
           </div>
         </div>
 

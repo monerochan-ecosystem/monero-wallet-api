@@ -2,7 +2,7 @@ import {
   DistributedKeyGenerator,
   type DkgParticipateParams,
   type DkgVerifyParams,
-} from "../../api";
+} from "../../xmr3";
 import { log } from "../../io/logging";
 export type MultiSigParticipateCall = {
   type: "multisig-call";

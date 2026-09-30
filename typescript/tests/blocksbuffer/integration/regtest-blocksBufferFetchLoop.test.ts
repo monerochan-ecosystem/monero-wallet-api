@@ -6,11 +6,11 @@ import {
   handleConnectionStatusChanges,
   writeScanSettings,
   connectionStatusFilePath,
-} from "../../../dist/api";
+} from "../../../dist/xmr3";
 import type {
   GetBlocksBinBufferItem,
   BlocksBufferLoopResult,
-} from "../../../dist/api";
+} from "../../../dist/xmr3";
 
 const OUTPUT_DIR = "test-data/blocksbuffer/integration/output";
 const MONEROD_PATH = "tests/moneronode/monerod";

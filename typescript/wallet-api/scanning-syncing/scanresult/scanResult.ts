@@ -1,4 +1,4 @@
-import { CatastrophicReorgError, type BlockInfo, type Output } from "../../api";
+import { CatastrophicReorgError, type BlockInfo, type Output } from "../../xmr3";
 import { computeKeyImage, type KeyImage } from "./computeKeyImage";
 import { log } from "../../io/logging";
 import { mergeRanges, findRange, findRangeThrows } from "./scanCache";

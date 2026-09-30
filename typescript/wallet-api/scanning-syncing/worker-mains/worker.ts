@@ -8,7 +8,7 @@ import { multisigMainWorkerCall } from "./multisig-main";
 import {
   DistributedKeyGenerator,
   SCAN_SETTINGS_STORE_NAME_DEFAULT,
-} from "../../api";
+} from "../../xmr3";
 
 self.onerror = (e) => self.postMessage({ type: "ERROR", payload: e });
 self.addEventListener("unhandledrejection", (e) =>

@@ -19,7 +19,7 @@ import {
   type ScanSetting,
   type ScanSettingOpened,
   type ScanSettings,
-} from "../api";
+} from "../xmr3";
 
 export class ScanSettingsOpened {
   /**

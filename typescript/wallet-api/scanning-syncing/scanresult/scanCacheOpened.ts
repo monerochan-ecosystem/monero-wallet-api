@@ -6,7 +6,7 @@ import {
   type FeeEstimateResponse,
   type Output,
   type SendRawTransactionResult,
-} from "../../api";
+} from "../../xmr3";
 import {
   prepareInput,
   sumPayments,
@@ -24,7 +24,7 @@ import {
   SCAN_SETTINGS_STORE_NAME_DEFAULT,
   SUB_ADDRESS_INDEX_DEFAULT_VALUE,
   walletSettingsPlusKeys,
-} from "../../api";
+} from "../../xmr3";
 import { ScanSettingsOpened } from "../../scansettings/scanSettingsOpened";
 import { ConnectionStatusOpened } from "../connectionStatusOpened";
 import {
@@ -1085,20 +1085,23 @@ export class ScanCacheOpened {
    * for all primary addresses
    */
   public async feed(params: CacheChangedCallbackParameters) {
-    //TODO update aggregated amount stats + height
-    if (this.masterCacheChanged) this.masterCacheChanged(params);
-    if (this.view_pair.primary_address !== params.newCache.primary_address)
-      return;
-    this._cache = params.newCache;
-    if (!this._no_stats)
-      this._stats = await alignScanStatsWithCache(
-        this._cache,
-        this.view_pair,
-        this.primary_address,
-        getPathPrefix(this.scan_settings_path, this.pathPrefix),
-        this.subaddress_index,
-        lastRange(this._cache.scanned_ranges)?.end,
-      );
+    // same wallet must store the new cache before a listener reads transactions
+    const sameWallet =
+      this.view_pair.primary_address === params.newCache.primary_address;
+    if (sameWallet) {
+      this._cache = params.newCache;
+      if (!this._no_stats)
+        this._stats = await alignScanStatsWithCache(
+          this._cache,
+          this.view_pair,
+          this.primary_address,
+          getPathPrefix(this.scan_settings_path, this.pathPrefix),
+          this.subaddress_index,
+          lastRange(this._cache.scanned_ranges)?.end,
+        );
+    }
+    if (this.masterCacheChanged) await this.masterCacheChanged(params);
+    if (!sameWallet) return;
 
     for (const listener of this.notifyListeners) {
       if (listener) listener(params);

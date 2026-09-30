@@ -1,4 +1,4 @@
-import type { GetFeeEstimateResult, Output } from "../api";
+import type { GetFeeEstimateResult, Output } from "../xmr3";
 import { monero_wallet_api_wasm } from "../wasm-processing/wasmFile";
 import { WasmProcessor } from "../wasm-processing/wasmProcessor";
 export type Input = string;

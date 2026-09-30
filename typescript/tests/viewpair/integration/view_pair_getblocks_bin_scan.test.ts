@@ -1,5 +1,5 @@
 import { test, beforeAll } from "bun:test";
-import { ViewPair } from "../../../wallet-api/api";
+import { ViewPair } from "../../../wallet-api/xmr3";
 import {
   makeTestKeyPair,
   type Keypair,

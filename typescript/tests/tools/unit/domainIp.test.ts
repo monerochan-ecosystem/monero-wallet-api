@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { getDomainWithTLD } from "../../../dist/api";
+import { getDomainWithTLD } from "../../../dist/xmr3";
 
 test("ipv4 literals return unchanged, not psl-chopped", () => {
   expect(getDomainWithTLD("10.20.30.1")).toBe("10.20.30.1");
