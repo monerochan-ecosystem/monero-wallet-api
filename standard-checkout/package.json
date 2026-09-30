@@ -11,11 +11,11 @@
     "@types/qrcode": "1.5.5"
   },
   "peerDependencies": {
-    "typescript": "^5.0.0"
+    "typescript": "5.9.3"
   },
   "dependencies": {
     "@spirobel/mininext": "0.8.5",
-    "@spirobel/monero-wallet-api": "0.5.1",
+    "@spirobel/monero-wallet-api": "0.6.1",
     "qrcode": "1.5.4"
   }
 }
