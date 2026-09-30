@@ -9,7 +9,7 @@ import {
 
 const OUT = "test-data/dont_rescan";
 const SCAN_SETTINGS_PATH = `${OUT}/ScanSettings.json`;
-const NODE_URL = "https://xmr-01.tari.com";
+const NODE_URL = "https://node.monero.fail";
 const START_HEIGHT = 3160222;
 const TARGET = START_HEIGHT + 1000;
 
