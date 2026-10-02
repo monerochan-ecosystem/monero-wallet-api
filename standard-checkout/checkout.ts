@@ -31,6 +31,37 @@ const skeleton = await html`<!DOCTYPE html>
     </body>
   </html> `.build();
 
+const noticeStyles = html`<style>
+  body { margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; background: #070707; font-family: "Inter", system-ui, sans-serif; color: #f8fafc; padding: 1rem; background-image: radial-gradient(circle at 50% 50%, rgba(124,58,237,0.15) 0%, transparent 50%); }
+  .info-container { max-width: 520px; width: 100%; text-align: center; }
+  .info-card { background: rgba(20,20,20,0.8); backdrop-filter: blur(10px); border: 1px solid rgba(124,58,237,0.2); border-radius: 20px; padding: 2.5rem 2rem; }
+  .info-title { font-size: 1.125rem; font-weight: 600; color: #7c3aed; margin-bottom: 0.5rem; }
+  .info-message { font-size: 1rem; line-height: 1.7; color: rgba(248,250,252,0.8); margin: 1rem 0 0 0; }
+  .info-message a { color: inherit; text-decoration: none; border-bottom: 1px solid currentColor; }
+</style>`;
+
+function styledNotice(title: string, sub?: string) {
+  const content = html`<div class="info-container">
+    ${noticeStyles}
+    <div class="info-card">
+      <div class="info-title">${title}</div>
+      ${sub ? html`<p class="info-message">${sub}</p>` : ""}
+    </div>
+  </div>`;
+  return new Response(skeleton.fill(content));
+}
+
+function instanceInfo() {
+  const content = html`<div class="info-container">
+    ${noticeStyles}
+    <div class="info-card">
+      <div class="info-title">standard checkout</div>
+      <p class="info-message"><a href="https://github.com/monerochan-ecosystem/monero-wallet-api" target="_blank" rel="noopener noreferrer">[source]</a></p>
+    </div>
+  </div>`;
+  return new Response(skeleton.fill(content));
+}
+
 export function makeRoutes() {
   return {
     ...skeleton.static_routes,
@@ -52,64 +83,71 @@ export function makeRoutes() {
 const wallets = await openWallets({
   scan_settings_path: SCAN_SETTINGS_PATH,
   notifyMasterChanged: async (params) => {
-    // sync payments on cache change
-    // sync in any case to update confirmations
-    await syncPaymentStatus();
+    try {
+      await syncPaymentStatus();
+    } catch {
+    }
   },
   autoRetry: true,
 });
-const mainwallet = wallets?.wallets[0];
+function liveWallets() {
+  return wallets?.wallets ?? [];
+}
 async function syncPaymentStatus() {
-  if (!mainwallet) return;
-  for (const tx of mainwallet.transactions) {
-    const txConfirmations = tx.confirmations;
-    const checkout_session_row = await getCheckoutSessionByPrimaryId(
-      tx.payment_id,
-    );
-    if (
-      !checkout_session_row[0] || // no cechkout session for this tx
-      checkout_session_row[0].paid_status === 1 || // already marked as paid
-      (checkout_session_row[0].tx_hash && // tx_hash already set and different
-        checkout_session_row[0].tx_hash !== tx.tx_hash) // tx_hash changed (only support 1 tx per session)
-    )
-      continue;
-
-    if (!checkout_session_row[0].tx_hash) {
-      await updateTxHash(tx.payment_id, tx.tx_hash);
-    }
-
-    // update current confirmation count
-    await updateTxConfirmations(tx.payment_id, txConfirmations);
-
-    if (!checkout_session_row[0].paid_status) {
-      if (
-        txConfirmations >= checkout_session_row[0].required_confirmations &&
-        tx.amount >= convertAmountBigInt(checkout_session_row[0].amount)
-      ) {
-        await markAsPaid(tx.payment_id);
+  try {
+    for (const w of liveWallets()) {
+      let txs: { payment_id: number; confirmations: number; tx_hash: string; amount: bigint }[] = [];
+      try {
+        txs = w.transactions as typeof txs;
+      } catch {
+        continue;
+      }
+      for (const tx of txs) {
+        try {
+          const row = (await getCheckoutSessionByPrimaryId(tx.payment_id))[0];
+          if (!row) continue;
+          if (row.tx_hash && row.tx_hash !== tx.tx_hash) continue;
+          if (!row.tx_hash) await updateTxHash(tx.payment_id, tx.tx_hash);
+          if (row.tx_confirmations !== tx.confirmations) {
+            await updateTxConfirmations(tx.payment_id, tx.confirmations);
+          }
+          if (row.paid_status === 1) continue;
+          let need: bigint | null = null;
+          try {
+            need = convertAmountBigInt(row.amount);
+          } catch {
+          }
+          if (need === null || tx.amount < need) continue;
+          if (tx.confirmations < row.required_confirmations) continue;
+          await markAsPaid(tx.payment_id);
+        } catch {
+        }
       }
     }
+  } catch {
   }
 }
-// sync payments on startup
-await syncPaymentStatus();
+try {
+  await syncPaymentStatus();
+} catch {
+}
 
 Bun.serve({ port: 3004, routes: makeRoutes() });
 
 async function newSessionRoute() {
+  const live = liveWallets()[0];
+  if (!live)
+    return styledNotice("no merchant wallet found");
   const secret = crypto.randomUUID();
   const insertedRow = (
     await createCheckoutSession(
       AMOUNT,
       secret,
-      wallets?.merchant_confirmations ?? 10,
+      live.merchant_confirmations ?? 10,
     )
   )[0];
 
-  if (!mainwallet)
-    return new Response(skeleton.fill(html`<h1>no merchant wallet found</h1>`));
-
-  const address = await mainwallet.makeIntegratedAddress(insertedRow.id);
+  const address = await live.makeIntegratedAddress(insertedRow.id);
   await updateCheckoutSessionAddress(insertedRow.session_id, address);
 
   const redirectUrl = `/?checkoutId=${insertedRow.session_id}`;
@@ -125,17 +163,42 @@ async function paymentStatusRoute(req: Request) {
   const url = new URL(req.url);
   const sessionId = url.searchParams.get("checkoutId");
   if (!sessionId) {
-    return new Response(
-      skeleton.fill(html`<h1>checkout session not found</h1>`),
-    );
+    return styledNotice("checkout session not found");
   }
 
-  const sessionRow = (await getCheckoutSessionBySessionId(sessionId))[0];
+  let sessionRow = (await getCheckoutSessionBySessionId(sessionId))[0];
 
   if (!sessionRow?.address) {
-    return new Response(
-      skeleton.fill(html`<h1>checkout session not found</h1>`),
-    );
+    return styledNotice("checkout session not found");
+  }
+
+  if (!sessionRow.paid_status) {
+    const rowId = sessionRow.id;
+    try {
+      const live = liveWallets().flatMap((w) => {
+        try {
+          return w.transactions;
+        } catch {
+          return [];
+        }
+      }).find((t) => t.payment_id === rowId);
+      if (live) {
+        if (!sessionRow.tx_hash) await updateTxHash(sessionRow.id, live.tx_hash);
+        if (sessionRow.tx_confirmations !== live.confirmations) {
+          await updateTxConfirmations(sessionRow.id, live.confirmations);
+        }
+        let need: bigint | null = null;
+        try {
+          need = convertAmountBigInt(sessionRow.amount);
+        } catch {
+        }
+        if (need !== null && live.amount >= need && live.confirmations >= sessionRow.required_confirmations) {
+          await markAsPaid(sessionRow.id);
+        }
+        sessionRow = (await getCheckoutSessionBySessionId(sessionId))[0] ?? sessionRow;
+      }
+    } catch {
+    }
   }
 
   const statusClass = sessionRow.paid_status ? "success" : "pending";
@@ -188,17 +251,13 @@ async function checkoutRoute(req: Request) {
   const url = new URL(req.url);
   const sessionId = url.searchParams.get("checkoutId");
   if (!sessionId) {
-    return new Response(
-      skeleton.fill(html`<h1>checkout session not found</h1>`),
-    );
+    return instanceInfo();
   }
 
   const sessionRow = (await getCheckoutSessionBySessionId(sessionId))[0];
 
   if (!sessionRow?.address) {
-    return new Response(
-      skeleton.fill(html`<h1>checkout session not found</h1>`),
-    );
+    return instanceInfo();
   }
 
   const displayAmount = sessionRow.amount;
