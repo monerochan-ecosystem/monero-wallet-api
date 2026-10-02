@@ -5,6 +5,7 @@ const sql = new SQL({
   filename: "monero_payments.db",
   create: true,
 });
+await sql`PRAGMA journal_mode = WAL`;
 
 await sql`
 CREATE TABLE IF NOT EXISTS checkout_session (

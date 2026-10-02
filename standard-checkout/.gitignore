@@ -5,7 +5,7 @@
 wallet-caches/*
 getblocksbinbuffer/*
 # Based on https://raw.githubusercontent.com/github/gitignore/main/Node.gitignore
-monero_payments.db
+monero_payments.db*
 # Logs
 
 logs
