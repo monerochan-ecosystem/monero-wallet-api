@@ -33,6 +33,7 @@ export type ActionLogOpenedCreateOptions = {
 type WorkerMessageResult =
   | { events?: ActionLogEvent[] }
   | { tx_logs: unknown }
+  | { error: string }
   | void;
 
 type BoundMco = {
@@ -358,11 +359,15 @@ export class ActionLogOpened {
           node_url?: string;
           start_height?: number | null;
         };
-        await this.mco?.changeNodeUrlAndStartHeight(
-          p?.node_url,
-          p?.start_height,
-        );
-        return {};
+        try {
+          await this.mco?.changeNodeUrlAndStartHeight(
+            p?.node_url,
+            p?.start_height,
+          );
+          return {};
+        } catch (err) {
+          return { error: err instanceof Error ? err.message : String(err) };
+        }
       }
       case "worker.buildWallets":
         await this.mco?.buildWallets();

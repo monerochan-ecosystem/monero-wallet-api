@@ -92,15 +92,26 @@ export class ScanSettingsOpened {
   }
 
   public async setNodeUrl(node_url: string) {
-    await this.reload();
-    this._settings.node_url = ScanSettingsOpened._validateNodeUrl(node_url);
-    await this._persist();
+    await this.setNodeUrlAndStartHeight(node_url, undefined);
   }
 
   public async setStartHeight(start_height: number | null) {
+    await this.setNodeUrlAndStartHeight(undefined, start_height);
+  }
+
+  // one read and one write. a second reload must not put the old url back.
+  public async setNodeUrlAndStartHeight(
+    node_url?: string,
+    start_height?: number | null,
+  ) {
     await this.reload();
-    ScanSettingsOpened._validateStartHeight(start_height);
-    this._settings.start_height = start_height;
+    if (node_url !== undefined) {
+      this._settings.node_url = ScanSettingsOpened._validateNodeUrl(node_url);
+    }
+    if (start_height !== undefined) {
+      ScanSettingsOpened._validateStartHeight(start_height);
+      this._settings.start_height = start_height;
+    }
     await this._persist();
   }
 
