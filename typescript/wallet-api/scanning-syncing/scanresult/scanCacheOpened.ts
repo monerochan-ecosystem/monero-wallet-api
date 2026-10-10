@@ -292,18 +292,17 @@ export class ScanCacheOpened {
     node_url?: string,
     start_height?: number | null,
   ) {
-    await this.stopWorker();
-
-    if (node_url !== undefined) {
-      await this._scanSettings.setNodeUrl(node_url);
-      this.node_url = node_url;
+    // stop first so a live worker cannot write the old file over the new url.
+    try {
+      await this.stopWorker();
+    } catch {
+      // stop can fail. still write the new url.
     }
-
-    if (start_height !== undefined) {
-      await this._scanSettings.setStartHeight(start_height);
-      this._start_height = start_height;
+    if (node_url !== undefined || start_height !== undefined) {
+      await this._scanSettings.setNodeUrlAndStartHeight(node_url, start_height);
+      if (node_url !== undefined) this.node_url = node_url;
+      if (start_height !== undefined) this._start_height = start_height;
     }
-
     await this.unpause();
   }
   public async changeNodeUrl(node_url: string) {
@@ -986,7 +985,11 @@ export class ScanCacheOpened {
       delete this.worker;
       // drain coordinator first, then hard kill workers
       try {
-        await worker.shutdown();
+        // shutdown already races 5s. this race still returns if that promise never settles.
+        await Promise.race([
+          worker.shutdown(),
+          new Promise<void>((resolve) => setTimeout(resolve, 5000)),
+        ]);
       } catch {
         // still terminate below
       }
@@ -1193,16 +1196,26 @@ export class ManyScanCachesOpened {
     start_height?: number | null,
   ) {
     if (this.actionLogOpened.extensionMessageBus === "ui") {
-      await sendToBackground("worker.changeNodeUrlAndStartHeight", {
+      // the background owns the worker. it stops, then writes. do not write here first.
+      const result = await sendToBackground("worker.changeNodeUrlAndStartHeight", {
         node_url,
         start_height,
-      }).catch(() => {});
+      });
+      if (
+        result &&
+        typeof result === "object" &&
+        "error" in result &&
+        (result as { error?: unknown }).error
+      ) {
+        throw new Error(String((result as { error: unknown }).error));
+      }
+      if (result == null) throw new Error("background did not save the node url");
       return;
     }
     if (this.wallets.length === 0) {
-      if (node_url !== undefined) await this._scanSettings.setNodeUrl(node_url);
-      if (start_height !== undefined)
-        await this._scanSettings.setStartHeight(start_height);
+      if (node_url !== undefined || start_height !== undefined) {
+        await this._scanSettings.setNodeUrlAndStartHeight(node_url, start_height);
+      }
       return;
     }
     await this.wallets[0].changeNodeUrlAndStartHeight(node_url, start_height);
