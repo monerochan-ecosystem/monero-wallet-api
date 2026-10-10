@@ -8,7 +8,7 @@ import {
   CatastrophicReorgError,
   readOrInitConnectionStatus,
   type CacheRange,
-} from "../../xmr3";
+} from "../../xmr3_common";
 import { log } from "../../io/logging";
 
 export type SetupBlocksBufferGeneratorParams = {

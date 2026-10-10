@@ -4,10 +4,34 @@ import {
   openScanSettingsFile,
   SCAN_SETTINGS_STORE_NAME_DEFAULT,
   sleep,
-} from "../xmr3";
+} from "../xmr3_common";
 import { log, setupLoggingPath } from "../io/logging";
-import { workerMainCode } from "./worker-entrypoints/worker";
+import { getWasmUrls } from "../wasm-processing/wasmLoader";
 export const CPU_POOL_SIZE = 4;
+
+// inline worker code for packed mode, set by xmr3 entry
+let inlineWorkerCode = "";
+let blobUrl: string | undefined;
+// custom worker url for unpacked mode, set by consumer
+let customWorkerUrl: string | undefined;
+
+export function setInlineWorkerCode(code: string) {
+  inlineWorkerCode = code;
+  if (code) {
+    const blob = new Blob([code], {
+      type: "text/javascript",
+    });
+    blobUrl = URL.createObjectURL(blob);
+  }
+}
+
+export function setWorkerUrl(url: string | undefined) {
+  customWorkerUrl = url;
+}
+
+export function getWorkerUrl(): string | undefined {
+  return customWorkerUrl;
+}
 
 export type WorkerSet = {
   fetchWorker: Worker;
@@ -37,6 +61,7 @@ export async function createWebworker(
       typeof scanSettings?.cpu_worker_count !== "undefined"
         ? scanSettings?.cpu_worker_count || 1
         : CPU_POOL_SIZE;
+    const wasmUrls = getWasmUrls();
 
     // spawn CPU workers
     const cpuWorkers: Worker[] = [];
@@ -51,6 +76,8 @@ export async function createWebworker(
           cpu_worker_id: i,
           scan_settings_path: resolvedPath,
           pathPrefix,
+          moneroWasmUrl: wasmUrls.monero,
+          dkgWasmUrl: wasmUrls.dkg,
         },
         [channel.port1],
       );
@@ -72,6 +99,8 @@ export async function createWebworker(
         scan_settings_path: resolvedPath,
         pathPrefix,
         role: "coordinator",
+        moneroWasmUrl: wasmUrls.monero,
+        dkgWasmUrl: wasmUrls.dkg,
       },
       cpuPorts,
     ); // transfer CPU ports to coordination worker
@@ -189,19 +218,22 @@ export async function createWebworker(
 }
 
 export function makeWebworkerScript(): string {
-  return workerMainCode;
+  return inlineWorkerCode;
 }
-const blob = new Blob([workerMainCode], {
-  type: "text/javascript",
-});
-const url = URL.createObjectURL(blob);
 
 // creates a worker via startWebworker, then waits for it to signal
 // WORKER_READY (meaning self.onmessage = handleMessage has executed).
 // after that, postMessage is safe, no race between worker startup
 // and message delivery.
 export function startWebworkerReady(): Promise<Worker> {
-  const worker = new Worker(url, { type: "module" });
+  let worker: Worker;
+  if (customWorkerUrl) {
+    worker = new Worker(customWorkerUrl, { type: "module" });
+  } else if (blobUrl) {
+    worker = new Worker(blobUrl, { type: "module" });
+  } else {
+    throw new Error("no worker url and no inline worker code, call setWorkerUrl or use packed entry");
+  }
   return new Promise<Worker>((resolve) => {
     const onReady = (e: MessageEvent) => {
       if (e.data?.type === "WORKER_READY") {

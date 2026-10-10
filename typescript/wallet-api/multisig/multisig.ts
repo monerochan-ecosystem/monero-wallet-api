@@ -1,5 +1,6 @@
 import { log } from "../io/logging";
 import { startWebworkerReady } from "../scanning-syncing/backgroundWorker";
+import { getWasmUrls } from "../wasm-processing/wasmLoader";
 import type {
   DkgErrorResponse,
   DkgParticipateParams,
@@ -50,11 +51,14 @@ export class MultiSig {
             handleUnknownMessage(msg, "startWorker");
           }
         };
+        const wasmUrls = getWasmUrls();
         that.worker.postMessage({
           type: "setup",
           t,
           n,
           role: "multisig",
+          moneroWasmUrl: wasmUrls.monero,
+          dkgWasmUrl: wasmUrls.dkg,
         });
       });
       return await result_promise;

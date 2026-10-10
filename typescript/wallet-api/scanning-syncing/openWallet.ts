@@ -3,7 +3,7 @@ import {
   ScanCacheOpened,
   type ManyScanCachesOpenedCreateOptions,
 } from "./scanresult/scanCacheOpened";
-import { openScanSettingsFile, writeWalletToScanSettings } from "../xmr3";
+import { openScanSettingsFile, writeWalletToScanSettings } from "../xmr3_common";
 /**
  * Opens all **non halted wallets listed in ScanSettings.json** for scanning.
  *

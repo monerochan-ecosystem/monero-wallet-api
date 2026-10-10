@@ -8,7 +8,7 @@ import {
   type BlockInfo,
   type CacheRange,
   type GetBlocksResultMeta,
-} from "../../xmr3";
+} from "../../xmr3_common";
 import {
   type ConnectionSatusLastPacket,
   type ConnectionStatus,

@@ -1,4 +1,4 @@
-import { CatastrophicReorgError, type BlockInfo, type Output } from "../../xmr3";
+import { CatastrophicReorgError, type BlockInfo, type Output } from "../../xmr3_common";
 import { computeKeyImage, type KeyImage } from "./computeKeyImage";
 import { log } from "../../io/logging";
 import { mergeRanges, findRange, findRangeThrows } from "./scanCache";
@@ -10,7 +10,7 @@ import type {
   ScanCache,
 } from "./scanCache";
 import { WasmProcessor } from "../../wasm-processing/wasmProcessor";
-import { monero_wallet_api_wasm } from "../../wasm-processing/wasmFile";
+import { getMoneroWasmBytes } from "../../wasm-processing/wasmLoader";
 
 export type ProcessScanResultParams = {
   current_range: CacheRange;
@@ -275,7 +275,7 @@ export async function detectOutputs(
   spend_private_key?: string, // if no spendkey is provided, this will be a view only sync. (no ownspend detected)
 ) {
   let changed_outputs: ChangedOutput[] = [];
-  const wasmProcessor = await WasmProcessor.init(monero_wallet_api_wasm);
+  const wasmProcessor = await WasmProcessor.init(await getMoneroWasmBytes());
 
   for (const output of result.outputs) {
     // 0. prevent burning bug and avoid overwriting earlier found outputs

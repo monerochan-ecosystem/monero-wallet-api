@@ -1,5 +1,5 @@
-import type { Output } from "../../xmr3";
-import { monero_wallet_api_wasm } from "../../wasm-processing/wasmFile";
+import type { Output } from "../../xmr3_common";
+import { getMoneroWasmBytes } from "../../wasm-processing/wasmLoader";
 import { WasmProcessor } from "../../wasm-processing/wasmProcessor";
 export type KeyImage = string;
 export async function computeKeyImage(
@@ -8,7 +8,7 @@ export async function computeKeyImage(
   wasmProcessor?: WasmProcessor,
 ): Promise<KeyImage | undefined> {
   if (!wasmProcessor)
-    wasmProcessor = await WasmProcessor.init(monero_wallet_api_wasm);
+    wasmProcessor = await WasmProcessor.init(await getMoneroWasmBytes());
   wasmProcessor.writeToWasmMemory = (ptr, len) => {
     wasmProcessor.writeString(ptr, len, output.serialized);
     wasmProcessor.writeToWasmMemory = (ptr, len) => {

@@ -1,5 +1,5 @@
-import type { GetFeeEstimateResult, Output } from "../xmr3";
-import { monero_wallet_api_wasm } from "../wasm-processing/wasmFile";
+import type { GetFeeEstimateResult, Output } from "../xmr3_common";
+import { getMoneroWasmBytes } from "../wasm-processing/wasmLoader";
 import { WasmProcessor } from "../wasm-processing/wasmProcessor";
 export type Input = string;
 export type UnsignedTransaction = string;
@@ -149,7 +149,7 @@ export async function signTransaction(
   tx: UnsignedTransaction,
   sender_spend_key: string,
 ): Promise<SignedTransaction> {
-  const wasmProcessor = await WasmProcessor.init(monero_wallet_api_wasm);
+  const wasmProcessor = await WasmProcessor.init(await getMoneroWasmBytes());
   wasmProcessor.writeToWasmMemory = (ptr, len) => {
     wasmProcessor.writeString(ptr, len, tx);
     wasmProcessor.writeToWasmMemory = (ptr, len) => {
@@ -182,7 +182,7 @@ export type ParseAddressError = {
 export async function parseAddress(
   address: string,
 ): Promise<ParsedAddress | ParseAddressError> {
-  const wasmProcessor = await WasmProcessor.init(monero_wallet_api_wasm);
+  const wasmProcessor = await WasmProcessor.init(await getMoneroWasmBytes());
   wasmProcessor.writeToWasmMemory = (ptr, len) => {
     wasmProcessor.writeString(ptr, len, address);
   };
