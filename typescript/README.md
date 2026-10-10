@@ -64,12 +64,48 @@ makes it possible to easily run the [escrow test](tests/acceptance/escrow.test.t
 
 See the [acceptance test](tests/acceptance/dont_rescan.test.ts) for a full working sync example with mainnet data.
 
-## install
+## unpacked build entrypoint
 
-To install the package:
+In most cases you should use the default install / npm build entrypoint. It takes care of distributing the worker + wasm files as part of the package. When using the unpacked entrypoint via adding `/unpacked` to the end of the package import, you need to configure your build system to copy / distribute the wasm and worker urls and notify the package of those urls in your setup code via `configureUnpacked()`. 
+``` ts
+import { configureUnpacked, openWallets } from "@spirobel/monero-wallet-api/unpacked";
 
-```bash
-bun add @spirobel/monero-wallet-api
+```
+
+### build result in dist dir
+
+`bun run build` makes these files in `dist` (in addition to the packaged build `xmr3.js` and type definitions):
+
+* `xmr3_unpacked.js` (entry without worker + wasm dataurls)
+* `worker_unpacked.js` (worker source file that has to be distributed manually)
+* `monero_wallet_api.wasm` (wasm file that has to be distributed manually)
+* `frost_dkg.wasm` (wasm file that has to be distributed manually)
+
+### checklist for library consumer of unpacked entrypoint
+
+1. Install the lib.
+2. Copy the wasm files and the worker file to your dist folder.
+3. Import from `/unpacked`.
+4. Call `configureUnpacked` before `openWallets`.
+
+Copy step in `package.json`:
+
+```json
+"copyunpacked": "cp node_modules/@spirobel/monero-wallet-api/dist/*.wasm dist/chrome/ && cp node_modules/@spirobel/monero-wallet-api/dist/worker_unpacked.js dist/chrome/"
+```
+
+Code example:
+
+```ts
+import { configureUnpacked, openWallets } from "@spirobel/monero-wallet-api/unpacked";
+
+configureUnpacked({
+  workerUrl: "worker_unpacked.js",
+  moneroWasmUrl: "monero_wallet_api.wasm",
+  dkgWasmUrl: "frost_dkg.wasm",
+});
+
+const wallets = await openWallets();
 ```
 
 ## build

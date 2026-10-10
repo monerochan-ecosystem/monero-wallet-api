@@ -1,83 +1,12 @@
-import "./io/indexedDB";
+// packed entry, uses inlined wasm and worker code
+// this file injects inlined bytes into loaders
+// internal code imports from xmr3_common to avoid cycles
+import { monero_wallet_api_wasm, frost_dkg_wasm } from "./wasm-processing/wasmFile";
+import { setInlineWasm } from "./wasm-processing/wasmLoader";
+import { workerMainCode } from "./scanning-syncing/worker-entrypoints/worker";
+import { setInlineWorkerCode } from "./scanning-syncing/backgroundWorker";
 
-export type {
-  CacheChangedCallback,
-  CacheChangedCallbackParameters,
-} from "./scanning-syncing/scanresult/scanCache";
-export { NodeUrl } from "./node-interaction/nodeUrl";
-export { ViewPair } from "./viewpair/ViewPair";
-export {
-  ScanCacheOpened,
-  ManyScanCachesOpened,
-} from "./scanning-syncing/scanresult/scanCacheOpened";
+setInlineWasm(monero_wallet_api_wasm, frost_dkg_wasm);
+setInlineWorkerCode(workerMainCode);
 
-export * from "./node-interaction/binaryEndpoints";
-export * from "./node-interaction/jsonEndpoints";
-export * from "./io/readDir";
-export * from "./io/atomicWrite";
-export * from "./io/sleep";
-export {
-  LOGGING_FUNCTIONS,
-  type PossibleLogs,
-  type LogSetting,
-} from "./io/logging";
-
-export {
-  signTransaction,
-  parseAddress,
-  type ParsedAddress,
-  type ParseAddressError,
-} from "./send-functionality/transactionBuilding";
-export { computeKeyImage } from "./scanning-syncing/scanresult/computeKeyImage";
-export * from "./multisig/multisig";
-export * from "./multisig/DistributedKeyGenerator";
-export * from "./multisig/escrow";
-export * from "./multisig/MultiSigTxSigner";
-
-export {
-  createWebworker,
-  makeWebworkerScript,
-} from "./scanning-syncing/backgroundWorker";
-
-export { spendable } from "./scanning-syncing/scanresult/scanResult";
-
-export { openWallets, openWallet } from "./scanning-syncing/openWallet";
-export * from "./scanning-syncing/blocksbuffer/blocksBufferFetchLoop";
-export * from "./scanning-syncing/blocksbuffer/blocksbufferCoordination";
-export * from "./scanning-syncing/connectionStatus";
-export { ConnectionStatusOpened } from "./scanning-syncing/connectionStatusOpened";
-export {
-  ActionLogOpened,
-  type ActionLogOpenedCreateOptions,
-  type ActionLogBackendKind,
-  type ActionLogEvent,
-  type ActionLogEventType,
-  type ActionLogStage,
-  Invocation,
-  type InvocationDisplayStatus,
-  type InvocationState,
-  type ToolPermission,
-  type ToolNotice,
-  type ToolUiCopy,
-  type ToolWorkerContext,
-} from "./actionlog/actionLogOpened";
-export * from "./scansettings/scanSettings";
-export { ScanSettingsOpened } from "./scansettings/scanSettingsOpened";
-export * from "./scanning-syncing/scanresult/scanResult";
-export * from "./scanning-syncing/scanresult/scanStats";
-export * from "./scanning-syncing/scanresult/scanCache";
-export * from "./scanning-syncing/scanresult/scanCoordination";
-export * from "./scanning-syncing/scanresult/scanLoop";
-export * from "./keypairs-seeds/writeKeypairs";
-export * from "./keypairs-seeds/keypairs";
-export * from "./send-functionality/conversion";
-export * from "./send-functionality/inputSelection";
-export * from "./tools/monero-tools";
-export type {
-  ToolArm,
-  ToolContentZone,
-  ToolCounterpartyZone,
-  ToolWorkerZone,
-  ToolInvocationForValidate,
-} from "./tools/globals";
-export { sendToBackground } from "./tools/globals";
+export * from "./xmr3_common";

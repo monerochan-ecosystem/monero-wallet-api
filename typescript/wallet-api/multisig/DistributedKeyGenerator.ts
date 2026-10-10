@@ -1,4 +1,4 @@
-import { frost_dkg_wasm } from "../wasm-processing/wasmFile";
+import { getDkgWasmBytes } from "../wasm-processing/wasmLoader";
 import { WasmProcessor } from "../wasm-processing/wasmProcessor";
 /**
  * get the DKG public key from a 64-byte DKG secret key
@@ -115,7 +115,7 @@ export class DistributedKeyGenerator extends WasmProcessor {
    */
   public static async create(): Promise<DistributedKeyGenerator> {
     const dkg = new DistributedKeyGenerator();
-    await dkg.initWasmModule(frost_dkg_wasm);
+    await dkg.initWasmModule(await getDkgWasmBytes());
     return dkg;
   }
   /**
@@ -129,7 +129,7 @@ export class DistributedKeyGenerator extends WasmProcessor {
     n: number,
   ): Promise<DistributedKeyGenerator> {
     const dkg = new DistributedKeyGenerator();
-    await dkg.initWasmModule(frost_dkg_wasm);
+    await dkg.initWasmModule(await getDkgWasmBytes());
     dkg.setupGenerators(t, n);
     return dkg;
   }

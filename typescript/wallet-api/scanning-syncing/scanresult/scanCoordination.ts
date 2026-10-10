@@ -13,7 +13,7 @@ import {
   findTipIndex,
   readWriteConnectionStatusFile,
   applyWalletScanProgress,
-} from "../../xmr3";
+} from "../../xmr3_common";
 
 import {
   type ScanLoopInput,
@@ -28,7 +28,7 @@ import {
   SCAN_SETTINGS_STORE_NAME_DEFAULT,
   walletSettingsPlusKeys,
   type ScanSettings,
-} from "../../xmr3";
+} from "../../xmr3_common";
 import {
   currentScanHeightFromRanges,
   findRange,

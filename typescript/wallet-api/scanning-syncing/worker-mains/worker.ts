@@ -8,7 +8,13 @@ import { multisigMainWorkerCall } from "./multisig-main";
 import {
   DistributedKeyGenerator,
   SCAN_SETTINGS_STORE_NAME_DEFAULT,
-} from "../../xmr3";
+} from "../../xmr3_common";
+import { monero_wallet_api_wasm, frost_dkg_wasm } from "../../wasm-processing/wasmFile";
+import { setInlineWasm, setWasmUrls } from "../../wasm-processing/wasmLoader";
+
+// packed worker bundle has inlined bytes, unpacked has empty bytes
+// setInlineWasm ignores empty input
+setInlineWasm(monero_wallet_api_wasm, frost_dkg_wasm);
 
 self.onerror = (e) => self.postMessage({ type: "ERROR", payload: e });
 self.addEventListener("unhandledrejection", (e) =>
@@ -89,6 +95,9 @@ const handleMessage = async (e: MessageEvent) => {
   }
 
   if (msg.type === "setup") {
+    if (msg.moneroWasmUrl || msg.dkgWasmUrl) {
+      setWasmUrls({ monero: msg.moneroWasmUrl, dkg: msg.dkgWasmUrl });
+    }
     const settingsPath =
       msg.scan_settings_path || SCAN_SETTINGS_STORE_NAME_DEFAULT;
     SCAN_SETTINGS_PATH = settingsPath;

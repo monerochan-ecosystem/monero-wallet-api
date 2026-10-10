@@ -14,6 +14,10 @@
       "types": "./dist/xmr3.d.ts",
       "import": "./dist/xmr3.js"
     },
+    "./unpacked": {
+      "types": "./dist/xmr3_unpacked.d.ts",
+      "import": "./dist/xmr3_unpacked.js"
+    },
     "./tools": {
       "types": "./dist/tools/monero-tools.d.ts",
       "import": "./dist/tools/monero-tools.js"
@@ -50,7 +54,10 @@
     "copydev": "bun run safewasm && bun run safeworker && bun run copydevworker && bun run copydevwasm",
     "restoredev": "bun run restorewasm && bun run restoreworker",
     "refreshdev": "bun run restoredev && bun run inlinesum && bun run copydev",
-    "build": "bun run buildtypescript && bun run inlinesum",
+    "buildworkerunpacked": "bun build ./wallet-api/scanning-syncing/worker-mains/worker.ts --target=browser --outfile dist/worker_unpacked.js",
+    "copywasm": "cp ../rust/target/wasm32-wasip1/release/monero_wallet_api.wasm dist/monero_wallet_api.wasm && cp ../frost-dkg/target/wasm32-wasip1/release/frost_dkg.wasm dist/frost_dkg.wasm",
+    "buildunpacked": "bun run buildworkerunpacked && bun run copywasm",
+    "build": "bun run buildtypescript && bun run inlinesum && bun run buildunpacked",
     "clean": "rm -rf ./dist"
   },
   "type": "module",

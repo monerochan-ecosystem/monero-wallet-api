@@ -6,7 +6,7 @@ import {
   type ScanResult,
   type WalletConfig,
   type WalletConfigPlusCache,
-} from "../../xmr3";
+} from "../../xmr3_common";
 
 export type WorkItem = {
   walletConfig: WalletConfigPlusCache;

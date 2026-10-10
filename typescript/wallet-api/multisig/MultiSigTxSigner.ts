@@ -1,4 +1,4 @@
-import { frost_dkg_wasm } from "../wasm-processing/wasmFile";
+import { getDkgWasmBytes } from "../wasm-processing/wasmLoader";
 import { WasmProcessor } from "../wasm-processing/wasmProcessor";
 
 // Input: {"threshold_key":"hex","unsigned_tx":"hex"}
@@ -39,7 +39,7 @@ export type MoneroErrorResponse = {
 export class MultiSigTxSigner extends WasmProcessor {
   public static async create(): Promise<MultiSigTxSigner> {
     const signer = new MultiSigTxSigner();
-    await signer.initWasmModule(frost_dkg_wasm);
+    await signer.initWasmModule(await getDkgWasmBytes());
     return signer;
   }
 

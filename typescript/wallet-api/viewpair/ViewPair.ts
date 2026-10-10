@@ -23,7 +23,7 @@ import {
   type MakeTransactionParams,
   type UnsignedTransaction,
 } from "../send-functionality/transactionBuilding";
-import { monero_wallet_api_wasm } from "../wasm-processing/wasmFile";
+import { getMoneroWasmBytes } from "../wasm-processing/wasmLoader";
 
 import { WasmProcessor } from "../wasm-processing/wasmProcessor";
 import {
@@ -34,9 +34,9 @@ import {
   get_block_headers_range,
   get_info,
   type GetBlockHeadersRangeParams,
-} from "../xmr3";
+} from "../xmr3_common";
 
-import { readWalletFromScanSettings } from "../xmr3";
+import { readWalletFromScanSettings } from "../xmr3_common";
 import { sleep } from "../io/sleep";
 
 /**
@@ -74,7 +74,7 @@ export class ViewPair extends WasmProcessor {
       node_url || LOCAL_NODE_DEFAULT_URL,
       primary_address,
     );
-    const tinywasi = await viewPair.initWasmModule(monero_wallet_api_wasm);
+    const tinywasi = await viewPair.initWasmModule(await getMoneroWasmBytes());
     viewPair.writeToWasmMemory = (ptr, len) => {
       viewPair.writeString(ptr, len, primary_address);
       viewPair.writeToWasmMemory = (ptr, len) => {
