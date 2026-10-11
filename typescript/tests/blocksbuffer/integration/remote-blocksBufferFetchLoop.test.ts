@@ -19,7 +19,7 @@ import type {
 
 const OUTPUT_DIR = "test-data/blocksbuffer/integration/output";
 
-const REMOTE_URL = "https://xmr-01.tari.com";
+const REMOTE_URL = "https://node.monero.fail";
 const START_HEIGHT = 3160222;
 
 test("it1: remote node, barebones coordinator", async () => {
@@ -46,9 +46,12 @@ test("it1: remote node, barebones coordinator", async () => {
   const gen = blocksBufferFetchLoop(REMOTE_URL, START_HEIGHT, buffer, cs);
 
   let yields = 0;
+  const t0 = Date.now();
   for await (const event of gen) {
     yields++;
-    if (event === "blocks_buffer_changed") continue;
+    console.log(`[IT1] ${((Date.now() - t0) / 1000).toFixed(1)}s yield#${yields}`, "status" in event ? "status" : ("local_uuid" in event ? "buffer-item" : "sync"));
+    // like production handleConnectionStatusChanges: never persist raw buffer items
+    if ("local_uuid" in event) continue;
     if ("status" in event) {
       await readWriteConnectionStatusFile((cs2) => {
         cs2.last_packet = event;
@@ -58,7 +61,8 @@ test("it1: remote node, barebones coordinator", async () => {
         cs2.sync = event;
       }, `${dir}/ScanSettings.json`);
     }
-    if (yields >= 6) break;
+    // 3 yields prove remote fetching; more does not fit the 20s budget on public nodes
+    if (yields >= 3) break;
   }
 
   expect(yields).toBeGreaterThanOrEqual(3);

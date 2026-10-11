@@ -1,11 +1,6 @@
 import { test, beforeAll } from "bun:test";
-import { ViewPair } from "../../../wallet-api/xmr3";
-import {
-  makeTestKeyPair,
-  type Keypair,
-} from "../../../wallet-api/keypairs-seeds/keypairs";
+import { ViewPair, makeTestKeyPair, type Keypair, type GetBlocksResultMeta } from "../../../dist/xmr3";
 import { mkdir, rm } from "node:fs/promises";
-import type { GetBlocksResultMeta } from "../../../wallet-api/node-interaction/binaryEndpoints";
 
 const TEST_DATA_DIR = "test-data/view_pair_getblocks_bin_scan";
 
@@ -14,7 +9,7 @@ beforeAll(async () => {
   await mkdir(TEST_DATA_DIR, { recursive: true });
 });
 
-const NODE_URL = "https://xmr-01.tari.com";
+const NODE_URL = "https://node.monero.fail";
 const START_HEIGHT = 3160222;
 const FIXTURES_DIR = "tests/fixtures/view_pair_getblocks_bin_scan";
 const FIXTURE_KEYPAIR = `${FIXTURES_DIR}/keypair.json`;

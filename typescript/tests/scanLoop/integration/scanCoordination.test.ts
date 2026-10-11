@@ -14,8 +14,8 @@ import {
   handleConnectionStatusChanges,
   writeScanSettings,
   connectionStatusFilePath,
+  makeTestKeyPair,
 } from "../../../dist/xmr3";
-import { makeTestKeyPair } from "../../../wallet-api/keypairs-seeds/keypairs";
 
 const OUT = "test-data/scanCoordination";
 const MONEROD = "tests/moneronode/monerod";
@@ -100,7 +100,7 @@ beforeAll(async () => {
   kp2 = await makeKeypair();
 }, 30000);
 
-test("a: two wallets, no prior scan, anchor_range undefined", async () => {
+test("a: two wallets, no prior scan, first anchor is inserted", async () => {
   const dir = `${OUT}/a`;
   await rm(dir, { force: true, recursive: true });
   await mkdir(dir, { recursive: true });
@@ -118,8 +118,22 @@ test("a: two wallets, no prior scan, anchor_range undefined", async () => {
   expect(w).not.toBe(false);
   if (!w) return;
   expect(w.wallet_configs.length).toBe(2);
-  expect(w.anchor_range).toBeUndefined();
-  expect(w.start_height).toBeGreaterThan(0);
+  // findWorkToBeDone inserts the first anchor: fresh wallets have no scanned
+  // ranges, so it asks the node for the block hash at the start height,
+  // writes that single-point range into each wallet cache, and returns it.
+  // start_height null is culled to chain tip first (see cullTooLargeScanHeight).
+  const settings = JSON.parse(
+    await Bun.file(`${dir}/ScanSettings.json`).text(),
+  );
+  expect(w.anchor_range).toBeDefined();
+  expect(w.anchor_range.start).toBe(settings.start_height);
+  expect(w.anchor_range.end).toBe(settings.start_height);
+  expect(w.start_height).toBe(w.anchor_range.end);
+  for (const cfg of w.wallet_configs) {
+    expect(cfg.cache.scanned_ranges.length).toBe(1);
+    expect(cfg.cache.scanned_ranges[0].start).toBe(settings.start_height);
+    expect(cfg.cache.scanned_ranges[0].end).toBe(settings.start_height);
+  }
   console.log(
     `[a] wallets: 2, anchor: ${w.anchor_range?.start}-${w.anchor_range?.end}, start: ${w.start_height}`,
   );
@@ -143,7 +157,14 @@ test("b: single wallet with generator pipeline", async () => {
   expect(w).not.toBe(false);
   if (!w) return;
   expect(w.wallet_configs.length).toBe(1);
-  expect(w.anchor_range).toBeUndefined();
+  // same first-anchor insertion as test a, single wallet.
+  const bSettings = JSON.parse(
+    await Bun.file(`${dir}/ScanSettings.json`).text(),
+  );
+  expect(w.anchor_range).toBeDefined();
+  expect(w.anchor_range.start).toBe(bSettings.start_height);
+  expect(w.anchor_range.end).toBe(bSettings.start_height);
+  expect(w.start_height).toBe(w.anchor_range.end);
   console.log(
     `[b] first call: anchor ${w.anchor_range?.start}-${w.anchor_range?.end}, start ${w.start_height}`,
   );
