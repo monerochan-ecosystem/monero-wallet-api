@@ -329,21 +329,30 @@ export function processTxlogInputs(txlog: TxLog, cache: ScanCache) {
   }
   return { inputSum, alreadyRecognizedAsSpend };
 }
+// an in-flight row has no node answer yet. it still locks the inputs.
+export function txLogHoldsFunds(txlog: TxLog): boolean {
+  if (txlog.error) return false;
+  if (!txlog.sendResult) return true;
+  return txlog.sendResult.status === "OK";
+}
 export function processTxlogs(cache: ScanCache, stats: ScanStats) {
   for (const txlog of cache.tx_logs || []) {
-    if (
-      !txlog ||
-      !txlog.sendResult ||
-      (txlog.sendResult && txlog.sendResult.status !== "OK")
-    )
-      continue;
+    if (!txlog || !txLogHoldsFunds(txlog)) continue;
     const { inputSum, alreadyRecognizedAsSpend } = processTxlogInputs(
       txlog,
       cache,
     );
     if (alreadyRecognizedAsSpend) continue;
     const outWardPaymentSum = processTxlogPayments(txlog, cache);
-    stats.total_spendable_amount -= inputSum;
+    // locked inputs are already out of the spendable sum. do not subtract them again.
+    let alreadyExcluded = 0n;
+    for (const inputId of txlog.inputs_index) {
+      if (cache.pending_spent_utxos?.[inputId] === undefined) continue;
+      const input = cache.outputs[inputId];
+      if (!input || typeof input.spent_in_tx_hash === "string") continue;
+      alreadyExcluded += input.amount;
+    }
+    stats.total_spendable_amount -= inputSum - alreadyExcluded;
     const newPending = inputSum - outWardPaymentSum;
     stats.total_pending_amount += newPending;
   }

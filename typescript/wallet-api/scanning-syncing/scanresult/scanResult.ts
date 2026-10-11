@@ -389,8 +389,10 @@ export function outputStatus(
 ): OutputStatus {
   if (
     // order matters, check this before "spent" check + "pending" check
+    // tx log index 0 is a real lock. 0 must not count as missing.
     cache.pending_spent_utxos &&
-    cache.pending_spent_utxos[output.index_on_blockchain.toString()]
+    cache.pending_spent_utxos[output.index_on_blockchain.toString()] !==
+      undefined
   ) {
     return { status: "prepending" };
   }
