@@ -1,5 +1,5 @@
 /**
- * unit tests for processScanResultWITHOUT_SIDE_EFFECTS idempotency.
+ * unit tests for processScanResult idempotency.
  *
  * scanning wallets with different scan ranges that overlap with the same
  * result must still produce valid, conflict-free caches. the prepended mock
@@ -8,7 +8,7 @@
  */
 import { test, expect } from "bun:test";
 import {
-  processScanResultWITHOUT_SIDE_EFFECTS,
+  processScanResult,
   type ScanResult,
   type ScanCache,
   type CacheRange,
@@ -113,8 +113,9 @@ test("1a: same result applied twice, compare cache after first and second call",
 
   console.log("[test 1a] before call 1:", fmt(cache));
 
-  await processScanResultWITHOUT_SIDE_EFFECTS({
-    current_range: current,
+  await processScanResult({
+    from_height: current.start,
+    to_height: result.new_height,
     result,
     scanCache: cache,
     secret_spend_key: undefined,
@@ -126,8 +127,9 @@ test("1a: same result applied twice, compare cache after first and second call",
   expect(after1).not.toEqual(initial);
   console.log("[test 1a] call 1 modified cache");
 
-  await processScanResultWITHOUT_SIDE_EFFECTS({
-    current_range: current,
+  await processScanResult({
+    from_height: current.start,
+    to_height: result.new_height,
     result,
     scanCache: cache,
     secret_spend_key: undefined,
@@ -152,8 +154,9 @@ test("1b: same result applied 5 times, compare after each to first call", async 
   let first: ScanCache | null = null;
 
   for (let i = 0; i < 5; i++) {
-    await processScanResultWITHOUT_SIDE_EFFECTS({
-      current_range: current,
+    await processScanResult({
+      from_height: current.start,
+      to_height: result.new_height,
       result,
       scanCache: cache,
       secret_spend_key: undefined,
@@ -183,8 +186,9 @@ test("2a: apply result with 10 prepended blocks, compare to result without prepe
   const cacheNo = makeCache(100, 150, "addr1");
   const initialNo = structuredClone(cacheNo);
   const resultNo = makeResult(150, 160, "addr1", true, 0);
-  await processScanResultWITHOUT_SIDE_EFFECTS({
-    current_range: current,
+  await processScanResult({
+    from_height: current.start,
+    to_height: resultNo.new_height,
     result: resultNo,
     scanCache: cacheNo,
     secret_spend_key: undefined,
@@ -196,8 +200,9 @@ test("2a: apply result with 10 prepended blocks, compare to result without prepe
   const cachePre = makeCache(100, 150, "addr1");
   const initialPre = structuredClone(cachePre);
   const resultPre = makeResult(150, 160, "addr1", true, 10);
-  await processScanResultWITHOUT_SIDE_EFFECTS({
-    current_range: current,
+  await processScanResult({
+    from_height: current.start,
+    to_height: resultPre.new_height,
     result: resultPre,
     scanCache: cachePre,
     secret_spend_key: undefined,
@@ -227,8 +232,9 @@ test("2b: apply with 0, 5, 20 prepended blocks to same fresh cache", async () =>
     const cache = makeCache(100, 150, "addr1");
     const initial = structuredClone(cache);
     const result = makeResult(150, 160, "addr1", true, n);
-    await processScanResultWITHOUT_SIDE_EFFECTS({
-      current_range: current,
+    await processScanResult({
+      from_height: current.start,
+      to_height: result.new_height,
       result,
       scanCache: cache,
       secret_spend_key: undefined,
@@ -257,8 +263,9 @@ test("3a: prepended 2x then without prepend 1x, cache same as single without", a
   const cacheRef = makeCache(100, 150, "addr1");
   const initialRef = structuredClone(cacheRef);
   const resultRef = makeResult(150, 155, "addr1", true, 0);
-  await processScanResultWITHOUT_SIDE_EFFECTS({
-    current_range: current,
+  await processScanResult({
+    from_height: current.start,
+    to_height: resultRef.new_height,
     result: resultRef,
     scanCache: cacheRef,
     secret_spend_key: undefined,
@@ -270,8 +277,9 @@ test("3a: prepended 2x then without prepend 1x, cache same as single without", a
   const cacheTest = makeCache(100, 150, "addr1");
   const initialTest = structuredClone(cacheTest);
   const resultPre = makeResult(150, 155, "addr1", true, 10);
-  await processScanResultWITHOUT_SIDE_EFFECTS({
-    current_range: current,
+  await processScanResult({
+    from_height: current.start,
+    to_height: resultPre.new_height,
     result: resultPre,
     scanCache: cacheTest,
     secret_spend_key: undefined,
@@ -281,8 +289,9 @@ test("3a: prepended 2x then without prepend 1x, cache same as single without", a
   console.log("[test 3a] first prepended call modified cache");
 
   const afterFirstPre = structuredClone(cacheTest);
-  await processScanResultWITHOUT_SIDE_EFFECTS({
-    current_range: current,
+  await processScanResult({
+    from_height: current.start,
+    to_height: resultPre.new_height,
     result: resultPre,
     scanCache: cacheTest,
     secret_spend_key: undefined,
@@ -292,8 +301,9 @@ test("3a: prepended 2x then without prepend 1x, cache same as single without", a
   console.log("[test 3a] second prepended call idempotent");
 
   const afterSecondPre = structuredClone(cacheTest);
-  await processScanResultWITHOUT_SIDE_EFFECTS({
-    current_range: current,
+  await processScanResult({
+    from_height: current.start,
+    to_height: resultPre.new_height,
     result: resultRef,
     scanCache: cacheTest,
     secret_spend_key: undefined,
@@ -321,8 +331,9 @@ test("3b: without prepend 2x then prepended 1x, cache same as 3a", async () => {
   const cacheTest = makeCache(100, 150, "addr1");
   const initialTest = structuredClone(cacheTest);
   const resultRef = makeResult(150, 155, "addr1", true, 0);
-  await processScanResultWITHOUT_SIDE_EFFECTS({
-    current_range: current,
+  await processScanResult({
+    from_height: current.start,
+    to_height: resultRef.new_height,
     result: resultRef,
     scanCache: cacheTest,
     secret_spend_key: undefined,
@@ -332,8 +343,9 @@ test("3b: without prepend 2x then prepended 1x, cache same as 3a", async () => {
   console.log("[test 3b] first without-prepend call modified cache");
 
   const afterFirst = structuredClone(cacheTest);
-  await processScanResultWITHOUT_SIDE_EFFECTS({
-    current_range: current,
+  await processScanResult({
+    from_height: current.start,
+    to_height: resultRef.new_height,
     result: resultRef,
     scanCache: cacheTest,
     secret_spend_key: undefined,
@@ -344,8 +356,9 @@ test("3b: without prepend 2x then prepended 1x, cache same as 3a", async () => {
 
   const resultPre = makeResult(150, 155, "addr1", true, 10);
   const afterSecond = structuredClone(cacheTest);
-  await processScanResultWITHOUT_SIDE_EFFECTS({
-    current_range: current,
+  await processScanResult({
+    from_height: current.start,
+    to_height: resultPre.new_height,
     result: resultPre,
     scanCache: cacheTest,
     secret_spend_key: undefined,
@@ -357,8 +370,9 @@ test("3b: without prepend 2x then prepended 1x, cache same as 3a", async () => {
 
   const cacheRef = makeCache(100, 150, "addr1");
   const initialRef = structuredClone(cacheRef);
-  await processScanResultWITHOUT_SIDE_EFFECTS({
-    current_range: current,
+  await processScanResult({
+    from_height: current.start,
+    to_height: resultPre.new_height,
     result: resultRef,
     scanCache: cacheRef,
     secret_spend_key: undefined,
@@ -412,8 +426,9 @@ test("4a: outputs from prepended blocks should not pollute cache", async () => {
     Object.keys(cache.outputs).length,
   );
 
-  await processScanResultWITHOUT_SIDE_EFFECTS({
-    current_range: current,
+  await processScanResult({
+    from_height: current.start,
+    to_height: result.new_height,
     result,
     scanCache: cache,
     secret_spend_key: undefined,
@@ -481,7 +496,7 @@ test("4a: outputs from prepended blocks should not pollute cache", async () => {
 //   console.log("[test 4b] before:", fmt(cache));
 //   expect(cache.outputs[outputId].spent_in_tx_hash).toBeUndefined();
 
-//   await processScanResultWITHOUT_SIDE_EFFECTS({
+//   await processScanResult({
 //     current_range: current, result, scanCache: cache, secret_spend_key: undefined,
 //   });
 

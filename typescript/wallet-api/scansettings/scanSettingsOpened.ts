@@ -246,7 +246,7 @@ export class ScanSettingsOpened {
   ) {
     primary_address = primary_address.trim();
     view_key = view_key.trim();
-    ScanSettingsOpened._validateAddress(primary_address);
+    await ScanSettingsOpened._validateAddress(primary_address);
     ScanSettingsOpened._validateViewKey(view_key);
     ScanSettingsOpened._validateWalletName(fields?.wallet_name);
     ScanSettingsOpened._validateWalletSlot(fields?.wallet_slot);
@@ -441,8 +441,8 @@ export class ScanSettingsOpened {
     }
   }
 
-  private static _validateAddress(address: string): void {
-    const parsed = parseAddress(address);
+  private static async _validateAddress(address: string): Promise<void> {
+    const parsed = await parseAddress(address);
     if ("error" in parsed) {
       throw new Error(`invalid monero address: ${address}`);
     }

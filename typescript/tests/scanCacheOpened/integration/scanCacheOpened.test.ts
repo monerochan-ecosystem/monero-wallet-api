@@ -526,7 +526,6 @@ test("g: autoRetry restarts worker on node failure", async () => {
     ],
     { stdin: "pipe", stdout: "pipe", stderr: "pipe" },
   );
-  await Bun.sleep(1000);
   await waitNode();
   await rpc("generateblocks", {
     amount_of_blocks: 10,
@@ -557,23 +556,62 @@ test("g: autoRetry restarts worker on node failure", async () => {
   if (!wallets) throw new Error("expected wallets");
 
   // wait for initial connection
-  await Bun.sleep(2000);
+  const connDeadline = Date.now() + 15000;
+  while (
+    Date.now() < connDeadline &&
+    !(wallets.wallets[0].daemon_height > 0)
+  ) {
+    await Bun.sleep(200);
+  }
   expect(wallets.wallets[0].daemon_height).toBeGreaterThan(0);
 
   // count log files before killing node
   const logsBefore = readdirSync(dir).filter((f) => f.endsWith(".log"));
 
-  // kill the node, worker errors and autoRetry fires retry()
+  // kill the node, worker errors and autoRetry schedules retry()
   gProc.kill(9);
-
-  // wait for retry to spawn new workers
-  await Bun.sleep(4000);
-
+  const errDeadline = Date.now() + 10000;
+  while (Date.now() < errDeadline && errorCount < 1) {
+    await Bun.sleep(200);
+  }
   expect(errorCount).toBeGreaterThanOrEqual(1);
 
-  // new log files should have appeared (new workers spawned by retry)
-  const logsAfter = readdirSync(dir).filter((f) => f.endsWith(".log"));
-  expect(logsAfter.length).toBeGreaterThan(logsBefore.length);
+  // retry only restarts workers once the node is reachable again:
+  // while the node is down it just reschedules itself, so bring it back
+  const gProc2 = Bun.spawn(
+    [
+      MONEROD,
+      "--regtest",
+      "--offline",
+      "--fixed-difficulty",
+      "1",
+      "--rpc-bind-ip",
+      "127.0.0.1",
+      "--rpc-bind-port",
+      String(PORT),
+      "--non-interactive",
+    ],
+    { stdin: "pipe", stdout: "pipe", stderr: "pipe" },
+  );
+  try {
+    await waitNode();
+
+    // wait for retry to spawn new workers (poll: fixed sleeps flake under load)
+    let logsAfter: string[] = [];
+    const deadline = Date.now() + 20000;
+    while (Date.now() < deadline) {
+      await Bun.sleep(500);
+      logsAfter = readdirSync(dir).filter((f) => f.endsWith(".log"));
+      if (logsAfter.length > logsBefore.length) break;
+    }
+
+    // new log files should have appeared (new workers spawned by retry)
+    expect(logsAfter.length).toBeGreaterThan(logsBefore.length);
+  } finally {
+    try {
+      gProc2.kill(9);
+    } catch {}
+  }
 
   wallets.stopWorker();
-}, 30000);
+}, 45000);

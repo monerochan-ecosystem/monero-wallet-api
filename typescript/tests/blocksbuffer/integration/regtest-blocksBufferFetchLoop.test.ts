@@ -51,7 +51,6 @@ async function advanceSync(
   while (true) {
     const { value, done } = await generator.next();
     if (done) return undefined;
-    if (value === "blocks_buffer_changed") continue;
     await handleConnectionStatusChanges(value, scanSettingsPath);
     if ("scanned_ranges" in value) return value;
   }

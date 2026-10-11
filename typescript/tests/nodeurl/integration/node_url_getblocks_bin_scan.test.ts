@@ -1,5 +1,5 @@
 import { test, beforeAll } from "bun:test";
-import { NodeUrl } from "../../../wallet-api/node-interaction/nodeUrl";
+import { NodeUrl } from "../../../dist/xmr3";
 import { mkdir, rm } from "node:fs/promises";
 
 const TEST_DATA_DIR = "test-data/node_url_getblocks_bin_scan";
@@ -9,7 +9,7 @@ beforeAll(async () => {
   await mkdir(TEST_DATA_DIR, { recursive: true });
 });
 
-const NODE_URL = "https://xmr-01.tari.com";
+const NODE_URL = "https://node.monero.fail";
 const START_HEIGHT = 3160222;
 const FIXTURES_DIR = "tests/fixtures/node_url_getblocks_bin_scan";
 const FIXTURE_RESPONSE = `${FIXTURES_DIR}/getblocks.bin.plus30000.response`;
