@@ -51,6 +51,7 @@ import {
   isSelfSpent,
   processTxlogInputs,
   processTxlogPayments,
+  txLogHoldsFunds,
   writeStatsFileDefaultLocation,
   type FoundTransaction,
   type PrePendingTx,
@@ -219,12 +220,7 @@ export class ScanCacheOpened {
   get prepending_txs(): PrePendingTx[] {
     const txs = [];
     for (const txlog of this._cache.tx_logs || []) {
-      if (
-        !txlog ||
-        !txlog.sendResult ||
-        (txlog.sendResult && txlog.sendResult.status !== "OK")
-      )
-        continue;
+      if (!txlog || !txLogHoldsFunds(txlog)) continue;
       const { inputSum, alreadyRecognizedAsSpend } = processTxlogInputs(
         txlog,
         this._cache,
@@ -568,16 +564,105 @@ export class ScanCacheOpened {
   get tx_logs() {
     return this._cache.tx_logs || [];
   }
+  private async writeTxCache(
+    writeCallback: (cache: ScanCache) => void | Promise<void>,
+    changed_outputs: ChangedOutput[],
+  ) {
+    await writeCacheFileDefaultLocationThrows({
+      primary_address: this.primary_address,
+      pathPrefix: this.pathPrefix,
+      writeCallback,
+    });
+    const newCache = await readCacheFileDefaultLocation(
+      this.primary_address,
+      this.pathPrefix,
+    );
+    if (!newCache)
+      throw new Error(
+        `cache not found for primary address: ${this.primary_address}, and path prefix: ${this.pathPrefix}`,
+      );
+    await this.feed({ newCache, changed_outputs });
+  }
+  // stop the worker, lock the inputs, then let stats show pending.
+  private async beginInFlightSend(args: {
+    payments: Payment[];
+    inputs: Output[];
+    feeEstimate: FeeEstimateResponse;
+    invocationId?: string;
+  }) {
+    await this.stopWorker();
+    const inputs_index = args.inputs.map((input) =>
+      String(input.index_on_blockchain),
+    );
+    let txLogIndex = 0;
+    try {
+      await this.writeTxCache(async (cache) => {
+        if (!cache.tx_logs) cache.tx_logs = [];
+        if (!cache.pending_spent_utxos) cache.pending_spent_utxos = {};
+        const txLog: TxLog = {
+          feeEstimate: args.feeEstimate,
+          payments: args.payments,
+          node_url: this.node_url,
+          inputs_index,
+          height: this.current_height!,
+          timestamp: Date.now(),
+          invocationId: args.invocationId,
+        };
+        txLogIndex = cache.tx_logs.push(txLog) - 1;
+        for (const inputId of inputs_index)
+          cache.pending_spent_utxos![inputId] = txLogIndex;
+      }, args.inputs.map((output) => ({ change_reason: "spent", output })));
+    } catch (e) {
+      await this.unpause();
+      throw e;
+    }
+    return txLogIndex;
+  }
+  // update the same row with the node answer. unlock the inputs on failure.
+  private async finishInFlightSend(args: {
+    txLogIndex: number;
+    sendResult?: SendRawTransactionResult;
+    signedTx?: string;
+    error?: string;
+    invocationId?: string;
+  }) {
+    const ok = args.sendResult?.status === "OK" && args.error === undefined;
+    try {
+      await this.writeTxCache(async (cache) => {
+        const row = cache.tx_logs?.[args.txLogIndex];
+        if (!row) throw new Error("tx log missing");
+        if (args.invocationId) row.invocationId = args.invocationId;
+        if (args.signedTx) row.signed_tx = args.signedTx;
+        if (args.sendResult) row.sendResult = args.sendResult;
+        if (!ok) {
+          row.error = args.error || args.sendResult?.reason || "send failed";
+          for (const inputId of row.inputs_index) {
+            if (cache.pending_spent_utxos?.[inputId] === args.txLogIndex)
+              delete cache.pending_spent_utxos[inputId];
+          }
+        }
+      }, []);
+    } finally {
+      await this.unpause();
+    }
+  }
   public async makeSignSendTransaction(params: CreateTransactionParams) {
     let maybeInputs: Output[] = [];
     let maybeFeeEstimate: FeeEstimateResponse;
-    let maybeSendResult: SendRawTransactionResult;
+    let maybeSendResult: SendRawTransactionResult | undefined;
     let maybeSignedTx: string | undefined;
+    let txLogIndex: number | undefined;
     try {
       const { selectedInputs, feeEstimate } =
         await this.calculateFeeAndSelectInputs(params);
       maybeInputs = selectedInputs;
       maybeFeeEstimate = feeEstimate;
+      txLogIndex = await this.beginInFlightSend({
+        payments: params.payments,
+        inputs: selectedInputs,
+        feeEstimate,
+        invocationId: params.invocationId,
+      });
       const unsignedTx = await this.makeTransactionFromSelectedInputs(
         params.payments,
         selectedInputs,
@@ -589,59 +674,28 @@ export class ScanCacheOpened {
       maybeSendResult = sendResult;
       if (sendResult.status !== "OK")
         throw new Error("send raw transaction rpc returned error");
-      // before writing the scan cache, we stop the worker to avoid a race
-      await this.stopWorker();
-
-      // write txlog to cache + update pending_spent_utxos (affects stats + spendability)
-      await writeCacheFileDefaultLocationThrows({
-        primary_address: this.primary_address,
-        pathPrefix: this.pathPrefix,
-        writeCallback: async (cache) => {
-          if (!cache.tx_logs) cache.tx_logs = [];
-          if (!cache.pending_spent_utxos) cache.pending_spent_utxos = {};
-          const inputs_index = selectedInputs.map((input) =>
-            String(input.index_on_blockchain),
-          );
-          const txLog: TxLog = {
-            sendResult,
-            feeEstimate,
-            payments: params.payments,
-            node_url: this.node_url,
-            inputs_index,
-            height: this.current_height!,
-            timestamp: Date.now(),
-            invocationId: params.invocationId,
-            signed_tx: signedTx,
-          };
-          const newLen = cache.tx_logs.push(txLog);
-          const txLogIndex = newLen - 1;
-          for (const inputId of inputs_index) {
-            cache.pending_spent_utxos[inputId] = txLogIndex;
-          }
-        },
+      await this.finishInFlightSend({
+        txLogIndex,
+        sendResult,
+        signedTx,
+        invocationId: params.invocationId,
       });
-      const newCache = await readCacheFileDefaultLocation(
-        this.primary_address,
-        this.pathPrefix,
-      );
-      if (!newCache)
-        throw new Error(
-          `cache not found for primary address: ${this.primary_address}, and path prefix: ${this.pathPrefix}`,
-        );
-      const changed_outputs: ChangedOutput[] = selectedInputs.map((input) => ({
-        change_reason: "spent",
-        output: input,
-      }));
-      await this.feed({
-        newCache,
-        changed_outputs,
-      });
-
-      // restart the worker
-      await this.unpause();
-
       return sendResult;
     } catch (e) {
+      if (txLogIndex !== undefined && maybeSendResult?.status !== "OK") {
+        await this.finishInFlightSend({
+          txLogIndex,
+          sendResult: maybeSendResult,
+          signedTx: maybeSignedTx,
+          error: String(e || "unknown error"),
+          invocationId: params.invocationId,
+        });
+        throw e;
+      }
+      if (txLogIndex !== undefined) {
+        await this.unpause();
+        throw e;
+      }
       // before writing the scan cache, we stop the worker to avoid a race
       await this.stopWorker();
       // write txlog error to cache
@@ -732,35 +786,43 @@ export class ScanCacheOpened {
       : this.spendableInputs();
     if (!inputs.length) throw new Error("no inputs selected");
     const feeEstimate = await this.getFeeEstimate();
-    const unsignedTx = await this.makeSweepTransactionFromSelectedInputs(
-      params.address,
-      inputs,
-      feeEstimate,
-    );
-    const signedTx = await this.signTransaction(unsignedTx);
     const payments: Payment[] = [{ address: params.address, amount: "0" }];
-    const sendResult = await this.sendTransaction(signedTx);
-    if (sendResult.status !== "OK") {
-      await this.recordSend({
-        payments,
-        inputs,
-        signedTx,
-        feeEstimate,
-        sendResult,
-        error: "send raw transaction rpc returned error",
-        lockInputs: false,
-      });
-      throw new Error("send raw transaction rpc returned error");
-    }
-    await this.recordSend({
+    const txLogIndex = await this.beginInFlightSend({
       payments,
       inputs,
-      signedTx,
       feeEstimate,
-      sendResult,
-      lockInputs: true,
     });
-    return sendResult;
+    let sendResult: SendRawTransactionResult | undefined;
+    let signedTx: string | undefined;
+    try {
+      const unsignedTx = await this.makeSweepTransactionFromSelectedInputs(
+        params.address,
+        inputs,
+        feeEstimate,
+      );
+      signedTx = await this.signTransaction(unsignedTx);
+      sendResult = await this.sendTransaction(signedTx);
+      if (sendResult.status !== "OK")
+        throw new Error("send raw transaction rpc returned error");
+      await this.finishInFlightSend({
+        txLogIndex,
+        sendResult,
+        signedTx,
+      });
+      return sendResult;
+    } catch (e) {
+      if (sendResult?.status !== "OK") {
+        await this.finishInFlightSend({
+          txLogIndex,
+          sendResult,
+          signedTx,
+          error: e instanceof Error ? e.message : String(e),
+        });
+      } else {
+        await this.unpause();
+      }
+      throw e;
+    }
   }
 
   public async rebroadcastTx(txLogIndex: number) {
@@ -810,6 +872,8 @@ export class ScanCacheOpened {
       const txlog = logs[index];
       if (!txlog || txlog.hidden_on_send_plate) continue;
       if (txlog.sendResult?.status === "OK") continue;
+      // no node answer yet. this row is still in flight.
+      if (!txlog.sendResult && !txlog.error) continue;
       const inputs = txlog.inputs_index
         .map((id) => this._cache.outputs[id])
         .filter((output) => output);
@@ -821,54 +885,6 @@ export class ScanCacheOpened {
       rows.push({ index, txlog, inputs });
     }
     return rows;
-  }
-
-  private async recordSend(args: {
-    payments: Payment[];
-    inputs: Output[];
-    signedTx: string;
-    feeEstimate: FeeEstimateResponse;
-    sendResult: SendRawTransactionResult;
-    error?: string;
-    lockInputs: boolean;
-  }) {
-    await this.stopWorker();
-    await writeCacheFileDefaultLocationThrows({
-      primary_address: this.primary_address,
-      pathPrefix: this.pathPrefix,
-      writeCallback: async (cache) => {
-        if (!cache.tx_logs) cache.tx_logs = [];
-        if (!cache.pending_spent_utxos) cache.pending_spent_utxos = {};
-        const inputs_index = args.inputs.map((input) =>
-          String(input.index_on_blockchain),
-        );
-        const txLog: TxLog = {
-          sendResult: args.sendResult,
-          error: args.error,
-          feeEstimate: args.feeEstimate,
-          payments: args.payments,
-          node_url: this.node_url,
-          inputs_index,
-          height: this.current_height!,
-          timestamp: Date.now(),
-          signed_tx: args.signedTx,
-        };
-        const txLogIndex = cache.tx_logs.push(txLog) - 1;
-        if (!args.lockInputs) return;
-        for (const inputId of inputs_index)
-          cache.pending_spent_utxos![inputId] = txLogIndex;
-      },
-    });
-    const newCache = await readCacheFileDefaultLocation(
-      this.primary_address,
-      this.pathPrefix,
-    );
-    if (!newCache) throw new Error("cache not found after send");
-    const changed_outputs: ChangedOutput[] = args.lockInputs
-      ? args.inputs.map((output) => ({ change_reason: "spent", output }))
-      : [];
-    await this.feed({ newCache, changed_outputs });
-    await this.unpause();
   }
 
   public async dismissSendPlate() {

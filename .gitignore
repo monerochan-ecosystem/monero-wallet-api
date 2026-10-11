@@ -1,0 +1,2 @@
+# test runs from the repo root write ScanSettings and actionlog sqlite here
+/test-data/
