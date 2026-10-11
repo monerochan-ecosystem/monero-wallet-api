@@ -97,6 +97,7 @@ test("a slow node answer updates the same tx log row", async () => {
   const many = await openWallets({
     scan_settings_path: settingsPath,
     no_worker: true,
+    actionLogPath: ":memory:",
   });
   const wallet = many!.wallets[0]!;
   wallet.calculateFeeAndSelectInputs = async () => ({
