@@ -33,11 +33,22 @@ function processTargetLink(element: HTMLAnchorElement | null) {
   return parseToolInvocation(href, text, location);
 }
 
+function anchorFromEvent(e: Event): HTMLAnchorElement | null {
+  const host = e.target instanceof Element ? e.target : null;
+  const light = host?.closest("a") ?? null;
+  if (light) return light;
+  // open shadow root hides the inner anchor. walk the path only then.
+  if (!host?.shadowRoot) return null;
+  for (const node of e.composedPath()) {
+    if (node instanceof HTMLAnchorElement) return node;
+  }
+  return null;
+}
+
 /** send toolCall and openSidebar to worker. after the check, toolCall message to worker again to persist validity status, 
  * potential second round of communication with backend. */
 export function interceptToolLinkCallback(e: Event) {
-  if (!(e.target instanceof Element)) return;
-  const link = e.target.closest("a");
+  const link = anchorFromEvent(e);
   const monerotoolLink = processTargetLink(link);
   if (!link || !monerotoolLink) return;
 
