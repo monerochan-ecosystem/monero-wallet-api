@@ -404,7 +404,9 @@ export function outputStatus(
   }
 
   const unlock_height = unlockedAtHeight(output);
-  if (unlock_height > current_height) {
+  // current_height is the top block index. monerod compares against the
+  // block count (top index + 1), the height the spending tx would land in.
+  if (unlock_height > current_height + 1) {
     return { status: "pending", unlock_height };
   }
   return { status: "spendable" };
