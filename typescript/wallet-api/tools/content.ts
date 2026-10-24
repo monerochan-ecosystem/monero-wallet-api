@@ -47,13 +47,7 @@ function anchorFromEvent(e: Event): HTMLAnchorElement | null {
 
 /** send toolCall and openSidebar to worker. after the check, toolCall message to worker again to persist validity status, 
  * potential second round of communication with backend. */
-export function interceptToolLinkCallback(e: Event) {
-  const link = anchorFromEvent(e);
-  const monerotoolLink = processTargetLink(link);
-  if (!link || !monerotoolLink) return;
-
-  e.preventDefault();
-  e.stopImmediatePropagation();
+function deliver(monerotoolLink: NonNullable<ReturnType<typeof parseToolInvocation>>) {
   void sendToBackground("toolCall", monerotoolLink).catch(() => {});
   void sendToBackground("openSidebar", null).catch(() => {});
 
@@ -67,8 +61,36 @@ export function interceptToolLinkCallback(e: Event) {
   });
 }
 
+export function interceptToolLinkCallback(e: Event) {
+  const link = anchorFromEvent(e);
+  const monerotoolLink = processTargetLink(link);
+  if (!link || !monerotoolLink) return;
+
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  deliver(monerotoolLink);
+}
+
+// the page url itself is the tool link. a click never happens.
+export function deliverToolUrl(url: string): boolean {
+  let href = url;
+  let hostname = "";
+  try {
+    const parsed = new URL(url);
+    href = parsed.href;
+    hostname = parsed.hostname;
+  } catch {
+    return false;
+  }
+  const invo = parseToolInvocation(href, "", { href, hostname } as Location);
+  if (!invo) return false;
+  deliver(invo);
+  return true;
+}
+
 export function installToolLinkEventInterception() {
   document.addEventListener("click", interceptToolLinkCallback, true);
   document.addEventListener("touchend", interceptToolLinkCallback, true);
   document.addEventListener("keydown", interceptToolLinkCallback, true);
+  deliverToolUrl(location.href);
 }

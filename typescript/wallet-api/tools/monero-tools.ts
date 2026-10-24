@@ -88,15 +88,17 @@ export function createToolLink(tool: MoneroTool): string {
   return tools[id].counterparty.make(tool.payload as never);
 }
 
+// xmr3.ts API to parse tool links
 export function parseToolInvocation(
   link: string,
   linkText: string,
   context_location: Location,
 ): ParsedMoneroToolInvocation | null {
-  const context_domain = getDomainWithTLD(context_location.hostname);
-  const context_href = context_location.href;
+
   const link_parse = parseToolLink(link);
   if (link_parse) {
+    const context_domain = getDomainWithTLD(context_location.hostname);
+    const context_href = context_location.href;
     return {
       tool: link_parse,
       destination_domain: parseDestination(link),
@@ -112,6 +114,8 @@ export function parseToolInvocation(
   }
   const linkText_parse = parseToolLink(linkText);
   if (linkText_parse) {
+   const context_domain = getDomainWithTLD(context_location.hostname);
+   const context_href = context_location.href;
     return {
       tool: linkText_parse,
       destination_domain: parseDestination(linkText),
