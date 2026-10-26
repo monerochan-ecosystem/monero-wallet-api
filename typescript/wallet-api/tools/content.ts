@@ -90,12 +90,18 @@ export function deliverToolUrl(url: string): boolean {
   deliver(invo);
   return true;
 }
+export function DefaultConfirmationCallback(loc_href: string){
+  return window.confirm("Did you just follow a monerochan tool link?");
+}
 
-export function installToolLinkEventInterception() {
+export function installToolLinkEventInterception(confirmationcallback:(loc_href:string)=>boolean = DefaultConfirmationCallback) {
   document.addEventListener("click", interceptToolLinkCallback, true);
   document.addEventListener("touchend", interceptToolLinkCallback, true);
   document.addEventListener("keydown", interceptToolLinkCallback, true);
   // direct tool open is the page url itself. that is always the top frame.
   // an iframe src with a tool link is a page embedding a payment the user never opened.
-  if (window.top === window) deliverToolUrl(location.href);
+  if (window.top === window && confirmationcallback(location.href)){
+    
+    deliverToolUrl(location.href);
+  } 
 }
