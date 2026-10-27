@@ -1,6 +1,11 @@
 {
   "name": "@spirobel/monero-wallet-api",
-  "version": "0.6.14",
+  "version": "0.6.15",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/monerochan-ecosystem/monero-wallet-api",
+    "directory": "typescript"
+  },
   "main": "dist/xmr3.js",
   "module": "dist/xmr3.js",
   "devDependencies": {
