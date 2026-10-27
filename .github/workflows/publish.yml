@@ -1,0 +1,122 @@
+name: publish
+
+# npm trusted publishing: no NPM_TOKEN. the runner proves who it is with an OIDC token,
+# npm checks the trusted publisher config of the package, and mints a short lived token.
+# trigger: a pushed v* tag. requirements: npm >= 11.5.1 and id-token: write.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+env:
+  RUST_VERSION: "1.89.0"
+  WASM_TARGET: wasm32-wasip1
+  BUN_VERSION: "1.4.3"
+  NPM_VERSION: "11.5.1"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: check the tag matches package.json
+        run: |
+          tag="${GITHUB_REF#refs/tags/v}"
+          version="$(jq -r .version typescript/package.json)"
+          if [ "$tag" != "$version" ]; then
+            echo "tag $tag does not match typescript/package.json version $version" >&2
+            exit 1
+          fi
+
+      # plain rustup, no third party action. rustup checks the release signatures.
+      - name: rust toolchain
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal --target "$WASM_TARGET"
+          rustup default "$RUST_VERSION"
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+            frost-dkg/target
+          key: ${{ runner.os }}-rust-${{ env.RUST_VERSION }}-${{ hashFiles('rust/Cargo.lock', 'frost-dkg/Cargo.lock', 'frost-dkg/vendor/serai/**') }}
+          restore-keys: ${{ runner.os }}-rust-${{ env.RUST_VERSION }}-
+
+      - name: build the wasm crates
+        run: |
+          (cd rust && cargo build --locked --target "$WASM_TARGET" --release --lib)
+          (cd frost-dkg && cargo build --locked --target "$WASM_TARGET" --release --lib)
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: install
+        working-directory: typescript
+        run: bun install --frozen-lockfile
+
+      - name: build
+        working-directory: typescript
+        run: bun run build
+
+      - name: unit tests
+        working-directory: typescript
+        run: |
+          bun test \
+            ./tests/connection-status/unit \
+            ./tests/scanCacheOpened/unit \
+            ./tests/scanLoop/unit \
+            ./tests/send-functionality/unit \
+            ./tests/tools/unit \
+            ./tests/unpacked/unit
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: typescript/dist
+          if-no-files-found: error
+
+  # the only job with id-token: write. no dependency install, no build, only npm publish.
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: typescript/dist
+
+      - name: check the built package
+        working-directory: typescript
+        run: |
+          test -f dist/xmr3.js
+          test -f dist/wasm-processing/wasmFile.js
+          jq -r .version package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      # setup-node ships an older npm. 11.5.1 is the first with trusted publishing.
+      - name: npm for trusted publishing
+        run: |
+          npm install -g "npm@$NPM_VERSION"
+          npm --version
+
+      # no NODE_AUTH_TOKEN on purpose. a token disables the OIDC path.
+      - name: publish
+        working-directory: typescript
+        run: npm publish --access public
