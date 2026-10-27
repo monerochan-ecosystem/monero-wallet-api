@@ -14,7 +14,7 @@ env:
   RUST_VERSION: "1.89.0"
   WASM_TARGET: wasm32-wasip1
   BUN_VERSION: "1.4.3"
-  NPM_VERSION: "11.5.1"
+  NPM_VERSION: "11.15.0"
 
 jobs:
   build:
@@ -87,6 +87,9 @@ jobs:
   publish:
     needs: build
     runs-on: ubuntu-latest
+    # must equal the environment name in the npm trusted publisher settings.
+    # its protection rules (required reviewers) apply before the OIDC token exists.
+    environment: npm-publish
     permissions:
       contents: read
       id-token: write
@@ -110,13 +113,13 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
 
-      # setup-node ships an older npm. 11.5.1 is the first with trusted publishing.
       - name: npm for trusted publishing
         run: |
           npm install -g "npm@$NPM_VERSION"
           npm --version
 
       # no NODE_AUTH_TOKEN on purpose. a token disables the OIDC path.
-      - name: publish
+      # the tag stages the version. a maintainer approves it on npmjs.com with 2FA.
+      - name: stage the package
         working-directory: typescript
-        run: npm publish --access public
+        run: npm stage publish --access public
