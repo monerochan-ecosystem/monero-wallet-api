@@ -51,17 +51,26 @@ function make(payload: SendTransactionToolPayload): string {
   return payload.no_check ? `${base}_no_check` : base;
 }
 
+// base58, 95 chars for a standard address and 106 for an integrated one.
+const MONERO_ADDRESS_SHAPE = /^[1-9A-HJ-NP-Za-km-z]{95}$|^[1-9A-HJ-NP-Za-km-z]{106}$/;
+
 async function validate_check(
   invo: ToolInvocationForValidate,
 ): Promise<ToolInvocationValidity> {
   const tool = invo.tool as SendTransactionTool;
   if (tool.tool_id !== "001") return "unverified";
   if (tool.payload.no_check) return "unverified";
+  // the address goes into the path. a real address is base58 and 95 or 106 chars.
+  // anything else could rewrite the request path, so it never reaches the fetch.
+  if (!MONERO_ADDRESS_SHAPE.test(tool.payload.address)) return "invalid";
   const link = invo[invo.found_in];
   const invo_link = new URL(link);
   const checkUrl = `${invo_link.origin}/monerochan001/${tool.payload.address}`;
   try {
-    const result = (await (await fetch(checkUrl)).json()) as unknown;
+    // no redirects: a shop must not bounce the request to another host.
+    const result = (await (
+      await fetch(checkUrl, { redirect: "error" })
+    ).json()) as unknown;
     if (
       result &&
       typeof result === "object" &&

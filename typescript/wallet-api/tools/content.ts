@@ -90,13 +90,8 @@ export function deliverToolUrl(url: string): boolean {
   deliver(invo);
   return true;
 }
-export function DefaultConfirmationCallback(loc_href: string){
-  return window.confirm("Did you just follow a monerochan tool link?");
-}
-
-export function installToolLinkEventInterception(confirmationcallback:(loc_href:string)=>boolean = DefaultConfirmationCallback) {
+export function installToolLinkEventInterception() {
+  // click only. keyboard activation (enter) dispatches a click, a touch tap does too.
+  // a keydown on a focused link is not an activation, so it must not deliver.
   document.addEventListener("click", interceptToolLinkCallback, true);
-  document.addEventListener("touchend", interceptToolLinkCallback, true);
-  document.addEventListener("keydown", interceptToolLinkCallback, true);
-
 }

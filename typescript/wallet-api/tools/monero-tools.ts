@@ -34,6 +34,10 @@ export const tools = {
 export type ToolId = keyof typeof tools;
 export const TOOL_IDS = Object.keys(tools) as ToolId[];
 
+// tool calls that cannot be started from a tool link. the content script port
+// carries the rest of the exchange, so the page that made the call has to stay.
+export const TOOL_IDS_WITHOUT_DIRECT_OPEN: ToolId[] = ["002"];
+
 export function getToolUiByPermissions(
   permissions: ToolPermission[],
 ): ToolUiCopy | null {
