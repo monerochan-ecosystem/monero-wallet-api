@@ -24,6 +24,7 @@ export type {
   ToolNotice,
   ToolPermission,
 } from "./globals";
+export type { ExtensionRuntime, ExtensionBrowser } from "./globals";
 
 // add a tool: import + one key here
 export const tools = {
@@ -73,6 +74,32 @@ function isToolId(id: string): id is ToolId {
 }
 
 export function parseToolLink(link: string): MoneroTool | null {
+  // the browser can wrap a pasted monero: uri in the search url it built, escaped or plain
+  const lower = link.toLowerCase();
+  const plain_at = lower.indexOf("monero:");
+  const escaped_at = lower.indexOf("monero%3a");
+  const legacy_at = plain_at !== -1 ? plain_at : escaped_at;
+  if (legacy_at !== -1) {
+    try {
+      // an escaped uri sits inside one parameter, so the next raw & ends it
+      //...?q=monero%3AADDR&source=desktop
+      //       the pasted uri, ends at &
+      const tail = link.slice(legacy_at);
+      const uri = new URL(
+        decodeURIComponent(plain_at !== -1 ? tail : tail.split("&")[0] ?? ""),
+      );
+      const address = uri.pathname;
+      const amount = uri.searchParams.get("tx_amount") ?? "";
+      if (!/^([1-9A-HJ-NP-Za-km-z]{95}|[1-9A-HJ-NP-Za-km-z]{106})$/.test(address)) return null;
+      if (amount && !/^\d+(?:\.\d{1,12})?$/.test(amount)) return null;
+      // separate payment ids are not supported. do not drop one or choose between amounts.
+      if (uri.searchParams.has("tx_payment_id") || uri.searchParams.getAll("tx_amount").length > 1) return null;
+      return { tool_id: "001", payload: { address, amount, no_check: true } };
+    } catch {
+      // a broken monero uri is not a tool call. do not fall through to the marker scan.
+      return null;
+    }
+  }
   const magic_str_index = link.lastIndexOf(TOOL_MAGIC_STRING);
   if (magic_str_index === -1) return null;
   const link_start_index = magic_str_index + TOOL_MAGIC_STRING.length;
