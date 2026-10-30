@@ -24,6 +24,7 @@ export type {
   ToolNotice,
   ToolPermission,
 } from "./globals";
+export type { ExtensionRuntime, ExtensionBrowser } from "./globals";
 
 // add a tool: import + one key here
 export const tools = {
@@ -235,6 +236,5 @@ export function getDomainWithTLD(hostname: string): string {
 
 export function parseDestination(destination: string): string {
   const url = new URL(destination);
-  if (url.protocol === "monero:" || /^monero:/i.test(url.searchParams.get("q")?.trim() ?? "")) return "";
   return getDomainWithTLD(url.hostname);
 }

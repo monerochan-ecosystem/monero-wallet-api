@@ -6,16 +6,7 @@ import {
   type ToolId,
 } from "./monero-tools";
 import { sendToBackground } from "./globals";
-
-type ExtensionRuntime = {
-  sendMessage: (msg: unknown) => Promise<unknown>;
-  connect: (info: { name: string }) => {
-    onMessage: {
-      addListener: (cb: (msg: unknown) => void) => void;
-    };
-  };
-};
-type ExtensionBrowser = { runtime: ExtensionRuntime };
+import type { ExtensionBrowser } from "./globals";
 
 declare global {
   var browser: ExtensionBrowser;

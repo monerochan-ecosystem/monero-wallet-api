@@ -102,12 +102,13 @@ test("do not silently drop a payment id or choose between duplicate amounts", ()
   expect(parseToolLink(`monero:${ADDRESS}?tx_amount=1&tx_amount=2`)).toBeNull();
 });
 
-test("a pasted legacy uri has context but no destination domain", () => {
+test("a pasted legacy uri keeps the wrapping page as its context", () => {
   const link = `https://search.brave.com/search?q=${encodeURIComponent(`monero:${ADDRESS}?tx_amount=1`)}`;
   const invo = parseToolInvocation(link, "", { href: link, hostname: "search.brave.com" } as Location);
-  expect(invo?.destination_domain).toBe("");
+  expect(invo?.destination_domain).toBe("brave.com");
   expect(invo?.context_domain).toBe("brave.com");
   expect(invo?.context_href).toBe(link);
+  expect(invo?.tool.payload).toEqual({ address: ADDRESS, amount: "1", no_check: true });
 });
 
 test("a malformed monero uri does not become a tool call", () => {

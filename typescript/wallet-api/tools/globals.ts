@@ -102,10 +102,25 @@ export type ExtensionPort = {
 export type ExtensionRuntime = {
   sendMessage: (msg: unknown) => Promise<unknown>;
   connect: (info: { name: string }) => ExtensionPort;
+  getURL: (path: string) => string;
   onMessage: {
     addListener: (cb: (msg: unknown, sender: unknown) => void) => void;
   };
   onConnect: { addListener: (cb: (port: ExtensionPort) => void) => void };
+};
+
+// the parts of the extension namespace that wallet pages use.
+// the library itself only needs runtime.sendMessage and connect.
+export type ExtensionBrowser = {
+  runtime: ExtensionRuntime;
+  tabs: {
+    query: (query: { url?: string }) => Promise<{ id?: number }[]>;
+    remove: (ids: number[]) => Promise<void>;
+    update: (
+      id: number,
+      update: { url?: string; active?: boolean },
+    ) => Promise<unknown>;
+  };
 };
 
 export function getExtensionRuntime(): ExtensionRuntime | null {
