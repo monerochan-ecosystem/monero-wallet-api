@@ -2,11 +2,14 @@ import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { mkdir, rm } from "node:fs/promises";
 import { resolve } from "node:path";
-import { openWallets } from "../../../wallet-api/scanning-syncing/openWallet";
-import { ScanCacheOpened, type ManyScanCachesOpened } from "../../../wallet-api/scanning-syncing/scanresult/scanCacheOpened";
-import { ScanSettingsOpened } from "../../../wallet-api/scansettings/scanSettingsOpened";
-import type { ScanCache } from "../../../wallet-api/scanning-syncing/scanresult/scanCache";
-import { ViewPair } from "../../../wallet-api/viewpair/ViewPair";
+import {
+  openWallets,
+  ScanCacheOpened,
+  type ManyScanCachesOpened,
+  ScanSettingsOpened,
+  type ScanCache,
+  ViewPair,
+} from "../../../dist/xmr3";
 
 type Message = { kind: string; payload: unknown };
 type Listener = (message: Message, sender: unknown, reply: (value: unknown) => void) => unknown;

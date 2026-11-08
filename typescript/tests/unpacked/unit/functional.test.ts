@@ -1,8 +1,7 @@
 import { test, expect, afterEach } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { resolve } from "node:path";
-import type { ManyScanCachesOpened } from "../../../wallet-api/scanning-syncing/scanresult/scanCacheOpened";
-import type { WorkerSet } from "../../../wallet-api/scanning-syncing/backgroundWorker";
+import type { ManyScanCachesOpened, WorkerSet } from "../../../dist/xmr3_unpacked";
 
 const OUT = "test-data/unpacked_functional";
 
@@ -81,9 +80,9 @@ async function transportFixture(name: string) {
   const dir = resolve(OUT, name);
   await rm(dir, { force: true, recursive: true });
   await mkdir(dir, { recursive: true });
-  const unpacked = await import("../../../wallet-api/xmr3_unpacked");
+  const unpacked = await import("../../../dist/xmr3_unpacked.js");
   unpacked.configureUnpacked({
-    workerUrl: resolve("wallet-api/scanning-syncing/worker-mains/worker.ts"),
+    workerUrl: resolve("dist/worker_unpacked.js"),
     moneroWasmUrl: resolve("dist/monero_wallet_api.wasm"),
     dkgWasmUrl: resolve("dist/frost_dkg.wasm"),
   });

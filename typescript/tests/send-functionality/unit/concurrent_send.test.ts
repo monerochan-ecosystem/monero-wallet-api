@@ -1,16 +1,22 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { resolve } from "node:path";
-import { openWallets } from "../../../wallet-api/scanning-syncing/openWallet";
-import { ScanCacheOpened, type ManyScanCachesOpened } from "../../../wallet-api/scanning-syncing/scanresult/scanCacheOpened";
-import { readCacheFileDefaultLocation, type ScanCache } from "../../../wallet-api/scanning-syncing/scanresult/scanCache";
-import * as coordinator from "../../../wallet-api/scanning-syncing/scanresult/scanCoordination";
-import * as background from "../../../wallet-api/scanning-syncing/backgroundWorker";
-import * as blocks from "../../../wallet-api/scanning-syncing/blocksbuffer/blocksbufferCoordination";
-import * as rpc from "../../../wallet-api/node-interaction/jsonEndpoints";
-import { ViewPair } from "../../../wallet-api/viewpair/ViewPair";
-import * as stats from "../../../wallet-api/scanning-syncing/scanresult/scanStats";
-import type { GetBlocksBinBufferItem, Output, SendRawTransactionResult } from "../../../wallet-api/xmr3_common";
+import {
+  openWallets,
+  ScanCacheOpened,
+  type ManyScanCachesOpened,
+  readCacheFileDefaultLocation,
+  type ScanCache,
+  ViewPair,
+  type GetBlocksBinBufferItem,
+  type Output,
+  type SendRawTransactionResult,
+} from "../../../dist/xmr3";
+import * as coordinator from "../../../dist/xmr3";
+import * as background from "../../../dist/xmr3";
+import * as blocks from "../../../dist/xmr3";
+import * as rpc from "../../../dist/xmr3";
+import * as stats from "../../../dist/xmr3";
 
 const ROOT = resolve("test-data/coordinator-send");
 const addresses = ["send-a", "send-b"];

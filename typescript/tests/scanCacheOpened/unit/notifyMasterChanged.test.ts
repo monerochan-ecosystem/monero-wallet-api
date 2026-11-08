@@ -1,10 +1,14 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { resolve } from "node:path";
-import { openWallets } from "../../../wallet-api/scanning-syncing/openWallet";
-import { ScanCacheOpened, type ManyScanCachesOpened } from "../../../wallet-api/scanning-syncing/scanresult/scanCacheOpened";
-import type { CacheChangedCallbackParameters, ScanCache } from "../../../wallet-api/scanning-syncing/scanresult/scanCache";
-import { ViewPair } from "../../../wallet-api/viewpair/ViewPair";
+import {
+  openWallets,
+  ScanCacheOpened,
+  type ManyScanCachesOpened,
+  type CacheChangedCallbackParameters,
+  type ScanCache,
+  ViewPair,
+} from "../../../dist/xmr3";
 
 const ROOT = resolve("test-data/cache-notify");
 const addresses = ["notify-a", "notify-b", "notify-c"];

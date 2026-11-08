@@ -3,8 +3,9 @@ import {
   processTxlogs,
   txLogHoldsFunds,
   type ScanStats,
-} from "../../../wallet-api/scanning-syncing/scanresult/scanStats";
-import type { ScanCache, TxLog } from "../../../wallet-api/scanning-syncing/scanresult/scanCache";
+  type ScanCache,
+  type TxLog,
+} from "../../../dist/xmr3";
 
 function stats(): ScanStats {
   return {

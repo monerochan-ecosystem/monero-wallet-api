@@ -12,7 +12,7 @@ test("packed loader returns inline bytes", async () => {
   await clean();
   const packed = await import("../../../dist/xmr3.js");
   const { getMoneroWasmBytes, getDkgWasmBytes, resetWasmLoaderForTests } = await import(
-    "../../../dist/wasm-processing/wasmLoader.js"
+    "../../../dist/xmr3.js"
   );
   // clear urls so inline wins, packed entry injects inline on import
   resetWasmLoaderForTests();
@@ -31,7 +31,7 @@ test("unpacked loader fetches from files", async () => {
   await clean();
   // urls win over inline, so this tests file path even after packed import
   const { setWasmUrls, getMoneroWasmBytes } = await import(
-    "../../../dist/wasm-processing/wasmLoader.js"
+    "../../../dist/xmr3_unpacked.js"
   );
   setWasmUrls({ monero: "dist/monero_wallet_api.wasm", dkg: "dist/frost_dkg.wasm" });
   const viaLoader = await getMoneroWasmBytes();

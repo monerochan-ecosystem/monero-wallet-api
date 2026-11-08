@@ -5,8 +5,7 @@ import {
   parseToolLink,
 } from "../../../dist/tools/monero-tools";
 import { deliverToolUrl } from "../../../dist/tools/content";
-import { ActionLogOpened } from "../../../dist/actionlog/actionLogOpened";
-import { ActiveInvocations } from "../../../dist/actionlog/actionLogTypes";
+import { ActionLogOpened, ActiveInvocations } from "../../../dist/xmr3";
 
 // the extension imports the parser from the ./tools export. test that build.
 const ADDRESS =

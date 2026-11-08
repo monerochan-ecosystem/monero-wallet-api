@@ -4,14 +4,14 @@
  */
 import { test, expect, beforeEach } from "bun:test";
 import { rm } from "node:fs/promises";
-import { sleep } from "../../../wallet-api/io/sleep";
-import { handleCpuboundScan } from "../../../wallet-api/scanning-syncing/worker-mains/cpubound-main";
 import {
+  sleep,
+  handleCpuboundScan,
   resetInProgressWorkItems,
   type PortStatus,
   cancelBusyCpuPorts,
-} from "../../../wallet-api/scanning-syncing/scanresult/scanCoordination";
-import type { WorkItem } from "../../../wallet-api/scanning-syncing/scanresult/scanLoop";
+  type WorkItem,
+} from "../../../dist/xmr3";
 
 const DIR = "test-data/graceful-shutdown";
 
