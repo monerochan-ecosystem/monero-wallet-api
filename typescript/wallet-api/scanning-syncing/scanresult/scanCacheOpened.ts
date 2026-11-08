@@ -16,7 +16,8 @@ import type {
   Input,
   SendError,
 } from "../../send-functionality/transactionBuilding";
-import { createWebworker, type WorkerSet } from "../backgroundWorker";
+import { createWebworker, type WorkerSet, type TxCacheWriteMessage } from "../backgroundWorker";
+import { applyTxCacheWrite } from "./scanCoordination";
 import { spendable } from "./scanResult";
 import {
   getPathPrefix,
@@ -69,6 +70,8 @@ export type ScanCacheOpenedCreateParams = {
   pathPrefix?: string;
   no_worker?: boolean;
   no_stats?: boolean;
+  notify?: CacheChangedCallback;
+  cacheWriter?: { write?: WorkerSet["writeCache"] };
   masterCacheChanged?: CacheChangedCallback;
   workerError?: (error: unknown) => void;
 };
@@ -157,8 +160,11 @@ export class ScanCacheOpened {
       params.workerError,
     );
     if (theCatchToBeOpened) scanCacheOpen._cache = theCatchToBeOpened;
+    scanCacheOpen.cacheWriter = params.cacheWriter;
+    // register before unpause can deliver the first scan update
+    if (params.notify) scanCacheOpen.notify(params.notify);
 
-    if (!walletSettings.halted) {
+    if (!params.no_worker && !walletSettings.halted) {
       // run webworker (respecting halted param + setting)
       // unpause will start scanning from this.wallet_scan_settings.start_height
       await scanCacheOpen.unpause();
@@ -565,13 +571,18 @@ export class ScanCacheOpened {
     return this._cache.tx_logs || [];
   }
   private async writeTxCache(
-    writeCallback: (cache: ScanCache) => void | Promise<void>,
-    changed_outputs: ChangedOutput[],
-  ) {
+    message: Omit<TxCacheWriteMessage, "primary_address">,
+    changed_outputs: ChangedOutput[] = [],
+  ): Promise<number> {
+    const payload = { ...message, primary_address: this.primary_address };
+    const write = this.cacheWriter?.write ?? this.worker?.writeCache;
+    if (write) return write(payload);
+    if (this.cacheWriter || !this.no_worker) throw new Error("scanner is not running");
+    let index = -1;
     await writeCacheFileDefaultLocationThrows({
       primary_address: this.primary_address,
       pathPrefix: this.pathPrefix,
-      writeCallback,
+      writeCallback: (cache) => { index = applyTxCacheWrite(cache, payload); },
     });
     const newCache = await readCacheFileDefaultLocation(
       this.primary_address,
@@ -582,41 +593,27 @@ export class ScanCacheOpened {
         `cache not found for primary address: ${this.primary_address}, and path prefix: ${this.pathPrefix}`,
       );
     await this.feed({ newCache, changed_outputs });
+    return index;
   }
-  // stop the worker, lock the inputs, then let stats show pending.
+  // the coordinator reserves inputs before the node request starts
   private async beginInFlightSend(args: {
     payments: Payment[];
     inputs: Output[];
     feeEstimate: FeeEstimateResponse;
     invocationId?: string;
   }) {
-    await this.stopWorker();
-    const inputs_index = args.inputs.map((input) =>
-      String(input.index_on_blockchain),
-    );
-    let txLogIndex = 0;
-    try {
-      await this.writeTxCache(async (cache) => {
-        if (!cache.tx_logs) cache.tx_logs = [];
-        if (!cache.pending_spent_utxos) cache.pending_spent_utxos = {};
-        const txLog: TxLog = {
-          feeEstimate: args.feeEstimate,
-          payments: args.payments,
-          node_url: this.node_url,
-          inputs_index,
-          height: this.current_height!,
-          timestamp: Date.now(),
-          invocationId: args.invocationId,
-        };
-        txLogIndex = cache.tx_logs.push(txLog) - 1;
-        for (const inputId of inputs_index)
-          cache.pending_spent_utxos![inputId] = txLogIndex;
-      }, args.inputs.map((output) => ({ change_reason: "spent", output })));
-    } catch (e) {
-      await this.unpause();
-      throw e;
-    }
-    return txLogIndex;
+    return this.writeTxCache({
+      reserve: true,
+      txLog: {
+        feeEstimate: args.feeEstimate,
+        payments: args.payments,
+        node_url: this.node_url,
+        inputs_index: args.inputs.map((input) => String(input.index_on_blockchain)),
+        height: this.current_height!,
+        timestamp: Date.now(),
+        invocationId: args.invocationId,
+      },
+    }, args.inputs.map((output) => ({ change_reason: "spent", output })));
   }
   // update the same row with the node answer. unlock the inputs on failure.
   private async finishInFlightSend(args: {
@@ -627,28 +624,19 @@ export class ScanCacheOpened {
     invocationId?: string;
   }) {
     const ok = args.sendResult?.status === "OK" && args.error === undefined;
-    try {
-      await this.writeTxCache(async (cache) => {
-        const row = cache.tx_logs?.[args.txLogIndex];
-        if (!row) throw new Error("tx log missing");
-        if (args.invocationId) row.invocationId = args.invocationId;
-        if (args.signedTx) row.signed_tx = args.signedTx;
-        if (args.sendResult) row.sendResult = args.sendResult;
-        if (!ok) {
-          row.error = args.error || args.sendResult?.reason || "send failed";
-          for (const inputId of row.inputs_index) {
-            if (cache.pending_spent_utxos?.[inputId] === args.txLogIndex)
-              delete cache.pending_spent_utxos[inputId];
-          }
-        }
-      }, []);
-    } finally {
-      await this.unpause();
-    }
+    await this.writeTxCache({
+      txLogIndex: args.txLogIndex,
+      txLog: {
+        ...(args.invocationId ? { invocationId: args.invocationId } : {}),
+        ...(args.signedTx ? { signed_tx: args.signedTx } : {}),
+        ...(args.sendResult ? { sendResult: args.sendResult } : {}),
+        error: ok ? undefined : args.error || args.sendResult?.reason || "send failed",
+      },
+    });
   }
   public async makeSignSendTransaction(params: CreateTransactionParams) {
     let maybeInputs: Output[] = [];
-    let maybeFeeEstimate: FeeEstimateResponse;
+    let maybeFeeEstimate: FeeEstimateResponse | undefined;
     let maybeSendResult: SendRawTransactionResult | undefined;
     let maybeSignedTx: string | undefined;
     let txLogIndex: number | undefined;
@@ -692,54 +680,19 @@ export class ScanCacheOpened {
         });
         throw e;
       }
-      if (txLogIndex !== undefined) {
-        await this.unpause();
-        throw e;
-      }
-      // before writing the scan cache, we stop the worker to avoid a race
-      await this.stopWorker();
-      // write txlog error to cache
-      await writeCacheFileDefaultLocationThrows({
-        primary_address: this.primary_address,
-        pathPrefix: this.pathPrefix,
-        writeCallback: async (cache) => {
-          if (!cache.tx_logs) cache.tx_logs = [];
-          if (!cache.pending_spent_utxos) cache.pending_spent_utxos = {};
-          const inputs_index = maybeInputs.map((input) =>
-            String(input.index_on_blockchain),
-          );
-          const txLog: TxLog = {
-            sendResult: maybeSendResult,
-            error: String(e || "unknown error"),
-            feeEstimate: maybeFeeEstimate,
-            payments: params.payments,
-            node_url: this.node_url,
-            inputs_index,
-            height: this.current_height!,
-            timestamp: Date.now(),
-            invocationId: params.invocationId,
-            signed_tx: maybeSignedTx,
-          };
-          cache.tx_logs.push(txLog);
-        },
-      });
-      const newCache = await readCacheFileDefaultLocation(
-        this.primary_address,
-        this.pathPrefix,
-      );
-      if (!newCache)
-        throw new Error(
-          `cache not found for primary address: ${this.primary_address}, and path prefix: ${this.pathPrefix}`,
-        );
-      const changed_outputs: ChangedOutput[] = [];
-      await this.feed({
-        newCache,
-        changed_outputs,
-      });
-
-      // restart the worker
-      await this.unpause();
-
+      if (txLogIndex !== undefined) throw e;
+      await this.writeTxCache({ txLog: {
+        sendResult: maybeSendResult,
+        error: String(e || "unknown error"),
+        feeEstimate: maybeFeeEstimate,
+        payments: params.payments,
+        node_url: this.node_url,
+        inputs_index: maybeInputs.map((input) => String(input.index_on_blockchain)),
+        height: this.current_height!,
+        timestamp: Date.now(),
+        invocationId: params.invocationId,
+        signed_tx: maybeSignedTx,
+      } });
       throw e;
     }
   }
@@ -818,8 +771,6 @@ export class ScanCacheOpened {
           signedTx,
           error: e instanceof Error ? e.message : String(e),
         });
-      } else {
-        await this.unpause();
       }
       throw e;
     }
@@ -836,33 +787,16 @@ export class ScanCacheOpened {
       inputs.every((output) => typeof output.spent_in_tx_hash === "string")
     )
       throw new Error("inputs already spent on chain");
-    const sendResult = await this.sendTransaction(txlog.signed_tx);
-    await this.stopWorker();
-    await writeCacheFileDefaultLocationThrows({
-      primary_address: this.primary_address,
-      pathPrefix: this.pathPrefix,
-      writeCallback: async (cache) => {
-        const row = cache.tx_logs?.[txLogIndex];
-        if (!row) throw new Error("tx log missing");
-        row.sendResult = sendResult;
-        if (sendResult.status === "OK") {
-          row.error = undefined;
-          if (!cache.pending_spent_utxos) cache.pending_spent_utxos = {};
-          for (const inputId of row.inputs_index)
-            cache.pending_spent_utxos[inputId] = txLogIndex;
-        } else {
-          row.error = sendResult.reason || "rebroadcast failed";
-        }
-      },
-    });
-    const newCache = await readCacheFileDefaultLocation(
-      this.primary_address,
-      this.pathPrefix,
-    );
-    if (!newCache) throw new Error("cache not found after rebroadcast");
-    await this.feed({ newCache, changed_outputs: [] });
-    await this.unpause();
-    return sendResult;
+    await this.writeTxCache({ txLogIndex, reserve: true, txLog: { sendResult: undefined, error: undefined } });
+    let sendResult: SendRawTransactionResult | undefined;
+    try {
+      sendResult = await this.sendTransaction(txlog.signed_tx);
+      await this.finishInFlightSend({ txLogIndex, sendResult });
+      return sendResult;
+    } catch (error) {
+      if (sendResult?.status !== "OK") await this.finishInFlightSend({ txLogIndex, error: String(error) });
+      throw error;
+    }
   }
 
   get failed_txs() {
@@ -888,21 +822,7 @@ export class ScanCacheOpened {
   }
 
   public async dismissSendPlate() {
-    await this.stopWorker();
-    await writeCacheFileDefaultLocationThrows({
-      primary_address: this.primary_address,
-      pathPrefix: this.pathPrefix,
-      writeCallback: async (cache) => {
-        for (const row of cache.tx_logs || []) row.hidden_on_send_plate = true;
-      },
-    });
-    const newCache = await readCacheFileDefaultLocation(
-      this.primary_address,
-      this.pathPrefix,
-    );
-    if (!newCache) throw new Error("cache not found after dismiss");
-    await this.feed({ newCache, changed_outputs: [] });
-    await this.unpause();
+    await this.writeTxCache({ dismiss: true });
   }
   /**
    * makeStandardTransaction
@@ -1013,6 +933,7 @@ export class ScanCacheOpened {
         worker.terminate();
       } catch {
       }
+      if (this.cacheWriter && this.cacheWriter.write === worker.writeCache) this.cacheWriter.write = undefined;
     }
   }
   public async unpause() {
@@ -1025,6 +946,7 @@ export class ScanCacheOpened {
         this.pathPrefix,
         (params) => this._onWorkerError(params),
       );
+      if (this.cacheWriter) this.cacheWriter.write = this.worker?.writeCache;
     }
     return await this._scanSettings.unhaltWallet(
       this.view_pair.primary_address,
@@ -1109,15 +1031,18 @@ export class ScanCacheOpened {
       this.view_pair.primary_address === params.newCache.primary_address;
     if (sameWallet) {
       this._cache = params.newCache;
-      if (!this._no_stats)
-        this._stats = await alignScanStatsWithCache(
-          this._cache,
+      if (!this._no_stats) {
+        const stats = await alignScanStatsWithCache(
+          params.newCache,
           this.view_pair,
           this.primary_address,
           getPathPrefix(this.scan_settings_path, this.pathPrefix),
           this.subaddress_index,
-          lastRange(this._cache.scanned_ranges)?.end,
+          lastRange(params.newCache.scanned_ranges)?.end,
         );
+        if (this._cache !== params.newCache) return;
+        this._stats = stats;
+      }
     }
     if (this.masterCacheChanged) await this.masterCacheChanged(params);
     if (!sameWallet) return;
@@ -1140,6 +1065,7 @@ export class ScanCacheOpened {
     primary_address: "",
   };
   private worker?: WorkerSet = undefined;
+  private cacheWriter?: ScanCacheOpenedCreateParams["cacheWriter"];
   private last_eta_height: number | null = null;
   private last_eta_timestamp: number | null = null;
 
@@ -1310,9 +1236,7 @@ export class ManyScanCachesOpened {
       await sendToBackground("worker.rebroadcastTx", params).catch(() => {});
       return;
     }
-    return this.walletByAddress(params.primary_address).rebroadcastTx(
-      params.tx_log_index,
-    );
+    return this.walletByAddress(params.primary_address).rebroadcastTx(params.tx_log_index);
   }
 
   public async dismissSendPlate(params: { primary_address: string }) {
@@ -1421,6 +1345,7 @@ export class ManyScanCachesOpened {
     if (!nonHaltedWallets.length) return undefined;
     const openedWallets: ScanCacheOpened[] = [];
     const firstNonHaltedWallet = nonHaltedWallets[0];
+    const cacheWriter: ScanCacheOpenedCreateParams["cacheWriter"] = no_worker ? undefined : {};
 
     if (nonHaltedWallets.length > 1) {
       const slaveWallets: ScanCacheOpened[] = [];
@@ -1429,6 +1354,8 @@ export class ManyScanCachesOpened {
         const slaveWallet = await ScanCacheOpened.create({
           ...wallet,
           no_worker: true, // slaves depend on master worker
+          cacheWriter,
+          notify: notifyMasterChanged,
           scan_settings_path,
           pathPrefix,
           no_stats,
@@ -1437,8 +1364,9 @@ export class ManyScanCachesOpened {
       }
       const masterWallet = await ScanCacheOpened.create({
         ...firstNonHaltedWallet,
+        cacheWriter,
+        notify: notifyMasterChanged,
         masterCacheChanged: async (params) => {
-          notifyMasterChanged?.(params);
           for (const slave of slaveWallets) {
             await slave.feed(params);
           }
@@ -1452,10 +1380,9 @@ export class ManyScanCachesOpened {
       openedWallets.push(masterWallet, ...slaveWallets);
     } else {
       const onlyWallet = await ScanCacheOpened.create({
-        masterCacheChanged: async (params) => {
-          notifyMasterChanged?.(params);
-        },
         ...firstNonHaltedWallet,
+        cacheWriter,
+        notify: notifyMasterChanged,
         scan_settings_path,
         pathPrefix,
         no_stats,
@@ -1529,6 +1456,8 @@ export class ManyScanCachesOpened {
       await instance.buildWallets();
     };
     const newOptions = { ...options };
+    const ui = newOptions.extensionMessageBus === "ui";
+    if (ui) newOptions.no_worker = true;
     // browser worker (background.ts): broadcast cache to sidebar 
     if (!newOptions.notifyMasterChanged && !newOptions.no_worker) {
       newOptions.notifyMasterChanged = defaultNotifyMasterChanged;
@@ -1564,7 +1493,7 @@ export class ManyScanCachesOpened {
       };
     }
 
-    const wallets = (await this._buildWallets(scanSettingsOpened, newOptions)) ?? [];
+    const wallets = ui ? [] : (await this._buildWallets(scanSettingsOpened, newOptions)) ?? [];
 
     const csOpened = new ConnectionStatusOpened(
       scan_settings_path || SCAN_SETTINGS_STORE_NAME_DEFAULT,
@@ -1599,8 +1528,17 @@ export class ManyScanCachesOpened {
       scanSettingsOpened,
       newOptions,
     );
+    const opened = instance;
+    await actionLogOpened.bindMco(opened, async (path) => {
+      if (path && path !== scanSettingsOpened.scan_settings_path) return;
+      try {
+        await opened.reloadWalletsAfterStop();
+      } catch {
+        opened._wallets = [];
+      }
+    });
 
-    return instance;
+    return opened;
   }
 
   public async buildWallets() {
@@ -1615,17 +1553,15 @@ export class ManyScanCachesOpened {
   // assumes stopWorker already ran (graceful shutdown + terminate)
   private async reloadWalletsAfterStop() {
     await this._scanSettings.reload();
-    // empty after reload: stay idle, do not open ScanCacheOpened or start workers
-    const remaining = this._scanSettings.wallets.filter((w) => !w?.halted);
-    if (remaining.length === 0) {
-      this._wallets = [];
-      return;
-    }
-    const newWallets = await ManyScanCachesOpened._buildWallets(
+    this._wallets = (await ManyScanCachesOpened._buildWallets(
       this._scanSettings,
       this._options,
-    );
-    this._wallets = newWallets ?? [];
+    )) ?? [];
+    if (this.actionLogOpened.extensionMessageBus === "worker") {
+      void sendToBackground("walletsChanged", {
+        scan_settings_path: this._scanSettings.scan_settings_path,
+      }).catch(() => {});
+    }
   }
 
   public async addViewWallet(
@@ -1684,7 +1620,6 @@ export class ManyScanCachesOpened {
     private _options: ManyScanCachesOpenedCreateOptions,
   ) {
     this._wallets = wallets;
-    this.actionLogOpened.bindMco(this);
   }
 }
 

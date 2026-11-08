@@ -79,6 +79,8 @@ export class ActionLogOpened {
   private runtimeInstalled = false;
   private bus: ExtensionMessageBus | null = null;
   private mco: BoundMco | null = null;
+  private reloadWallets?: (scan_settings_path?: string) => Promise<void>;
+  private uiMessages: Promise<void> = Promise.resolve();
   private invocationsCache: InvocationState[] = [];
   private activeCache: InvocationState[] = [];
   private noticeList: ToolNotice[] = [];
@@ -105,8 +107,16 @@ export class ActionLogOpened {
   }
 
   // mco wires itself after create
-  bindMco(mco: BoundMco) {
+  bindMco(
+    mco: BoundMco,
+    reloadWallets?: (scan_settings_path?: string) => Promise<void>,
+  ): Promise<void> {
     this.mco = mco;
+    this.reloadWallets = reloadWallets;
+    if (this.bus !== "ui" || !reloadWallets) return Promise.resolve();
+    const ready = this.uiMessages.then(() => reloadWallets());
+    this.uiMessages = ready.then(() => {}, () => {});
+    return ready;
   }
 
   /** after a write, the invocation lists that the plates read. */
@@ -283,7 +293,11 @@ export class ActionLogOpened {
 
   private installUiMessagebus() {
     this.runtimeInstalled = true;
-    this.listenOnMessage((env) => this.handleUiMessage(env));
+    this.listenOnMessage((env) => {
+      const next = this.uiMessages.then(() => this.handleUiMessage(env));
+      this.uiMessages = next.then(() => {}, () => {});
+      return next;
+    });
   }
 
   private installWorkerMessagebus() {
@@ -313,6 +327,11 @@ export class ActionLogOpened {
         await this.backend.reload();
         await this.refreshUiCache();
       }
+      return {};
+    }
+    if (env.kind === "walletsChanged") {
+      const payload = env.payload as ExtensionMessageByKind["walletsChanged"];
+      if (payload?.scan_settings_path) await this.reloadWallets?.(payload.scan_settings_path);
       return {};
     }
     if (env.kind === "walletCacheChanged") {

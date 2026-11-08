@@ -411,6 +411,8 @@ export class ScanSettingsOpened {
         settings.logs_exclude,
       );
       this._settings = settings;
+    } else {
+      throw new Error(`scan settings not available: ${this._scan_settings_path}`);
     }
   }
 

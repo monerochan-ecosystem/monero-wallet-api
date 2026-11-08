@@ -37,10 +37,12 @@ import {
   makeCacheRangeForHeight,
   mergeRanges,
   type CacheRange,
+  type ChangedOutput,
   type ScanCache,
 } from "./scanCache";
 import { sendToCpuWorker } from "../worker-mains/cpubound-main";
 import { log } from "../../io/logging";
+import type { TxCacheWriteMessage } from "../backgroundWorker";
 export type WalletConfig = {
   primary_address: string;
   secret_view_key: string;
@@ -398,7 +400,9 @@ export type CoordinatorEvent =
       type: "scan_ready";
       address: string;
       newCache: ScanCache;
-      changed_outputs: { output: any; change_reason: string }[];
+      changed_outputs: ChangedOutput[];
+      replyPort?: MessagePort;
+      txLogIndex?: number;
     }
   | { type: "all_idle" }
   | { type: "shutdown_done" }
@@ -513,7 +517,43 @@ export type BlocksBufferRacer = {
   value: BlocksBufferIteratorResult;
 };
 export type ScanLoopRacer = ScanLoopYield;
-export type Racers = BlocksBufferRacer | ScanLoopRacer;
+export type Racers = BlocksBufferRacer | ScanLoopRacer | { src: "cache_write" };
+const cacheWrites: MessageEvent<TxCacheWriteMessage>[] = [];
+let cacheWriteReady = Promise.withResolvers<{ src: "cache_write" }>();
+export function queueCacheWrite(event: MessageEvent<TxCacheWriteMessage>) {
+  cacheWrites.push(event);
+  cacheWriteReady.resolve({ src: "cache_write" });
+}
+
+export function applyTxCacheWrite(cache: ScanCache, message: TxCacheWriteMessage): number {
+  if (message.dismiss) {
+    cache.tx_logs = cache.tx_logs?.map((row) => ({ ...row, hidden_on_send_plate: true }));
+    return -1;
+  }
+  const index = message.txLogIndex ?? cache.tx_logs?.length ?? 0;
+  const previous = cache.tx_logs?.[index];
+  if (message.txLogIndex !== undefined && !previous) throw new Error("tx log missing");
+  const row = { ...previous, ...message.txLog } as NonNullable<ScanCache["tx_logs"]>[number];
+  if (message.reserve) {
+    if (new Set(row.inputs_index).size !== row.inputs_index.length) throw new Error("duplicate inputs selected");
+    for (const id of row.inputs_index) {
+      const output = cache.outputs[id];
+      const owner = cache.pending_spent_utxos?.[id];
+      if (!output || output.spent_in_tx_hash || typeof output.burned === "number" || (owner !== undefined && owner !== index))
+        throw new Error(`input not spendable: ${id}`);
+    }
+  }
+  cache.tx_logs = [...cache.tx_logs ?? []];
+  cache.tx_logs[index] = row;
+  cache.pending_spent_utxos = { ...cache.pending_spent_utxos };
+  if (message.reserve) for (const id of row.inputs_index) cache.pending_spent_utxos[id] = index;
+  if (row.error || (row.sendResult && row.sendResult.status !== "OK")) {
+    for (const id of row.inputs_index) {
+      if (cache.pending_spent_utxos[id] === index) delete cache.pending_spent_utxos[id];
+    }
+  }
+  return index;
+}
 
 // flip inflight work back to fresh so a restart can reschedule it
 export function resetInProgressWorkItems(workBuffer: WorkItem[]) {
@@ -607,6 +647,7 @@ export async function* coordinatorMainMultithreaded(
       .map((ps) => ps.promise!);
 
     const races: Promise<Racers>[] = [
+      cacheWriteReady.promise,
       ...scan_promises,
       blocksPromise.then((v) => ({
         src: "blocks" as const,
@@ -615,6 +656,28 @@ export async function* coordinatorMainMultithreaded(
     ];
     log("coordinatorMainMultithreaded", ["races", races]);
     const winner = await Promise.race(races);
+    if (cacheWrites.length) {
+      while (cacheWrites.length) {
+        const message = cacheWrites.shift()!;
+        const replyPort = message.ports[0]!;
+        try {
+          const wallet = work_to_be_done.wallet_configs.find((wallet) => wallet.primary_address === message.data.primary_address);
+          if (!wallet) throw new Error("wallet not found");
+          const cache = { ...wallet.cache };
+          const txLogIndex = applyTxCacheWrite(cache, message.data);
+          await writeCacheToFile(cache, getPathPrefix(scanSettingsPath, pathPrefix));
+          wallet.cache = cache;
+          const changed_outputs = message.data.reserve
+            ? cache.tx_logs![txLogIndex]!.inputs_index.map((id) => ({ change_reason: "spent" as const, output: cache.outputs[id]! }))
+            : [];
+          yield { type: "scan_ready", address: wallet.primary_address, newCache: cache, changed_outputs, replyPort, txLogIndex };
+        } catch (error) {
+          replyPort.postMessage({ error: String(error) });
+          replyPort.close();
+        }
+      }
+      cacheWriteReady = Promise.withResolvers();
+    }
     log("coordinatorMainMultithreaded", "cpu ports status");
 
     if ("src" in winner && winner.src === "blocks") {

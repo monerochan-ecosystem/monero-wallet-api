@@ -28,11 +28,12 @@ export async function coordinatorMainWorker(
       if (event.type === "scan_ready") {
         self.postMessage({
           type: "SCAN_RESULT",
+          txLogIndex: event.txLogIndex,
           payload: {
             newCache: event.newCache,
             changed_outputs: event.changed_outputs,
           },
-        });
+        }, { transfer: event.replyPort ? [event.replyPort] : [] });
       } else if (event.type === "shutdown_done") {
         self.postMessage({ type: "SHUTDOWN_DONE" });
         return;
