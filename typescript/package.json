@@ -1,6 +1,6 @@
 {
   "name": "@spirobel/monero-wallet-api",
-  "version": "0.6.16",
+  "version": "0.6.17",
   "repository": {
     "type": "git",
     "url": "https://github.com/monerochan-ecosystem/monero-wallet-api",
