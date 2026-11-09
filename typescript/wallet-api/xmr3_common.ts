@@ -40,15 +40,27 @@ export {
   setWorkerUrl,
   getWorkerUrl,
   startWebworkerReady,
+  type WorkerSet,
+  type TxCacheWriteMessage,
 } from "./scanning-syncing/backgroundWorker";
 
 export { spendable } from "./scanning-syncing/scanresult/scanResult";
+export { handleCpuboundScan } from "./scanning-syncing/worker-mains/cpubound-main";
+export {
+  setWasmUrls,
+  getWasmUrls,
+  getMoneroWasmBytes,
+  getDkgWasmBytes,
+  resetWasmLoaderForTests,
+  type WasmUrls,
+} from "./wasm-processing/wasmLoader";
 
 export { openWallets, openWallet } from "./scanning-syncing/openWallet";
 export * from "./scanning-syncing/blocksbuffer/blocksBufferFetchLoop";
 export * from "./scanning-syncing/blocksbuffer/blocksbufferCoordination";
 export * from "./scanning-syncing/connectionStatus";
 export { ConnectionStatusOpened } from "./scanning-syncing/connectionStatusOpened";
+export { ActiveInvocations } from "./actionlog/actionLogTypes";
 export {
   ActionLogOpened,
   type ActionLogOpenedCreateOptions,

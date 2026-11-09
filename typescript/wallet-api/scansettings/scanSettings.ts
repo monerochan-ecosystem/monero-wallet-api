@@ -51,6 +51,7 @@ export type ScanSettings = {
   start_height: number | null;
   merchant_confirmations?: number | null;
   cpu_worker_count?: number;
+  selected_wallet?: string;
   logs?: LogSetting;
   logs_include?: PossibleLogs[];
   logs_exclude?: PossibleLogs[];

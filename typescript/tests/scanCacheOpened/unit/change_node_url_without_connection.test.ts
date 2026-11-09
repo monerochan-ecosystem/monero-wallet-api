@@ -4,11 +4,11 @@
  */
 import { test, expect, beforeEach } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
-import { openWallets } from "../../../wallet-api/scanning-syncing/openWallet";
 import {
+  openWallets,
   openScanSettingsFile,
   writeScanSettings,
-} from "../../../wallet-api/scansettings/scanSettings";
+} from "../../../dist/xmr3";
 
 const OUT = "test-data/change-node-without-connection";
 const OLD = "http://127.0.0.1:18081";

@@ -4,6 +4,7 @@ import {
 } from "./coordinator-main";
 import { handleCpuboundScanTry, sendFromCpuWorker } from "./cpubound-main";
 import { log, setupLoggingPath } from "../../io/logging";
+import { queueCacheWrite } from "../scanresult/scanCoordination";
 import { multisigMainWorkerCall } from "./multisig-main";
 import {
   DistributedKeyGenerator,
@@ -64,6 +65,11 @@ const handleMessage = async (e: MessageEvent) => {
   if (msg.type === "shutdown") {
     // only coordinator listens for this; abort fetch + race loop
     requestCoordinatorShutdown();
+    return;
+  }
+
+  if (msg.type === "cache_write") {
+    queueCacheWrite(e);
     return;
   }
 

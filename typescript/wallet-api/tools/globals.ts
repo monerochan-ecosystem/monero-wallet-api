@@ -23,6 +23,7 @@ export type ExtensionMessageByKind = {
   openSidebar: null;
   actionLogChanged: null;
   walletCacheChanged: string;
+  walletsChanged: { scan_settings_path: string };
   "worker.setNodeUrl": { node_url?: string };
   "worker.setStartHeight": { start_height?: number | null };
   "worker.changeNodeUrlAndStartHeight": {

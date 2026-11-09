@@ -1,5 +1,8 @@
 {
+  "include": ["./**/*.ts"],
   "compilerOptions": {
+    "types": ["bun", "node"],
+    "typeRoots": ["../node_modules/@types"],
     // Enable latest features
     "lib": ["ESNext", "DOM"],
     "target": "ESNext",
