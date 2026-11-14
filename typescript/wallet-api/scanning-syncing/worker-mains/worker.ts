@@ -49,7 +49,7 @@ export function CPU_PORT_HANDLER(pe: MessageEvent) {
     type: "WORKSTART",
     work_uuid: pe.data.work_uuid,
   });
-  handleCpuboundScanTry(pe.data, cpu_worker_status).then((result) => {
+  handleCpuboundScanTry(pe.data, cpu_worker_status, SCAN_SETTINGS_PATH).then((result) => {
     log("CPU_PORT_HANDLER", "work finished, sending result");
     cpu_work_in_flight = false;
     if (!cpuPort)

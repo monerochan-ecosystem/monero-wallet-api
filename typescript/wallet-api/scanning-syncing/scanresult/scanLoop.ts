@@ -2,6 +2,7 @@ import type { ScanCache } from "./scanCache";
 import {
   sleep,
   ViewPair,
+  readWalletFromScanSettings,
   type GetBlocksBinBufferItem,
   type ScanResult,
   type WalletConfig,
@@ -59,6 +60,7 @@ export type ScanLoopYield = {
 };
 export async function* scanLoop(
   wallet: WalletConfig,
+  scan_settings_path?: string,
 ): AsyncGenerator<ScanLoopYield, void, ScanLoopInput> {
   let scanResult: ScanResult | undefined;
   let work_uuid: string | undefined;
@@ -78,7 +80,7 @@ export async function* scanLoop(
     const viewpair = await ViewPair.create(
       item.walletConfig.primary_address,
       item.walletConfig.secret_view_key,
-      item.walletConfig.subaddress_index,
+      (await readWalletFromScanSettings(item.walletConfig.primary_address, scan_settings_path))?.subaddress_index ?? 0,
     );
     await viewpair.loadGetBlocksBinResponse(item.batch.data);
     loaded_batch_uuid = workitem_batch_uuid;
