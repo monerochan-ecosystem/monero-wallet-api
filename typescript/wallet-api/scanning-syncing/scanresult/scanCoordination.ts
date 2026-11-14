@@ -47,13 +47,11 @@ export type WalletConfig = {
   primary_address: string;
   secret_view_key: string;
   secret_spend_key?: string;
-  subaddress_index: number;
 };
 export type WalletConfigPlusCache = {
   primary_address: string;
   secret_view_key: string;
   secret_spend_key?: string;
-  subaddress_index: number;
   cache: ScanCache;
 };
 export type WorkToBeDone = {
@@ -117,7 +115,6 @@ export async function findWorkToBeDone(
       primary_address: wallet.primary_address,
       secret_view_key: walletSettingsWithKeys.secret_view_key,
       secret_spend_key: walletSettingsWithKeys.secret_spend_key,
-      subaddress_index: wallet.subaddress_index || 0,
       cache: walletCache,
     });
     const range = findRange(walletCache.scanned_ranges, total_start_height);
@@ -862,7 +859,6 @@ export async function scheduleWorkOnCpuPorts(
         primary_address: item.walletConfig.primary_address,
         secret_view_key: item.walletConfig.secret_view_key,
         //secret_spend_key: item.walletConfig.secret_spend_key, only needed for processResult to make ownkeyimages
-        subaddress_index: item.walletConfig.subaddress_index,
       },
     };
     for (let attempt = 1; ; attempt++) {

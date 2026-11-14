@@ -1,4 +1,4 @@
-import { sleep, ViewPair, type ScanResult } from "../../xmr3_common";
+import { sleep, ViewPair, readWalletFromScanSettings, type ScanResult } from "../../xmr3_common";
 import { log } from "../../io/logging";
 import { type ScanLoopInput, type ScanLoopYield } from "../scanresult/scanLoop";
 
@@ -10,6 +10,7 @@ let callcounter = 0;
 export async function handleCpuboundScan(
   msg: ScanLoopInput,
   cpu_worker_status: CpuWorkerStatus,
+  scan_settings_path?: string,
 ): Promise<ScanLoopYield> {
   callcounter++;
   log("handleCpuboundScan", "callcounter=" + callcounter);
@@ -47,7 +48,7 @@ export async function handleCpuboundScan(
   const viewpair = await ViewPair.create(
     item.walletConfig.primary_address,
     item.walletConfig.secret_view_key,
-    item.walletConfig.subaddress_index,
+    (await readWalletFromScanSettings(walletConfig.primary_address, scan_settings_path))?.subaddress_index ?? 0,
   );
   await viewpair.loadGetBlocksBinResponse(item.batch.data);
 
@@ -131,9 +132,10 @@ export async function handleCpuboundScan(
 export function handleCpuboundScanTry(
   msg: ScanLoopInput,
   cpu_worker_status: CpuWorkerStatus,
+  scan_settings_path?: string,
 ) {
   try {
-    return handleCpuboundScan(msg, cpu_worker_status);
+    return handleCpuboundScan(msg, cpu_worker_status, scan_settings_path);
   } catch (err) {
     console.error("[cpubound] error", err);
     throw err;
