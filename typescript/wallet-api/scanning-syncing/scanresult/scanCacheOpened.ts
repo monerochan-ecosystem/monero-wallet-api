@@ -15,6 +15,7 @@ import {
 import {
   DEFAULT_FEE_PRIORITY,
   type FeePriority,
+  type TransactionFeeOptions,
   type Input,
   type SendError,
 } from "../../send-functionality/transactionBuilding";
@@ -78,10 +79,9 @@ export type ScanCacheOpenedCreateParams = {
   workerError?: (error: unknown) => void;
 };
 
-export type CreateTransactionParams = {
+export type CreateTransactionParams = TransactionFeeOptions & {
   payments: Payment[];
   inputs?: Output[];
-  fee_priority?: FeePriority;
   no_fee_circuit_breaker?: boolean;
   invocationId?: string;
 };
@@ -95,6 +95,16 @@ function feePerByteForPriority(estimate: FeeEstimateResponse, priority: FeePrior
   const rate = estimate.fees[index];
   if (rate === undefined) throw new Error("node fee estimate does not include the requested priority");
   return BigInt(rate);
+}
+
+function checkFeeCircuitBreaker(estimate: FeeEstimateResponse, limit = 20_000_000_000): void {
+  if (!Number.isSafeInteger(limit) || limit < 0) {
+    throw new Error("invalid fee circuit breaker");
+  }
+  const fee = feePerByteForPriority(estimate, DEFAULT_FEE_PRIORITY) * 10_000n;
+  if (fee > BigInt(limit)) {
+    throw new Error(`fee too high: ${fee} atomic units per 10000 bytes exceeds the limit of ${limit}`);
+  }
 }
 
 export class ScanCacheOpened {
@@ -384,23 +394,10 @@ export class ScanCacheOpened {
     if (!privateSpendKey) throw new Error("privateSpendKey not found in env");
     return await signTransaction(unsignedTx, privateSpendKey);
   }
-  public async getFeeEstimate() {
+  public async getFeeEstimate(fee_circuit_breaker?: number) {
     const node = await NodeUrl.create(this.node_url);
     const feeEstimate = await node.getFeeEstimate();
-    const feePerByte = feePerByteForPriority(feeEstimate, DEFAULT_FEE_PRIORITY);
-
-    const max_plausible_fee = 20000000000n; // 0.02 XMR
-    const feeFor10kb = feePerByte * 10000n;
-    //2. check if fee is too high
-    if (feeFor10kb > max_plausible_fee) {
-      throw new Error(
-        `fee too high:
-          ${feeFor10kb} (fee for 10kb tx size) > ${max_plausible_fee} (0.001 XMR)
-          most likely your node is faulty. connect to another node.
-           preferably run one yourself locally.`,
-      );
-    }
-
+    checkFeeCircuitBreaker(feeEstimate, fee_circuit_breaker);
     return feeEstimate;
   }
   public async calculateFeeAndSelectInputs(
@@ -420,18 +417,7 @@ export class ScanCacheOpened {
     const feeEstimate = await node.getFeeEstimate();
     const feePerByte = feePerByteForPriority(feeEstimate, params.fee_priority ?? DEFAULT_FEE_PRIORITY);
     if (!params.no_fee_circuit_breaker) {
-      // default is false / undefined -> use fee circuit breaker
-      const max_plausible_fee = 20000000000n; // 0.02 XMR
-      const feeFor10kb = feePerByteForPriority(feeEstimate, DEFAULT_FEE_PRIORITY) * 10000n;
-      //2. check if fee is too high
-      if (feeFor10kb > max_plausible_fee) {
-        throw new Error(
-          `fee too high:
-          ${feeFor10kb} (fee for 10kb tx size) > ${max_plausible_fee} (0.001 XMR)
-          most likely your node is faulty. connect to another node.
-           preferably run one yourself locally.`,
-        );
-      }
+      checkFeeCircuitBreaker(feeEstimate, params.fee_circuit_breaker);
     }
     // 3. select inputs TODO: log inputs indices
     const selectedInputs = params.inputs || this.selectInputs(sum, feePerByte);
@@ -562,8 +548,9 @@ export class ScanCacheOpened {
     destination_address: string,
     inputs: Output[],
     fee_priority?: FeePriority,
+    fee_circuit_breaker?: number,
   ) {
-    const feeEstimate = await this.getFeeEstimate();
+    const feeEstimate = await this.getFeeEstimate(fee_circuit_breaker);
     return await this.makeSweepTransactionFromSelectedInputs(
       destination_address,
       inputs,
@@ -735,35 +722,26 @@ export class ScanCacheOpened {
     return selected;
   }
 
-  public async makeSignSend(params: {
+  public async makeSignSend(params: TransactionFeeOptions & {
     payments: Payment[];
     input_indexes: string[];
-    fee_priority?: FeePriority;
   }) {
-    // an empty list means the wallet selects the inputs
-    if (!params.input_indexes.length) {
-      return this.makeSignSendTransaction({
-        payments: params.payments,
-        fee_priority: params.fee_priority,
-      });
-    }
+    const { input_indexes, ...transaction } = params;
     return this.makeSignSendTransaction({
-      payments: params.payments,
-      inputs: this.outputsForIndexes(params.input_indexes),
-      fee_priority: params.fee_priority,
+      ...transaction,
+      inputs: input_indexes.length ? this.outputsForIndexes(input_indexes) : undefined,
     });
   }
 
-  public async sweepSignSend(params: {
+  public async sweepSignSend(params: TransactionFeeOptions & {
     address: string;
     input_indexes: string[];
-    fee_priority?: FeePriority;
   }) {
     const inputs = params.input_indexes.length
       ? this.outputsForIndexes(params.input_indexes)
       : this.spendableInputs();
     if (!inputs.length) throw new Error("no inputs selected");
-    const feeEstimate = await this.getFeeEstimate();
+    const feeEstimate = await this.getFeeEstimate(params.fee_circuit_breaker);
     const payments: Payment[] = [{ address: params.address, amount: "0" }];
     const txLogIndex = await this.beginInFlightSend({
       payments,
@@ -857,10 +835,12 @@ export class ScanCacheOpened {
     destination_address: string,
     amount: string,
     fee_priority?: FeePriority,
+    fee_circuit_breaker?: number,
   ) {
     return this.makeTransaction({
       payments: [{ address: destination_address, amount }],
       fee_priority,
+      fee_circuit_breaker,
     });
   }
   /**

@@ -64,8 +64,10 @@ run("signed sweeps encode the requested fee and regtest mines the elevated sweep
     Bun.env.MONEROD_PATH ?? "tests/moneronode/monerod",
     "--regtest", "--offline", "--fixed-difficulty", "1",
     "--rpc-bind-ip", "127.0.0.1", "--rpc-bind-port", String(port),
-    "--p2p-bind-port", "0", "--non-interactive",
-  ], { stdout: "ignore", stderr: "inherit" });
+    "--non-interactive",
+  ], { stdin: "pipe", stdout: "pipe", stderr: "pipe" });
+  const stdout = new Response(proc.stdout).text();
+  const stderr = new Response(proc.stderr).text();
 
   async function request(path: string, body: object): Promise<unknown> {
     const response = await fetch(nodeUrl + path, {
@@ -127,7 +129,12 @@ run("signed sweeps encode the requested fee and regtest mines the elevated sweep
     const receiver = (await makeTestKeyPair()).view_key.mainnet_primary;
     const estimate = await wallet.getFeeEstimate();
     const signedDefault = await wallet.signTransaction(await wallet.sweepToExternalWallet(receiver, [input]));
-    const signedElevated = await wallet.signTransaction(await wallet.sweepToExternalWallet(receiver, [input], "elevated"));
+    const limit = estimate.fees![0]! * 10_000;
+    await expect(wallet.sweepToExternalWallet(receiver, [input], "elevated", 0))
+      .rejects.toThrow("fee too high");
+    const signedElevated = await wallet.signTransaction(
+      await wallet.sweepToExternalWallet(receiver, [input], "elevated", limit),
+    );
     const defaultTx = readRingCtFee(signedDefault);
     const elevatedTx = readRingCtFee(signedElevated);
 
@@ -171,6 +178,8 @@ run("signed sweeps encode the requested fee and regtest mines the elevated sweep
     } finally {
       proc.kill();
       await proc.exited;
+      await Bun.write(out + "/node-stdout.log", await stdout);
+      await Bun.write(out + "/node-stderr.log", await stderr);
       delete Bun.env["vk" + sender];
       delete Bun.env["sk" + sender];
     }

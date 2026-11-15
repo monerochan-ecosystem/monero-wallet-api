@@ -26,6 +26,7 @@ export {
   signTransaction,
   parseAddress,
   type FeePriority,
+  type TransactionFeeOptions,
   type ParsedAddress,
   type ParseAddressError,
 } from "./send-functionality/transactionBuilding";

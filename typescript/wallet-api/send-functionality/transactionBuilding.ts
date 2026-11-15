@@ -66,6 +66,12 @@ export function sampleDecoys<T extends WasmProcessor>(
 }
 
 export type FeePriority = "unimportant" | "normal" | "elevated" | "priority";
+export type TransactionFeeOptions = {
+  fee_priority?: FeePriority;
+  // limit in atomic units for the node's unimportant fee rate multiplied by 10000 bytes. defaults to 0.02 XMR.
+  // an untrusted node can suggest a high fee rate to make the wallet overpay.
+  fee_circuit_breaker?: number;
+};
 export const DEFAULT_FEE_PRIORITY = "unimportant";
 
 export type MakeTransactionParams = {

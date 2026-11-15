@@ -240,6 +240,10 @@ async function execute_run(
     ) {
       throw new Error("invalid fee priority");
     }
+    const fee_circuit_breaker = args.fee_circuit_breaker;
+    if (fee_circuit_breaker !== undefined && typeof fee_circuit_breaker !== "number") {
+      throw new Error("invalid fee circuit breaker");
+    }
     const wallets = ctx.getWallets?.() as
       | {
           wallets?: {
@@ -255,6 +259,7 @@ async function execute_run(
     await wallet.makeSignSendTransaction({
       payments: [{ address, amount: amountForChainSend(amount) }],
       fee_priority,
+      fee_circuit_breaker,
       invocationId,
     });
     ok = true;
