@@ -1,4 +1,5 @@
 import type { ToolWorkerContext } from "../actionlog/actionLogTypes";
+import type { FeePriority } from "../send-functionality/transactionBuilding";
 
 export const TOOL_MAGIC_STRING = "monerochan";
 export type ToolInvocationValidity = "valid" | "invalid" | "unverified";
@@ -36,11 +37,13 @@ export type ExtensionMessageByKind = {
     primary_address: string;
     payments: { address: string; amount: string }[];
     input_indexes: string[];
+    fee_priority?: FeePriority;
   };
   "worker.sweepSignSend": {
     primary_address: string;
     address: string;
     input_indexes: string[];
+    fee_priority?: FeePriority;
   };
   "worker.rebroadcastTx": {
     primary_address: string;

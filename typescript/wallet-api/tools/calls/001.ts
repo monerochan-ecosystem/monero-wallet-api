@@ -1,3 +1,4 @@
+import type { CreateTransactionParams } from "../../scanning-syncing/scanresult/scanCacheOpened";
 import {
   convertAmountBigInt,
   convertAmountBigIntThrows,
@@ -232,14 +233,18 @@ async function execute_run(
   let ok = false;
   let error: string | undefined;
   try {
+    const fee_priority = args.fee_priority;
+    if (
+      fee_priority !== undefined && fee_priority !== "unimportant" &&
+      fee_priority !== "normal" && fee_priority !== "elevated" && fee_priority !== "priority"
+    ) {
+      throw new Error("invalid fee priority");
+    }
     const wallets = ctx.getWallets?.() as
       | {
           wallets?: {
             primary_address: string;
-            makeSignSendTransaction: (p: {
-              payments: { address: string; amount: string }[];
-              invocationId?: string;
-            }) => Promise<unknown>;
+            makeSignSendTransaction: (p: CreateTransactionParams) => Promise<unknown>;
           }[];
         }
       | undefined;
@@ -249,6 +254,7 @@ async function execute_run(
     if (!wallet) throw new Error("wallet not found");
     await wallet.makeSignSendTransaction({
       payments: [{ address, amount: amountForChainSend(amount) }],
+      fee_priority,
       invocationId,
     });
     ok = true;

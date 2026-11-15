@@ -12,9 +12,11 @@ import {
   sumPayments,
   type Payment,
 } from "../../send-functionality/inputSelection";
-import type {
-  Input,
-  SendError,
+import {
+  DEFAULT_FEE_PRIORITY,
+  type FeePriority,
+  type Input,
+  type SendError,
 } from "../../send-functionality/transactionBuilding";
 import { createWebworker, type WorkerSet, type TxCacheWriteMessage } from "../backgroundWorker";
 import { applyTxCacheWrite } from "./scanCoordination";
@@ -33,7 +35,7 @@ import {
   type ActionLogBackendKind,
   type ExtensionMessageBus,
 } from "../../actionlog/actionLogOpened";
-import { sendToBackground } from "../../tools/globals";
+import { sendToBackground, type ExtensionMessageByKind } from "../../tools/globals";
 import type { LogSetting, PossibleLogs } from "../../io/logging";
 import {
   findRange,
@@ -79,9 +81,22 @@ export type ScanCacheOpenedCreateParams = {
 export type CreateTransactionParams = {
   payments: Payment[];
   inputs?: Output[];
+  fee_priority?: FeePriority;
   no_fee_circuit_breaker?: boolean;
   invocationId?: string;
 };
+const feePriorities: readonly FeePriority[] = ["unimportant", "normal", "elevated", "priority"];
+const feeMultipliers = [1n, 5n, 25n, 1000n];
+
+function feePerByteForPriority(estimate: FeeEstimateResponse, priority: FeePriority): bigint {
+  const index = feePriorities.indexOf(priority);
+  if (index < 0) throw new Error("invalid fee priority");
+  if (!estimate.fees) return BigInt(estimate.fee) * feeMultipliers[index];
+  const rate = estimate.fees[index];
+  if (rate === undefined) throw new Error("node fee estimate does not include the requested priority");
+  return BigInt(rate);
+}
+
 export class ScanCacheOpened {
   /** how many decoys to sample per input (default 20, ring size is 11) */
   public decoySampleCount: number = 20;
@@ -372,7 +387,7 @@ export class ScanCacheOpened {
   public async getFeeEstimate() {
     const node = await NodeUrl.create(this.node_url);
     const feeEstimate = await node.getFeeEstimate();
-    const feePerByte = BigInt(feeEstimate.fees![0]);
+    const feePerByte = feePerByteForPriority(feeEstimate, DEFAULT_FEE_PRIORITY);
 
     const max_plausible_fee = 20000000000n; // 0.02 XMR
     const feeFor10kb = feePerByte * 10000n;
@@ -403,11 +418,11 @@ export class ScanCacheOpened {
     const node = await NodeUrl.create(this.node_url);
     // 1. get fee estimate
     const feeEstimate = await node.getFeeEstimate();
-    const feePerByte = BigInt(feeEstimate.fees![0]);
+    const feePerByte = feePerByteForPriority(feeEstimate, params.fee_priority ?? DEFAULT_FEE_PRIORITY);
     if (!params.no_fee_circuit_breaker) {
       // default is false / undefined -> use fee circuit breaker
       const max_plausible_fee = 20000000000n; // 0.02 XMR
-      const feeFor10kb = feePerByte * 10000n;
+      const feeFor10kb = feePerByteForPriority(feeEstimate, DEFAULT_FEE_PRIORITY) * 10000n;
       //2. check if fee is too high
       if (feeFor10kb > max_plausible_fee) {
         throw new Error(
@@ -427,6 +442,7 @@ export class ScanCacheOpened {
     payments: Payment[],
     selectedInputs: Output[],
     feeEstimate: FeeEstimateResponse,
+    fee_priority: FeePriority = DEFAULT_FEE_PRIORITY,
   ) {
     // 4. get output distribution
     const node = await NodeUrl.create(this.node_url);
@@ -467,7 +483,7 @@ export class ScanCacheOpened {
       inputs,
       payments,
       fee_response: feeEstimate,
-      fee_priority: "unimportant",
+      fee_priority,
     });
     return unsignedTx;
   }
@@ -475,6 +491,7 @@ export class ScanCacheOpened {
     destination_address: string,
     selectedInputs: Output[],
     feeEstimate: FeeEstimateResponse,
+    fee_priority: FeePriority = DEFAULT_FEE_PRIORITY,
   ) {
     // 4. get output distribution
     const node = await NodeUrl.create(this.node_url);
@@ -520,7 +537,7 @@ export class ScanCacheOpened {
         },
       ],
       fee_response: feeEstimate,
-      fee_priority: "unimportant",
+      fee_priority,
     });
     return unsignedTx;
   }
@@ -534,6 +551,7 @@ export class ScanCacheOpened {
       params.payments,
       selectedInputs,
       feeEstimate,
+      params.fee_priority,
     );
   }
   /**
@@ -543,12 +561,14 @@ export class ScanCacheOpened {
   public async sweepToExternalWallet(
     destination_address: string,
     inputs: Output[],
+    fee_priority?: FeePriority,
   ) {
     const feeEstimate = await this.getFeeEstimate();
     return await this.makeSweepTransactionFromSelectedInputs(
       destination_address,
       inputs,
       feeEstimate,
+      fee_priority,
     );
   }
   get daemon_height() {
@@ -655,6 +675,7 @@ export class ScanCacheOpened {
         params.payments,
         selectedInputs,
         feeEstimate,
+        params.fee_priority,
       );
       const signedTx = await this.signTransaction(unsignedTx);
       maybeSignedTx = signedTx;
@@ -717,22 +738,26 @@ export class ScanCacheOpened {
   public async makeSignSend(params: {
     payments: Payment[];
     input_indexes: string[];
+    fee_priority?: FeePriority;
   }) {
     // an empty list means the wallet selects the inputs
     if (!params.input_indexes.length) {
       return this.makeSignSendTransaction({
         payments: params.payments,
+        fee_priority: params.fee_priority,
       });
     }
     return this.makeSignSendTransaction({
       payments: params.payments,
       inputs: this.outputsForIndexes(params.input_indexes),
+      fee_priority: params.fee_priority,
     });
   }
 
   public async sweepSignSend(params: {
     address: string;
     input_indexes: string[];
+    fee_priority?: FeePriority;
   }) {
     const inputs = params.input_indexes.length
       ? this.outputsForIndexes(params.input_indexes)
@@ -752,6 +777,7 @@ export class ScanCacheOpened {
         params.address,
         inputs,
         feeEstimate,
+        params.fee_priority,
       );
       signedTx = await this.signTransaction(unsignedTx);
       sendResult = await this.sendTransaction(signedTx);
@@ -827,9 +853,14 @@ export class ScanCacheOpened {
   /**
    * makeStandardTransaction
    */
-  public makeStandardTransaction(destination_address: string, amount: string) {
+  public makeStandardTransaction(
+    destination_address: string,
+    amount: string,
+    fee_priority?: FeePriority,
+  ) {
     return this.makeTransaction({
       payments: [{ address: destination_address, amount }],
+      fee_priority,
     });
   }
   /**
@@ -1204,11 +1235,7 @@ export class ManyScanCachesOpened {
     return wallet;
   }
 
-  public async makeSignSend(params: {
-    primary_address: string;
-    payments: { address: string; amount: string }[];
-    input_indexes: string[];
-  }) {
+  public async makeSignSend(params: ExtensionMessageByKind["worker.makeSignSend"]) {
     if (this.actionLogOpened.extensionMessageBus === "ui") {
       await sendToBackground("worker.makeSignSend", params).catch(() => {});
       return;
@@ -1216,11 +1243,7 @@ export class ManyScanCachesOpened {
     return this.walletByAddress(params.primary_address).makeSignSend(params);
   }
 
-  public async sweepSignSend(params: {
-    primary_address: string;
-    address: string;
-    input_indexes: string[];
-  }) {
+  public async sweepSignSend(params: ExtensionMessageByKind["worker.sweepSignSend"]) {
     if (this.actionLogOpened.extensionMessageBus === "ui") {
       await sendToBackground("worker.sweepSignSend", params).catch(() => {});
       return;

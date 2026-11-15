@@ -65,6 +65,9 @@ export function sampleDecoys<T extends WasmProcessor>(
   return result as SampledDecoys;
 }
 
+export type FeePriority = "unimportant" | "normal" | "elevated" | "priority";
+export const DEFAULT_FEE_PRIORITY = "unimportant";
+
 export type MakeTransactionParams = {
   inputs: Input[];
   payments: {
@@ -72,7 +75,7 @@ export type MakeTransactionParams = {
     amount: string;
   }[];
   fee_response: GetFeeEstimateResult;
-  fee_priority: string;
+  fee_priority?: string;
   outgoing_view_key?: string;
   data?: number[][];
 };
@@ -94,7 +97,7 @@ export function makeSweepTransaction<T extends WasmProcessor>(
   processor: T,
   params: MakeTransactionParams,
 ): UnsignedTransaction {
-  const jsonParams = JSON.stringify(params);
+  const jsonParams = JSON.stringify({ ...params, fee_priority: params.fee_priority ?? DEFAULT_FEE_PRIORITY });
   processor.writeToWasmMemory = (ptr, len) => {
     processor.writeString(ptr, len, jsonParams);
   };
@@ -125,7 +128,7 @@ export function makeTransaction<T extends WasmProcessor>(
   processor: T,
   params: MakeTransactionParams,
 ): UnsignedTransaction {
-  const jsonParams = JSON.stringify(params);
+  const jsonParams = JSON.stringify({ ...params, fee_priority: params.fee_priority ?? DEFAULT_FEE_PRIORITY });
   processor.writeToWasmMemory = (ptr, len) => {
     processor.writeString(ptr, len, jsonParams);
   };
