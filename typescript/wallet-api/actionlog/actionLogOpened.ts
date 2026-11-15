@@ -48,16 +48,8 @@ type BoundMco = {
   ) => Promise<void>;
   buildWallets: () => Promise<void>;
   stopWorker: () => Promise<void>;
-  makeSignSend: (params: {
-    primary_address: string;
-    payments: { address: string; amount: string }[];
-    input_indexes: string[];
-  }) => Promise<unknown>;
-  sweepSignSend: (params: {
-    primary_address: string;
-    address: string;
-    input_indexes: string[];
-  }) => Promise<unknown>;
+  makeSignSend: (params: ExtensionMessageByKind["worker.makeSignSend"]) => Promise<unknown>;
+  sweepSignSend: (params: ExtensionMessageByKind["worker.sweepSignSend"]) => Promise<unknown>;
   rebroadcastTx: (params: {
     primary_address: string;
     tx_log_index: number;
