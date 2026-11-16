@@ -12,16 +12,18 @@ export async function scanTransaction(params: {
   primary_address: string;
   view_key: string;
   subaddresses?: [number, number][];
+  allow_timelock?: boolean;
 }): Promise<TransactionScan> {
   const { ViewPair } = await import("./ViewPair");
   const view = await ViewPair.create(params.primary_address, params.view_key);
   view.registerScanSubaddresses(params.subaddresses ?? []);
-  return view.scanTransaction(params.tx_as_hex);
+  return view.scanTransaction(params.tx_as_hex, params.allow_timelock);
 }
 
 export function scanTransactionWithProcessor<T extends WasmProcessor>(
   processor: T,
   txHex: string,
+  allow_timelock = false,
 ): TransactionScan {
   if (!/^(?:[0-9a-fA-F]{2})+$/.test(txHex)) {
     throw new Error("invalid transaction hex");
@@ -38,5 +40,7 @@ export function scanTransactionWithProcessor<T extends WasmProcessor>(
   const scan = processor.tinywasi.instance!.exports.scan_transaction as CallableFunction;
   scan(txHex.length);
   if (error) throw new Error(error);
+  // a timelocked output cannot be spent before unlock_time. callers must opt in.
+  if (!allow_timelock && result!.unlock_time !== "0") throw new Error(`timelocked transaction: unlock_time ${result!.unlock_time}`);
   return result!;
 }

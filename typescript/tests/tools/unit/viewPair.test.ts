@@ -26,6 +26,22 @@ test("a hex string as long as the largest valid transaction reaches the parser",
   expect(() => view.scanTransaction("00".repeat(149_400))).toThrow("invalid transaction:");
 });
 
+// fixture.coinbase was mined on regtest at height 1 to the fixture address. it unlocks at block 61.
+test("a coinbase transaction throws because it is timelocked", async () => {
+  const view = await ViewPair.create(fixture.primary_address, fixture.secret_view_key);
+  expect(() => view.scanTransaction(fixture.coinbase.tx_as_hex)).toThrow("timelocked transaction");
+  await expect(scan({ tx_as_hex: fixture.coinbase.tx_as_hex, primary_address: fixture.primary_address, view_key: fixture.secret_view_key })).rejects.toThrow("timelocked transaction");
+});
+
+test("allow_timelock returns the outputs of a timelocked coinbase transaction", async () => {
+  const view = await ViewPair.create(fixture.primary_address, fixture.secret_view_key);
+  const result = view.scanTransaction(fixture.coinbase.tx_as_hex, true);
+  expect(result.tx_hash).toBe(fixture.coinbase.expected.tx_hash);
+  expect(result.unlock_time).toBe(fixture.coinbase.expected.unlock_time);
+  expect(result.outputs).toEqual([expect.objectContaining({ amount: fixture.coinbase.expected.amount, subaddress_index: null })]);
+  expect(await scan({ tx_as_hex: fixture.coinbase.tx_as_hex, primary_address: fixture.primary_address, view_key: fixture.secret_view_key, allow_timelock: true })).toEqual(result);
+});
+
 test("register accepts the primary address and the first subaddress of another account", async () => {
   const view = await ViewPair.create(fixture.primary_address, fixture.secret_view_key);
   const first = view.scanTransaction(fixture.tx_as_hex);

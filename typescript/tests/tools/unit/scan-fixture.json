@@ -6,5 +6,13 @@
     "tx_hash": "295e66fcb6f5b8ca10211c79e3de078ac47edd398a20a474bfdfa8048af7e80a",
     "amount": "100000000000",
     "payment_id": "1001"
+  },
+  "coinbase": {
+    "tx_as_hex": "023d01ff0101808080f0ffff07036423cccf44e12265f4e38cf996ceab9a0c4a79d7896d159c042f4b826fb518725d2401a93f2082ba062e2cefc7cad97a91dcb595f27fea3b21058f4dfd6db4176db0db02010000",
+    "expected": {
+      "tx_hash": "7e69bf2413280093414f0db3898f88b7fe63c40ea53ffb0bb0a06476c32a2076",
+      "unlock_time": "61",
+      "amount": "35184338534400"
+    }
   }
 }

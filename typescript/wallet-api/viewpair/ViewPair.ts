@@ -262,8 +262,8 @@ export class ViewPair extends WasmProcessor {
     return address;
   }
   /** scan one transaction with this view pair and its registered subaddresses. */
-  public scanTransaction(txHex: string): TransactionScan {
-    return scanTransactionWithProcessor(this, txHex);
+  public scanTransaction(txHex: string, allow_timelock = false): TransactionScan {
+    return scanTransactionWithProcessor(this, txHex, allow_timelock);
   }
 
   /**

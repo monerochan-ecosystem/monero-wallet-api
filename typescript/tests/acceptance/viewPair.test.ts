@@ -6,7 +6,7 @@ import { makeTestKeyPair, openWallets, ViewPair, writeScanSettings } from "../..
 const run = Bun.env.RUN_VIEWPAIR_REGTEST === "1" ? test : test.skip;
 const out = resolve("test-data/view-pair-regtest");
 
-run("one ViewPair scans a signed payment after registering its subaddress", async () => {
+run("one ViewPair scans a signed payment after registering its subaddress; a timelocked coinbase throws unless allow_timelock is true", async () => {
   await rm(out, { recursive: true, force: true });
   await mkdir(out, { recursive: true });
 
@@ -43,6 +43,7 @@ run("one ViewPair scans a signed payment after registering its subaddress", asyn
     if (!response.ok) throw new Error(`${method} returned HTTP ${response.status}`);
     const { result, error } = await response.json();
     if (!result || error) throw new Error(`${method}: ${error?.message ?? "missing result"}`);
+    return result;
   }
 
   let wallets: Awaited<ReturnType<typeof openWallets>> | undefined;
@@ -95,6 +96,21 @@ run("one ViewPair scans a signed payment after registering its subaddress", asyn
     const result = scanner.scanTransaction(signed);
     await Bun.write(out + "/scan.json", JSON.stringify(result, null, 2));
     expect(result.outputs).toEqual([expect.objectContaining({ amount, subaddress_index: [1, 0] })]);
+
+    // a coinbase is timelocked for 60 blocks. monerod sends it in two parts; its prunable part is empty.
+    const block = await rpc("get_block", { height: 1000 });
+    const txs = await (await fetch(nodeUrl + "/get_transactions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ txs_hashes: [block.miner_tx_hash], split: true }),
+    })).json();
+    const coinbase = txs.txs[0].pruned_as_hex + txs.txs[0].prunable_as_hex;
+    await Bun.write(out + "/coinbase.hex", coinbase);
+    const miner = await ViewPair.create(primary, sender.view_key.view_key);
+    expect(() => miner.scanTransaction(coinbase)).toThrow("timelocked transaction");
+    const allowed = miner.scanTransaction(coinbase, true);
+    expect(allowed.unlock_time).toBe("1060");
+    expect(allowed.outputs).toEqual([expect.objectContaining({ amount: String(block.block_header.reward) })]);
   } finally {
     try {
       wallets?.unwatchConnectionStatus();
