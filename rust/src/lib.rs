@@ -1,5 +1,6 @@
 pub mod block_parsing;
 pub mod transaction_building;
+pub mod transaction_parsing;
 pub mod keypairs;
 use block_parsing::convert_to_json;
 use block_parsing::get_blocks_bin_response_meta;
@@ -128,6 +129,10 @@ pub extern "C" fn init_viewpair(
     return;
   };
   let viewpair = init_viewpair_from_viewpk_primary(&address, secret_view_key.as_str());
+  if viewpair.view() != address.view() {
+    output_error_string(&json!({"error": "invalid view key for address"}).to_string());
+    return;
+  }
   match address.network() {
     Network::Mainnet => output_string(&json!({"network": "mainnet"}).to_string()),
     Network::Stagenet => output_string(&json!({"network": "stagenet"}).to_string()),
@@ -160,13 +165,16 @@ pub extern "C" fn make_integrated_address(payment_id: u64) {
 pub extern "C" fn make_subaddress(major: u32, minor: u32) {
   let viewpair = GLOBAL_VIEWPAIR.with_borrow(|viewpair| viewpair.clone());
   let network = GLOBAL_NETWORK.with_borrow(|network| *network);
+  let Some(subaddress_index) = SubaddressIndex::new(major, minor) else {
+    // the scanner already includes the primary address.
+    output_string(&viewpair.legacy_address(network).to_string());
+    return;
+  };
+  let subaddress = viewpair.subaddress(network, subaddress_index);
   GLOBAL_SCANNER.with_borrow_mut(|scanner| {
-    let subaddress_index = SubaddressIndex::new(major, minor).expect("Invalid indices");
-    let subaddress = viewpair.subaddress(network, subaddress_index);
-    scanner.register_subaddress(subaddress_index.clone());
-
-    output_string(&subaddress.to_string());
+    scanner.register_subaddress(subaddress_index);
   });
+  output_string(&subaddress.to_string());
 }
 #[no_mangle]
 pub extern "C" fn sample_decoys(sample_json_str_len: usize) {

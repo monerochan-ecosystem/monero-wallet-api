@@ -14,7 +14,6 @@ import {
 } from "../node-interaction/binaryEndpoints";
 import {
   lastRange,
-  writeCacheFileDefaultLocationThrows,
   type ScanCache,
 } from "../scanning-syncing/scanresult/scanCache";
 import {
@@ -23,6 +22,7 @@ import {
   type MakeTransactionParams,
   type UnsignedTransaction,
 } from "../send-functionality/transactionBuilding";
+import { scanTransactionWithProcessor, type TransactionScan } from "./transactionParsing";
 import { getMoneroWasmBytes } from "../wasm-processing/wasmLoader";
 
 import { WasmProcessor } from "../wasm-processing/wasmProcessor";
@@ -261,28 +261,29 @@ export class ViewPair extends WasmProcessor {
     this.tinywasi.instance.exports.make_integrated_address(BigInt(paymentId));
     return address;
   }
+  /** scan one transaction with this view pair and its registered subaddresses. */
+  public scanTransaction(txHex: string): TransactionScan {
+    return scanTransactionWithProcessor(this, txHex);
+  }
+
   /**
-   * This method makes a Subaddress for the Address of the Viewpair it was opened with.
-   * The network (mainnet, stagenet, testnet) is the same as the one of the Viewpairaddress.
-   * if there is an active scan going on, call this on ScanCacheOpened, so the new subaddress will be scanned
-   *
-   * @param minor address index, we always set major (also called account index) to 0
-   * @returns Adressstring
+   * register [account index, address index] pairs for scans with this ViewPair.
+   * use this when the caller supplies the pairs and no scan cache is available.
+   * [0, 0] is the primary address and is already scanned.
+   */
+  public registerScanSubaddresses(indices: [number, number][]): void {
+    for (const [major, minor] of indices) this.makeSubaddressRaw(major, minor);
+  }
+
+  /**
+   * make a subaddress for this view pair.
+   * zero returns the primary address.
+   * during an active scan, call this on ScanCacheOpened so the scan uses the new address.
+   * @param minor address index in account 0
+   * @returns primary address or subaddress
    */
   public makeSubaddress(minor: number) {
     return this.makeSubaddressRaw(0, minor);
-  }
-  private async writeSubaddressesToScanCache(
-    scan_settings_path?: string,
-    pathPrefix?: string,
-  ) {
-    await writeCacheFileDefaultLocationThrows({
-      primary_address: this.primary_address,
-      pathPrefix: pathPrefix,
-      writeCallback: async (cache) => {
-        await this.addSubaddressesToScanCache(cache, scan_settings_path);
-      },
-    });
   }
   public async addSubaddressesToScanCache(
     cache: ScanCache,
@@ -320,22 +321,20 @@ export class ViewPair extends WasmProcessor {
     }
   }
   /**
-   * This method makes a Subaddress for the Address of the Viewpair it was opened with.
-   * The network (mainnet, stagenet, testnet) is the same as the one of the Viewpairaddress.
+   * make a primary address or subaddress on the network of this view pair.
    *
    * @param major account index should be set to 0 in most cases
-   * @param minor address index starting at 1
-   * @returns Adressstring
+   * @param minor address index, [0, 0] returns the primary address
+   * @returns address string
    */
   private makeSubaddressRaw(major: number, minor: number) {
     if (
-      typeof major !== "number" ||
-      typeof minor !== "number" ||
-      major < 0 ||
-      minor < 1
+      !Number.isInteger(major) || major < 0 || major > 0xffffffff ||
+      !Number.isInteger(minor) || minor < 0 || minor > 0xffffffff
     )
       throw new Error(
-        `subaddress major and minor must be positive numbers, minor index must be above 1.
+        `subaddress indices must be positive integers or 0. 
+         If both are 0 the primary address is returned according to monero custom.
           makeSubaddressRaw arguments: major: ${major}, minor: ${minor}`,
       );
     let address = "";
