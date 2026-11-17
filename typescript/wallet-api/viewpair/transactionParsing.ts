@@ -1,9 +1,16 @@
 import type { WasmProcessor } from "../wasm-processing/wasmProcessor";
+import { ViewPair } from "./ViewPair";
+import type { Output } from "../node-interaction/binaryEndpoints";
 
 export type TransactionScan = {
   tx_hash: string;
   unlock_time: string;
-  outputs: { amount: string; index_in_transaction: number; stealth_address: string; payment_id: string | null; subaddress_index: [number, number] | null }[];
+  // json keeps amounts and payment ids as strings; subaddresses include account and address indices.
+  outputs: (Pick<Output, "index_in_transaction" | "stealth_address"> & {
+    amount: string;
+    payment_id: string | null;
+    subaddress_index: [number, number] | null;
+  })[];
 };
 
 // scan one supplied transaction without opening a wallet or contacting a node.
@@ -14,7 +21,6 @@ export async function scanTransaction(params: {
   subaddresses?: [number, number][];
   allow_timelock?: boolean;
 }): Promise<TransactionScan> {
-  const { ViewPair } = await import("./ViewPair");
   const view = await ViewPair.create(params.primary_address, params.view_key);
   view.registerScanSubaddresses(params.subaddresses ?? []);
   return view.scanTransaction(params.tx_as_hex, params.allow_timelock);
