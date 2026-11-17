@@ -11,12 +11,14 @@ import {
   STAGENET_GENESIS_BLOCK_HASH,
 } from "./binaryEndpoints";
 import {
+  get_block,
   get_block_headers_range,
   get_fee_estimate,
   get_info,
   get_output_distribution,
   send_raw_transaction,
   type FeeEstimateResponse,
+  type GetBlockParams,
   type GetBlockHeadersRangeParams,
   type GetOutputDistributionParams,
   type SendRawTransactionResult,
@@ -38,7 +40,8 @@ import { getMoneroWasmBytes } from "../wasm-processing/wasmLoader";
  * {@link https://docs.getmonero.org/rpc-library/monerod-rpc/#get_blocksbin}
  */
 export class NodeUrl extends WasmProcessor {
-  protected constructor(public node_url: string) {
+  // construct for json rpc; create() also initializes wasm for the binary helpers.
+  public constructor(public node_url: string) {
     super();
   }
   private _network: NETWORKS | undefined;
@@ -166,8 +169,12 @@ export class NodeUrl extends WasmProcessor {
   public async sendRawTransaction(
     tx_as_hex: SignedTransaction,
     do_not_relay: boolean = false,
+    signal?: AbortSignal,
   ): Promise<SendRawTransactionResult> {
-    return send_raw_transaction(this.node_url, tx_as_hex, do_not_relay);
+    return send_raw_transaction(this.node_url, tx_as_hex, do_not_relay, signal);
+  }
+  public async getBlock(params: GetBlockParams, signal?: AbortSignal) {
+    return get_block(this.node_url, params, signal);
   }
   /**
    * Retrieve block headers for a specified range of heights.
@@ -175,16 +182,16 @@ export class NodeUrl extends WasmProcessor {
    * @param params The parameters including start_height, end_height, and optional fill_pow_hash.
    * @returns The result object with headers, status, etc. Throws if the range is invalid:(end_height > daemonheight)
    */
-  public async getBlockHeadersRange(params: GetBlockHeadersRangeParams) {
-    return await get_block_headers_range(this.node_url, params);
+  public async getBlockHeadersRange(params: GetBlockHeadersRangeParams, signal?: AbortSignal) {
+    return await get_block_headers_range(this.node_url, params, signal);
   }
   /**
    * Fetch general information about the Monero daemon.
    * @link https://docs.getmonero.org/rpc-library/monerod-rpc/#get_info
    * @returns The result object with daemon info like height, status, etc.
    */
-  public async getInfo() {
-    return get_info(this.node_url);
+  public async getInfo(signal?: AbortSignal) {
+    return get_info(this.node_url, signal);
   }
   async addGenesisHashToBlockIds(params: GetBlocksBinRequest) {
     if (params.block_ids) {

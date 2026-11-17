@@ -157,7 +157,7 @@ export function parseGetInfoResponse(data: unknown): GetInfoResponse | null {
   }
 }
 
-export async function get_info(NODE_URL: string) {
+export async function get_info(NODE_URL: string, signal?: AbortSignal) {
   const getInfoResponse = await fetch(NODE_URL + "/json_rpc", {
     method: "POST",
     headers: {
@@ -168,6 +168,7 @@ export async function get_info(NODE_URL: string) {
       id: "0",
       method: "get_info",
     }),
+    signal,
   });
 
   if (!getInfoResponse.ok) {
@@ -332,6 +333,13 @@ export async function get_fee_estimate(
   return parsedResult.result;
 }
 
+export type TransactionStatus = {
+  in_pool: boolean;
+  confirmations: number;
+  block_height?: number;
+  block_hash?: string;
+};
+
 export const SendRawTransactionResponseSchema = obj({
   double_spend: bool, // double_spend - boolean; Transaction is a double spend (true) or not (false).
   fee_too_low: bool, // fee_too_low - boolean; Fee is too low (true) or OK (false).
@@ -379,6 +387,7 @@ export async function send_raw_transaction(
   NODE_URL: string,
   tx_as_hex: SignedTransaction, // tx_as_hex - string; Full transaction information as hexadecimal string.
   do_not_relay: boolean = false, // do_not_relay - (Optional) boolean; Stop relaying transaction to other nodes. Defaults to false.
+  signal?: AbortSignal,
 ): Promise<SendRawTransactionResult> {
   const sendRawTransactionResponse = await fetch(
     NODE_URL + "/send_raw_transaction",
@@ -388,6 +397,7 @@ export async function send_raw_transaction(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ tx_as_hex, do_not_relay }),
+      signal,
     },
   );
   if (!sendRawTransactionResponse.ok) {
@@ -534,6 +544,89 @@ export function parseGetBlockHeadersRangeResponse(
   }
 }
 
+export type GetBlockParams = { height: number } | { hash: string };
+export type GetBlock = {
+  block_header: {
+    hash: string;
+    prev_hash: string;
+    height: number;
+    /** the number of blocks above this block */
+    depth: number;
+  };
+  miner_tx_hash: string;
+  /** the hashes of the other transactions of the block. the node leaves the field out when there are none. */
+  tx_hashes?: string[];
+};
+
+const hash = (x: unknown) => {
+  if (typeof x !== "string" || !/^[0-9a-f]{64}$/i.test(x)) throw 0;
+  return x.toLowerCase();
+};
+const integer = (x: unknown) => {
+  if (typeof x !== "number" || !Number.isSafeInteger(x)) throw 0;
+  return x;
+};
+const unsigned = (x: unknown) => {
+  const value = integer(x);
+  if (value < 0) throw 0;
+  return value;
+};
+
+export const GetBlockResponseSchema = obj({
+  id: lit("0"),
+  jsonrpc: lit("2.0"),
+  result: opt(obj({
+    block_header: obj({ hash, prev_hash: hash, height: unsigned, depth: unsigned }),
+    miner_tx_hash: hash,
+    tx_hashes: opt(arr(hash)),
+    status: opt(lit("OK")),
+  })),
+  error: opt(obj({ code: integer, message: str })),
+});
+
+/**
+ * one block with the hashes of its transactions. the transactions themselves are not in the answer.
+ * @link https://docs.getmonero.org/rpc-library/monerod-rpc/#get_block
+ * @returns null when the height is above the top block of the node.
+ */
+export async function get_block(
+  NODE_URL: string,
+  params: GetBlockParams,
+  signal?: AbortSignal,
+): Promise<GetBlock | null> {
+  const getBlockResponse = await fetch(NODE_URL + "/json_rpc", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: "0",
+      method: "get_block",
+      params,
+    }),
+    signal,
+  });
+  if (!getBlockResponse.ok) {
+    throw new Error(`Failed to get block: ${getBlockResponse.statusText}`);
+  }
+  const parsed = GetBlockResponseSchema.safeParse(await getBlockResponse.json());
+  if (!parsed.success) throw new Error("Failed to parse block from node");
+  const { result, error } = parsed.data;
+  if ((result === undefined) === (error === undefined)) throw new Error("Failed to parse block from node");
+  // -2 is the answer of the node for a height above its top block
+  if (error?.code === -2 && "height" in params) return null;
+  if (error) {
+    throw new Error(
+      `RPC error: ${error.message} (code: ${error.code})`,
+    );
+  }
+  const { block_header, miner_tx_hash, tx_hashes } = result!;
+  if ("height" in params ? block_header.height !== params.height : block_header.hash.toLowerCase() !== params.hash.toLowerCase()) {
+    throw new Error("Block from node does not match the request");
+  }
+  return { block_header, miner_tx_hash, tx_hashes };
+}
 /**
  * Parameters for retrieving block headers in a range.
  *
@@ -550,6 +643,7 @@ export const RESTRICTED_BLOCK_HEADER_RANGE = 1000;
 export async function get_block_headers_range(
   NODE_URL: string,
   params: GetBlockHeadersRangeParams,
+  signal?: AbortSignal,
 ): Promise<GetBlockHeadersRange> {
   //https://github.com/monero-project/monero/blob/48ad374b0d6d6e045128729534dc2508e6999afe/src/rpc/core_rpc_server.cpp#L74
   // #define RESTRICTED_BLOCK_HEADER_RANGE 1000
@@ -570,6 +664,7 @@ export async function get_block_headers_range(
       method: "get_block_headers_range",
       params,
     }),
+    signal,
   });
   if (!getBlockHeadersRangeResponse.ok) {
     throw new Error(
