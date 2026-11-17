@@ -12,6 +12,7 @@ import { publicSuffixRules } from "./public-suffix-list";
 const publicSuffixSet = new Set<string>(publicSuffixRules);
 
 export { TOOL_MAGIC_STRING, type ToolInvocationValidity };
+export { installBridge } from "./bridge";
 export type {
   ToolArm,
   ToolContentZone,
