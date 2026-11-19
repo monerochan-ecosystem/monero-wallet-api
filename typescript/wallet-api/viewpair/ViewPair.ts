@@ -22,7 +22,7 @@ import {
   type MakeTransactionParams,
   type UnsignedTransaction,
 } from "../send-functionality/transactionBuilding";
-import { scanTransactionWithProcessor, type TransactionScan } from "./transactionParsing";
+import { scanTransactionWithProcessor, type ScannedTransaction } from "./transactionParsing";
 import { getMoneroWasmBytes } from "../wasm-processing/wasmLoader";
 
 import { WasmProcessor } from "../wasm-processing/wasmProcessor";
@@ -262,8 +262,26 @@ export class ViewPair extends WasmProcessor {
     return address;
   }
   /** scan one transaction with this view pair and its registered subaddresses. */
-  public scanTransaction(txHex: string, allow_timelock = false): TransactionScan {
-    return scanTransactionWithProcessor(this, txHex, allow_timelock);
+  public scanTransaction({
+    tx_as_hex, allow_timelock, payment_id, invoice_amount,
+  }: {
+    tx_as_hex: string;
+    allow_timelock?: boolean;
+    payment_id?: number;
+    invoice_amount?: bigint;
+  }): ScannedTransaction {
+    const scan = scanTransactionWithProcessor(this, tx_as_hex, allow_timelock);
+    if (payment_id !== undefined) {
+      scan.payment_id = payment_id;
+      scan.outputs = scan.outputs.filter(output => output.payment_id === String(payment_id));
+    }
+    if (payment_id !== undefined || invoice_amount !== undefined) {
+      scan.received_amount = scan.outputs.reduce((sum, output) => sum + BigInt(output.amount), 0n);
+    }
+    if (invoice_amount !== undefined) {
+      scan.invoice_amount_matches = scan.outputs.length > 0 && scan.received_amount === invoice_amount;
+    }
+    return scan;
   }
 
   /**

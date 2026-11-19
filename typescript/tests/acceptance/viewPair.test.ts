@@ -91,9 +91,9 @@ run("one ViewPair scans a signed payment after registering its subaddress; a tim
     const signed = await wallet.signTransaction(await wallet.makeStandardTransaction(destination, amount));
     await Bun.write(out + "/payment.hex", signed);
 
-    expect(scanner.scanTransaction(signed).outputs).toEqual([]);
+    expect(scanner.scanTransaction({ tx_as_hex: signed }).outputs).toEqual([]);
     scanner.registerScanSubaddresses([[1, 0]]);
-    const result = scanner.scanTransaction(signed);
+    const result = scanner.scanTransaction({ tx_as_hex: signed });
     await Bun.write(out + "/scan.json", JSON.stringify(result, null, 2));
     expect(result.outputs).toEqual([expect.objectContaining({ amount, subaddress_index: [1, 0] })]);
 
@@ -107,8 +107,8 @@ run("one ViewPair scans a signed payment after registering its subaddress; a tim
     const coinbase = txs.txs[0].pruned_as_hex + txs.txs[0].prunable_as_hex;
     await Bun.write(out + "/coinbase.hex", coinbase);
     const miner = await ViewPair.create(primary, sender.view_key.view_key);
-    expect(() => miner.scanTransaction(coinbase)).toThrow("timelocked transaction");
-    const allowed = miner.scanTransaction(coinbase, true);
+    expect(() => miner.scanTransaction({ tx_as_hex: coinbase })).toThrow("timelocked transaction");
+    const allowed = miner.scanTransaction({ tx_as_hex: coinbase, allow_timelock: true });
     expect(allowed.unlock_time).toBe("1060");
     expect(allowed.outputs).toEqual([expect.objectContaining({ amount: String(block.block_header.reward) })]);
   } finally {

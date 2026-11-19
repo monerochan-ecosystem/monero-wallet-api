@@ -98,4 +98,4 @@ export type {
   ToolInvocationForValidate,
 } from "./tools/globals";
 export { sendToBackground } from "./tools/globals";
-export { scanTransaction, type TransactionScan } from "./viewpair/transactionParsing";
+export { scanTransaction, type ScannedTransaction } from "./viewpair/transactionParsing";

@@ -7,6 +7,24 @@ test("a signed transaction is scanned without opening a wallet", async () => {
   const result = await scan({ tx_as_hex: fixture.tx_as_hex, primary_address: fixture.primary_address, view_key: fixture.secret_view_key });
   expect(result.tx_hash).toBe(fixture.expected.tx_hash);
   expect(result.outputs.some((output) => output.amount === fixture.expected.amount && output.payment_id === fixture.expected.payment_id)).toBe(true);
+
+  const view = await ViewPair.create(fixture.primary_address, fixture.secret_view_key);
+  const payment_id = Number(fixture.expected.payment_id);
+  const invoice_amount = BigInt(fixture.expected.amount);
+  const payment = view.scanTransaction({ tx_as_hex: fixture.tx_as_hex, payment_id, invoice_amount });
+  expect(payment).toEqual({
+    ...result,
+    payment_id,
+    outputs: result.outputs.filter(output => output.payment_id === String(payment_id)),
+    received_amount: invoice_amount,
+    invoice_amount_matches: true,
+  });
+  expect(view.scanTransaction({ tx_as_hex: fixture.tx_as_hex, payment_id, invoice_amount: invoice_amount - 1n }))
+    .toMatchObject({ received_amount: invoice_amount, invoice_amount_matches: false });
+  expect(view.scanTransaction({ tx_as_hex: fixture.tx_as_hex, payment_id: payment_id + 1, invoice_amount }))
+    .toMatchObject({ outputs: [], received_amount: 0n, invoice_amount_matches: false });
+  expect(view.scanTransaction({ tx_as_hex: fixture.tx_as_hex, payment_id })).not.toHaveProperty("invoice_amount_matches");
+  expect(view.scanTransaction({ tx_as_hex: fixture.tx_as_hex })).toEqual(result);
 });
 
 test("a mismatched view key does not scan a transaction", async () => {
@@ -15,27 +33,27 @@ test("a mismatched view key does not scan a transaction", async () => {
 
 test("one ViewPair scans again after a malformed transaction", async () => {
   const view = await ViewPair.create(fixture.primary_address, fixture.secret_view_key);
-  const first = view.scanTransaction(fixture.tx_as_hex);
-  expect(() => view.scanTransaction("00")).toThrow("invalid transaction");
-  expect(view.scanTransaction(fixture.tx_as_hex)).toEqual(first);
+  const first = view.scanTransaction({ tx_as_hex: fixture.tx_as_hex });
+  expect(() => view.scanTransaction({ tx_as_hex: "00" })).toThrow("invalid transaction");
+  expect(view.scanTransaction({ tx_as_hex: fixture.tx_as_hex })).toEqual(first);
 });
 
 test("a hex string as long as the largest valid transaction reaches the parser", async () => {
   const view = await ViewPair.create(fixture.primary_address, fixture.secret_view_key);
   // 149,400 bytes is the largest valid transaction since hard fork v8.
-  expect(() => view.scanTransaction("00".repeat(149_400))).toThrow("invalid transaction:");
+  expect(() => view.scanTransaction({ tx_as_hex: "00".repeat(149_400) })).toThrow("invalid transaction:");
 });
 
 // fixture.coinbase was mined on regtest at height 1 to the fixture address. it unlocks at block 61.
 test("a coinbase transaction throws because it is timelocked", async () => {
   const view = await ViewPair.create(fixture.primary_address, fixture.secret_view_key);
-  expect(() => view.scanTransaction(fixture.coinbase.tx_as_hex)).toThrow("timelocked transaction");
+  expect(() => view.scanTransaction({ tx_as_hex: fixture.coinbase.tx_as_hex, payment_id: 1001 })).toThrow("timelocked transaction");
   await expect(scan({ tx_as_hex: fixture.coinbase.tx_as_hex, primary_address: fixture.primary_address, view_key: fixture.secret_view_key })).rejects.toThrow("timelocked transaction");
 });
 
 test("allow_timelock returns the outputs of a timelocked coinbase transaction", async () => {
   const view = await ViewPair.create(fixture.primary_address, fixture.secret_view_key);
-  const result = view.scanTransaction(fixture.coinbase.tx_as_hex, true);
+  const result = view.scanTransaction({ tx_as_hex: fixture.coinbase.tx_as_hex, allow_timelock: true });
   expect(result.tx_hash).toBe(fixture.coinbase.expected.tx_hash);
   expect(result.unlock_time).toBe(fixture.coinbase.expected.unlock_time);
   expect(result.outputs).toEqual([expect.objectContaining({ amount: fixture.coinbase.expected.amount, subaddress_index: null })]);
@@ -44,9 +62,9 @@ test("allow_timelock returns the outputs of a timelocked coinbase transaction", 
 
 test("register accepts the primary address and the first subaddress of another account", async () => {
   const view = await ViewPair.create(fixture.primary_address, fixture.secret_view_key);
-  const first = view.scanTransaction(fixture.tx_as_hex);
+  const first = view.scanTransaction({ tx_as_hex: fixture.tx_as_hex });
   expect(() => view.registerScanSubaddresses([[0, 0], [1, 0]])).not.toThrow();
-  expect(view.scanTransaction(fixture.tx_as_hex)).toEqual(first);
+  expect(view.scanTransaction({ tx_as_hex: fixture.tx_as_hex })).toEqual(first);
 });
 
 for (const minor of [0.5, -1, NaN, 0x100000000]) {

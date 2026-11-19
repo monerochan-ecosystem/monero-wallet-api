@@ -2,9 +2,12 @@ import type { WasmProcessor } from "../wasm-processing/wasmProcessor";
 import { ViewPair } from "./ViewPair";
 import type { Output } from "../node-interaction/binaryEndpoints";
 
-export type TransactionScan = {
+export type ScannedTransaction = {
   tx_hash: string;
   unlock_time: string;
+  payment_id?: number;
+  received_amount?: bigint;
+  invoice_amount_matches?: boolean;
   // json keeps amounts and payment ids as strings; subaddresses include account and address indices.
   outputs: (Pick<Output, "index_in_transaction" | "stealth_address"> & {
     amount: string;
@@ -20,21 +23,21 @@ export async function scanTransaction(params: {
   view_key: string;
   subaddresses?: [number, number][];
   allow_timelock?: boolean;
-}): Promise<TransactionScan> {
+}): Promise<ScannedTransaction> {
   const view = await ViewPair.create(params.primary_address, params.view_key);
   view.registerScanSubaddresses(params.subaddresses ?? []);
-  return view.scanTransaction(params.tx_as_hex, params.allow_timelock);
+  return view.scanTransaction({ tx_as_hex: params.tx_as_hex, allow_timelock: params.allow_timelock });
 }
 
 export function scanTransactionWithProcessor<T extends WasmProcessor>(
   processor: T,
   txHex: string,
   allow_timelock = false,
-): TransactionScan {
+): ScannedTransaction {
   if (!/^(?:[0-9a-fA-F]{2})+$/.test(txHex)) {
     throw new Error("invalid transaction hex");
   }
-  let result: TransactionScan | undefined;
+  let result: ScannedTransaction | undefined;
   let error: string | undefined;
   processor.writeToWasmMemory = (ptr, len) => processor.writeString(ptr, len, txHex);
   processor.readFromWasmMemory = (ptr, len) => {
