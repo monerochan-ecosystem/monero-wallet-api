@@ -1,6 +1,7 @@
 import { afterEach, expect, spyOn, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { NodeUrl } from "../../../wallet-api/node-interaction/nodeUrl";
+import { resetWasmLoaderForTests, setWasmUrls } from "../../../wallet-api/wasm-processing/wasmLoader";
 import { WasmProcessor } from "../../../wallet-api/wasm-processing/wasmProcessor";
 
 const header = {
@@ -179,13 +180,13 @@ test("getBlock accepts an empty block with no transaction hash list", async () =
 
 test("getBlock normalizes accepted hashes for transaction comparisons", async () => {
   const expected = {
-    block_header: { ...block.block_header, hash: "ab".repeat(32), prev_hash: "cd".repeat(32) },
     ...block,
+    block_header: { ...block.block_header, hash: "ab".repeat(32), prev_hash: "cd".repeat(32) },
     miner_tx_hash: "ef".repeat(32), tx_hashes: ["a1".repeat(32)],
   };
   const upper = {
-    block_header: { ...expected.block_header, hash: expected.block_header.hash.toUpperCase(), prev_hash: expected.block_header.prev_hash.toUpperCase() },
     ...expected,
+    block_header: { ...expected.block_header, hash: expected.block_header.hash.toUpperCase(), prev_hash: expected.block_header.prev_hash.toUpperCase() },
     miner_tx_hash: expected.miner_tx_hash.toUpperCase(), tx_hashes: expected.tx_hashes.map(hash => hash.toUpperCase()),
   };
   const { node } = await setup("uppercase-hashes", [rpc(upper)]);
@@ -221,3 +222,118 @@ for (const [name, response, call] of [
     expect(signals[1]).toBe(controller.signal);
   });
 }
+
+test("a height hit makes no RPC and a different expected hash refreshes it", async () => {
+  const { height } = block.block_header;
+  const replacement = { ...block, block_header: { ...block.block_header, hash: "55".repeat(32) } };
+  const { node, requests } = await setup("stable-cache", [rpc(block), rpc(replacement)]);
+
+  const first = await node.getCachedBlock({ height });
+  expect(first).toEqual(block);
+  first!.tx_hashes!.length = 0;
+  expect(await node.getCachedBlock({ height })).toEqual(block);
+  expect(requests).toHaveLength(1);
+
+  expect(await node.getCachedBlock({ height, expected_hash: replacement.block_header.hash })).toEqual(replacement);
+  expect(await node.getCachedBlock({ height })).toEqual(replacement);
+  expect(requests.map(request => request.body)).toEqual(Array.from({ length: 2 }, () => ({
+    id: "0", jsonrpc: "2.0", method: "get_block", params: { height },
+  })));
+});
+
+test("a cache miss clears old blocks when the cached parent hash differs", async () => {
+  const parent = block.block_header;
+  const child = { ...block, block_header: {
+    ...parent, height: parent.height + 1, hash: "55".repeat(32), prev_hash: parent.hash,
+  } };
+  const newBlock = { ...block, block_header: {
+    ...parent, height: parent.height + 2, hash: "66".repeat(32), prev_hash: "77".repeat(32),
+  } };
+  const { node, requests } = await setup("cache-parent-mismatch", [rpc(block), rpc(child), rpc(newBlock), rpc(block)]);
+
+  await node.getCachedBlock({ height: parent.height });
+  await node.getCachedBlock({ height: child.block_header.height });
+  expect(await node.getCachedBlock({ height: parent.height })).toEqual(block);
+  expect(requests).toHaveLength(2);
+
+  expect(await node.getCachedBlock({ height: newBlock.block_header.height })).toEqual(newBlock);
+  expect(await node.getCachedBlock({ height: newBlock.block_header.height })).toEqual(newBlock);
+  expect(requests).toHaveLength(3);
+
+  expect(await node.getCachedBlock({ height: parent.height })).toEqual(block);
+  expect(requests).toHaveLength(4);
+});
+
+test("an older response cannot refill the cache after a successor conflict", async () => {
+  const { height, hash } = block.block_header;
+  const successor = { ...block, block_header: {
+    ...block.block_header, height: height + 2, hash: "55".repeat(32), prev_hash: "66".repeat(32),
+  } };
+  const replacement = { ...block, block_header: { ...block.block_header, hash: "88".repeat(32) } };
+  const newParent = { ...block, block_header: {
+    ...block.block_header, height: height + 1, hash: "77".repeat(32), prev_hash: replacement.block_header.hash,
+  } };
+  const newSuccessor = { ...successor, block_header: {
+    ...successor.block_header, hash: "99".repeat(32), prev_hash: newParent.block_header.hash,
+  } };
+  const { node, requests } = await setup("cache-delayed-refill", [
+    rpc(successor), rpc(newParent), rpc(replacement), rpc(newSuccessor),
+  ]);
+  await node.getCachedBlock({ height: height + 2 });
+  const delayed = Promise.withResolvers<typeof block>();
+  const getBlock = node.getBlock.bind(node);
+  const fetch = spyOn(node, "getBlock").mockImplementationOnce(() => delayed.promise).mockImplementation(getBlock);
+  restore = () => fetch.mockRestore();
+
+  const pending = node.getCachedBlock({ height });
+  expect(await node.getCachedBlock({ height: height + 1 })).toEqual(newParent);
+  delayed.resolve(block);
+  expect(await pending).toEqual(block);
+  expect(await node.getCachedBlock({ height })).toEqual(replacement);
+  expect(await node.getCachedBlock({ height: height + 2 })).toEqual(newSuccessor);
+  expect(requests).toHaveLength(4);
+});
+
+test("cache trimming keeps the most recently requested heights", async () => {
+  const hashes = ["aa", "bb", "cc", "dd"].map(byte => byte.repeat(32));
+  const reply = (index: number) => rpc({ ...block, block_header: { ...block.block_header, height: index + 20, hash: hashes[index], prev_hash: hashes[index - 1] ?? block.block_header.prev_hash } });
+  const { requests } = await setup("cache-trim", [0, 1, 2, 3, 0, 2].map(reply));
+  const node = new NodeUrl("https://node.test", { block_cache_limit: 3, block_cache_after_trim: 2 });
+
+  for (const index of [0, 0, 0, 1, 2, 1, 3, 1, 3, 0, 2]) {
+    expect((await node.getCachedBlock({ height: index + 20 }))?.block_header.hash).toBe(hashes[index]);
+  }
+  expect(requests.map(request => (request.body as { params: { height: number } }).params.height))
+    .toEqual([20, 21, 22, 23, 20, 22]);
+});
+
+test("the node URL is read-only and each instance has its own cache", async () => {
+  const { node, requests } = await setup("cache-retry", [rpc({}), rpc(block), rpc(block)]);
+  const { height } = block.block_header;
+  await expect(node.getCachedBlock({ height })).rejects.toThrow("Failed to parse block");
+  expect(await node.getCachedBlock({ height })).toMatchObject({ tx_hashes: block.tx_hashes });
+  expect(Reflect.set(node, "node_url", "https://other.test")).toBe(false);
+  expect(node.node_url).toBe("https://node.test");
+  const other = new NodeUrl("https://other.test");
+  expect(await other.getCachedBlock({ height })).toEqual(block);
+  expect(await node.getCachedBlock({ height })).toEqual(block);
+  expect(await other.getCachedBlock({ height })).toEqual(block);
+  expect(requests.map(request => request.url)).toEqual([
+    "https://node.test/json_rpc", "https://node.test/json_rpc", "https://other.test/json_rpc",
+  ]);
+});
+
+test("NodeUrl.create uses the configured block cache limit and trim size", async () => {
+  const hashes = ["11", "22", "33"].map(byte => byte.repeat(32));
+  const reply = (hash: string) => rpc({ ...block, block_header: { ...block.block_header, height: 20 + hashes.indexOf(hash), hash, prev_hash: hashes[hashes.indexOf(hash) - 1] ?? block.block_header.prev_hash } });
+  const { requests } = await setup("custom-cache-size", [
+    ...hashes.map(reply), reply(hashes[0]!), reply(hashes[1]!),
+  ]);
+  setWasmUrls({ monero: "dist/monero_wallet_api.wasm" });
+  restore = resetWasmLoaderForTests;
+  const node = await NodeUrl.create("https://node.test", { block_cache_limit: 2, block_cache_after_trim: 1 });
+  const read = (index: number) => node.getCachedBlock({ height: index + 20 });
+  for (const index of [0, 1, 0, 2, 2, 0, 1]) await read(index);
+  expect(requests.map(request => (request.body as { params: { height: number } }).params.height))
+    .toEqual([20, 21, 22, 20, 21]);
+});

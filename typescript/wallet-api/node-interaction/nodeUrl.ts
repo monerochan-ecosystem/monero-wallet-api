@@ -198,9 +198,40 @@ export class NodeUrl extends WasmProcessor {
   ): Promise<SendRawTransactionResult> {
     return send_raw_transaction(this.node_url, tx_as_hex, do_not_relay, signal);
   }
+  // the first entry is the least recently used block.
+  private blocks = new Map<number, GetBlock>();
+
   public getBlock(params: GetBlockParams, signal?: AbortSignal): Promise<GetBlock | null> {
     return get_block(this.node_url, params, signal);
   }
+
+  /** cached height snapshot. expected_hash refreshes a hit that disagrees with a checked header. */
+  public async getCachedBlock({ height, expected_hash }: { height: number; expected_hash?: string }, signal?: AbortSignal): Promise<GetBlock | null> {
+    signal?.throwIfAborted();
+    const blocks = this.blocks;
+    const cached = blocks.get(height);
+    const hit = cached && (expected_hash === undefined || cached.block_header.hash === expected_hash);
+    const block = hit ? cached : await this.getBlock({ height }, signal);
+    signal?.throwIfAborted();
+    if (!block) return null;
+    // a request from before a reset must not refill the new cache.
+    if (blocks !== this.blocks) return structuredClone(block);
+    if (!hit) {
+      const parent = blocks.get(height - 1);
+      const next = blocks.get(height + 1);
+      if ((parent && parent.block_header.hash !== block.block_header.prev_hash) ||
+          (next && next.block_header.prev_hash !== block.block_header.hash)) this.blocks = new Map();
+    }
+    // set alone keeps an existing entry in place. delete and reinsert moves it to the end.
+    // trim from the front to remove the least recently used blocks first.
+    this.blocks.delete(height);
+    this.blocks.set(height, block);
+    if (this.blocks.size > this.blockCacheLimit) {
+      while (this.blocks.size > this.blockCacheAfterTrim) this.blocks.delete(this.blocks.keys().next().value!);
+    }
+    return structuredClone(block);
+  }
+
   /**
    * Retrieve block headers for a specified range of heights.
    * @link https://docs.getmonero.org/rpc-library/monerod-rpc/#get_block_headers_range
