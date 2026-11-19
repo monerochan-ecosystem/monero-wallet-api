@@ -42,6 +42,7 @@ import {
 } from "../send-functionality/transactionBuilding";
 import { WasmProcessor } from "../wasm-processing/wasmProcessor";
 import { getMoneroWasmBytes } from "../wasm-processing/wasmLoader";
+import { sleep } from "../io/sleep";
 /**
  * This class is useful to interact with Moneros DaemonRpc binary requests in a convenient way.
  * (similar to how you would interact with a REST api that gives you json back.)
@@ -258,6 +259,30 @@ export class NodeUrl extends WasmProcessor {
     const value = await this.getInfo(signal);
     this.cachedInfo = { at: Date.now(), value };
     return value;
+  }
+
+  public async pollTip(
+    notify: (block: GetBlock, signal: AbortSignal, started_at?: number) => void | Promise<void>,
+    signal: AbortSignal,
+    interval = 1000,
+    onError?: (error: unknown) => void,
+  ): Promise<void> {
+    let lastHash: string | undefined;
+    while (!signal.aborted) {
+      try {
+        const started_at = performance.now();
+        const { height, top_block_hash } = await this.getInfo(signal);
+        const hash = top_block_hash.toLowerCase();
+        const block = hash !== lastHash && await this.getCachedBlock({ height: height - 1, expected_hash: hash }, signal);
+        if (block) {
+          await notify(block, signal, started_at);
+          lastHash = hash;
+        }
+      } catch (error) {
+        if (!signal.aborted) onError?.(error);
+      }
+      await sleep(interval, signal).catch(() => {});
+    }
   }
 
   async addGenesisHashToBlockIds(params: GetBlocksBinRequest) {

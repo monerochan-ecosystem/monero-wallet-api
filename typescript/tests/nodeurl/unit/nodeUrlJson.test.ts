@@ -104,6 +104,34 @@ for (const interval_ms of [undefined, 1000]) {
   });
 }
 
+test("pollTip caches and delivers each new tip, including a replacement at the same height", async () => {
+  const replacement = { ...block, block_header: { ...header, hash: "ab".repeat(32) } };
+  const newInfo = { ...info, top_block_hash: replacement.block_header.hash };
+  const { node, requests } = await setup("poll-tip", [
+    rpc(info), rpc(block), rpc(info),
+    rpc(newInfo), rpcError(-1, "node busy"), rpc(newInfo), rpc(replacement),
+  ]);
+  const controller = new AbortController();
+  const delivered: string[] = [];
+  const errors: string[] = [];
+  await node.pollTip(async ({ block_header }, signal) => {
+    delivered.push(block_header.hash);
+    expect((await node.getCachedBlock({ height: block_header.height }, signal))?.block_header.hash)
+      .toBe(block_header.hash);
+    if (delivered.length === 2) controller.abort();
+  }, controller.signal, 0, error => {
+    errors.push(String(error));
+    if (requests.length > 7) controller.abort();
+  });
+
+  expect(delivered).toEqual([header.hash, replacement.block_header.hash]);
+  expect(errors).toEqual(["Error: RPC error: node busy (code: -1)"]);
+  expect(requests.map(request => request.body)).toEqual(
+    ["get_info", "get_block", "get_info", "get_info", "get_block", "get_info", "get_block"]
+      .map(method => ({ id: "0", jsonrpc: "2.0", method, ...(method === "get_block" && { params: { height: header.height } }) })),
+  );
+});
+
 test("getBlock accepts a height or hash and preserves missing-block and RPC errors", async () => {
   const { node, requests } = await setup("get-block", [
     rpc(block), rpc(block), rpcError(-2, "height too high"),
