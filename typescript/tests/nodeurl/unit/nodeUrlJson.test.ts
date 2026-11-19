@@ -82,6 +82,26 @@ test("a NodeUrl constructor uses JSON RPC without initializing WASM and keeps re
   expect(node.tinywasi).toBeUndefined();
 });
 
+for (const interval_ms of [undefined, 1000]) {
+  const interval = interval_ms ?? 5000;
+  test(`getInfoDebounced refreshes after ${interval} ms`, async () => {
+    const newer = { ...info, height: info.height + 1 };
+    const { node, requests } = await setup(`get-info-debounced-${interval}`, [rpc(info), rpc(newer)]);
+    const clock = spyOn(Date, "now").mockReturnValue(1000);
+    restore = () => clock.mockRestore();
+    const read = () => interval_ms === undefined ? node.getInfoDebounced() : node.getInfoDebounced({ interval_ms });
+
+    expect(await read()).toEqual(info);
+    clock.mockReturnValue(1000 + interval - 1);
+    expect(await read()).toEqual(info);
+    expect(requests).toHaveLength(1);
+    clock.mockReturnValue(1000 + interval);
+    expect(await read()).toEqual(newer);
+    expect(await read()).toEqual(newer);
+    expect(requests).toHaveLength(2);
+  });
+}
+
 test("getBlock accepts a height or hash and preserves missing-block and RPC errors", async () => {
   const { node, requests } = await setup("get-block", [
     rpc(block), rpc(block), rpcError(-2, "height too high"),

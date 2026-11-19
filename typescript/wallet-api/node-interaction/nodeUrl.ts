@@ -25,6 +25,14 @@ import {
 } from "./jsonEndpoints";
 export type NETWORKS = "mainnet" | "stagenet" | "testnet";
 
+const BLOCK_CACHE_LIMIT = 6400;
+const BLOCK_CACHE_AFTER_TRIM = 4800;
+
+type BlockCacheOptions = {
+  block_cache_limit?: number;
+  block_cache_after_trim?: number;
+};
+
 import {
   makeInput,
   sampleDecoys,
@@ -40,10 +48,26 @@ import { getMoneroWasmBytes } from "../wasm-processing/wasmLoader";
  * {@link https://docs.getmonero.org/rpc-library/monerod-rpc/#get_blocksbin}
  */
 export class NodeUrl extends WasmProcessor {
+  readonly #nodeUrl: string;
+  private readonly blockCacheLimit: number;
+  private readonly blockCacheAfterTrim: number;
+
   // construct for json rpc; create() also initializes wasm for the binary helpers.
-  public constructor(public node_url: string) {
+  public constructor(node_url: string, options: BlockCacheOptions = {}) {
     super();
+    this.#nodeUrl = node_url;
+    const limit = options.block_cache_limit ?? BLOCK_CACHE_LIMIT;
+    const afterTrim = options.block_cache_after_trim ?? Math.min(BLOCK_CACHE_AFTER_TRIM, limit);
+    if (!Number.isSafeInteger(limit) || !Number.isSafeInteger(afterTrim) || limit < 0 || afterTrim < 0 || afterTrim > limit) {
+      throw new RangeError("invalid block cache sizes");
+    }
+    this.blockCacheLimit = limit;
+    this.blockCacheAfterTrim = afterTrim;
   }
+  public get node_url(): string {
+    return this.#nodeUrl;
+  }
+
   private _network: NETWORKS | undefined;
   get network(): NETWORKS {
     return this._network as NETWORKS; // we set this in ViewPair.create()
@@ -55,8 +79,8 @@ export class NodeUrl extends WasmProcessor {
     }
     return this._genesis_hash; // set in first call to ViewPair.getBlocksBin, if params.block_ids is supplied
   }
-  public static async create(node_url?: string): Promise<NodeUrl> {
-    const nodeUrl = new NodeUrl(node_url || LOCAL_NODE_DEFAULT_URL);
+  public static async create(node_url?: string, options?: BlockCacheOptions): Promise<NodeUrl> {
+    const nodeUrl = new NodeUrl(node_url || LOCAL_NODE_DEFAULT_URL, options);
     await nodeUrl.initWasmModule(await getMoneroWasmBytes());
     return nodeUrl;
   }
@@ -193,6 +217,17 @@ export class NodeUrl extends WasmProcessor {
   public async getInfo(signal?: AbortSignal) {
     return get_info(this.node_url, signal);
   }
+
+  private cachedInfo?: { at: number; value: Awaited<ReturnType<typeof get_info>> };
+
+  public async getInfoDebounced({ interval_ms = 5000, signal }: { interval_ms?: number; signal?: AbortSignal } = {}) {
+    signal?.throwIfAborted();
+    if (this.cachedInfo && Date.now() - this.cachedInfo.at < interval_ms) return this.cachedInfo.value;
+    const value = await this.getInfo(signal);
+    this.cachedInfo = { at: Date.now(), value };
+    return value;
+  }
+
   async addGenesisHashToBlockIds(params: GetBlocksBinRequest) {
     if (params.block_ids) {
       if (!this._genesis_hash && this.network === "mainnet") {
