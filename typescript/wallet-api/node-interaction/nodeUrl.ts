@@ -18,6 +18,7 @@ import {
   get_output_distribution,
   send_raw_transaction,
   type FeeEstimateResponse,
+  type GetBlock,
   type GetBlockParams,
   type GetBlockHeadersRangeParams,
   type GetOutputDistributionParams,
@@ -197,7 +198,7 @@ export class NodeUrl extends WasmProcessor {
   ): Promise<SendRawTransactionResult> {
     return send_raw_transaction(this.node_url, tx_as_hex, do_not_relay, signal);
   }
-  public async getBlock(params: GetBlockParams, signal?: AbortSignal) {
+  public getBlock(params: GetBlockParams, signal?: AbortSignal): Promise<GetBlock | null> {
     return get_block(this.node_url, params, signal);
   }
   /**

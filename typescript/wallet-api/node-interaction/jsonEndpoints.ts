@@ -545,17 +545,43 @@ export function parseGetBlockHeadersRangeResponse(
 }
 
 export type GetBlockParams = { height: number } | { hash: string };
+export type GetBlockHeader = {
+  hash: string;
+  prev_hash: string;
+  height: number;
+  /** the number of blocks above this block */
+  depth: number;
+  block_size?: number;
+  block_weight?: number;
+  cumulative_difficulty?: number;
+  cumulative_difficulty_top64?: number;
+  difficulty?: number;
+  difficulty_top64?: number;
+  long_term_weight?: number;
+  major_version?: number;
+  miner_tx_hash?: string;
+  minor_version?: number;
+  nonce?: number;
+  num_txes?: number;
+  orphan_status?: boolean;
+  pow_hash?: string;
+  reward?: number;
+  timestamp?: number;
+  wide_cumulative_difficulty?: string;
+  wide_difficulty?: string;
+};
+
 export type GetBlock = {
-  block_header: {
-    hash: string;
-    prev_hash: string;
-    height: number;
-    /** the number of blocks above this block */
-    depth: number;
-  };
+  block_header: GetBlockHeader;
   miner_tx_hash: string;
   /** the hashes of the other transactions of the block. the node leaves the field out when there are none. */
   tx_hashes?: string[];
+  blob?: string;
+  json?: string;
+  credits?: number;
+  top_hash?: string;
+  status?: "OK";
+  untrusted?: boolean;
 };
 
 const hash = (x: unknown) => {
@@ -576,10 +602,35 @@ export const GetBlockResponseSchema = obj({
   id: lit("0"),
   jsonrpc: lit("2.0"),
   result: opt(obj({
-    block_header: obj({ hash, prev_hash: hash, height: unsigned, depth: unsigned }),
+    block_header: obj({
+      hash, prev_hash: hash, height: unsigned, depth: unsigned,
+      block_size: opt(unsigned),
+      block_weight: opt(unsigned),
+      cumulative_difficulty: opt(num),
+      cumulative_difficulty_top64: opt(num),
+      difficulty: opt(num),
+      difficulty_top64: opt(num),
+      long_term_weight: opt(unsigned),
+      major_version: opt(unsigned),
+      miner_tx_hash: opt(hash),
+      minor_version: opt(unsigned),
+      nonce: opt(unsigned),
+      num_txes: opt(unsigned),
+      orphan_status: opt(bool),
+      pow_hash: opt(str),
+      reward: opt(unsigned),
+      timestamp: opt(unsigned),
+      wide_cumulative_difficulty: opt(str),
+      wide_difficulty: opt(str),
+    }),
     miner_tx_hash: hash,
     tx_hashes: opt(arr(hash)),
+    blob: opt(str),
+    json: opt(str),
+    credits: opt(num),
+    top_hash: opt(str),
     status: opt(lit("OK")),
+    untrusted: opt(bool),
   })),
   error: opt(obj({ code: integer, message: str })),
 });
@@ -621,11 +672,11 @@ export async function get_block(
       `RPC error: ${error.message} (code: ${error.code})`,
     );
   }
-  const { block_header, miner_tx_hash, tx_hashes } = result!;
+  const { block_header } = result!;
   if ("height" in params ? block_header.height !== params.height : block_header.hash.toLowerCase() !== params.hash.toLowerCase()) {
     throw new Error("Block from node does not match the request");
   }
-  return { block_header, miner_tx_hash, tx_hashes };
+  return result!;
 }
 /**
  * Parameters for retrieving block headers in a range.

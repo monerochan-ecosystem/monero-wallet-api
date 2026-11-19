@@ -24,7 +24,8 @@ const info = {
 };
 const headers = { credits: 0, status: "OK", top_hash: "", untrusted: false, headers: [header] };
 const block = {
-  block_header: { hash: header.hash, prev_hash: header.prev_hash, height: header.height, depth: header.depth },
+  block_header: header,
+  blob: "abcd", json: "{\"tx_hashes\":[]}", credits: 0, top_hash: "", status: "OK" as const, untrusted: false,
   miner_tx_hash: header.miner_tx_hash,
   tx_hashes: ["44".repeat(32)],
 };
@@ -138,6 +139,8 @@ const malformed: [string, unknown][] = [
   ["hash-list-has-non-hash", rpc({ ...block, tx_hashes: ["<script>throw 1</script>"] })],
   ["hash-list-has-object", rpc({ ...block, tx_hashes: [{}] })],
   ["failed-status", rpc({ ...block, status: "BUSY" })],
+  ["invalid-orphan-status", rpc({ ...block, block_header: { ...block.block_header, orphan_status: "false" } })],
+  ["invalid-blob", rpc({ ...block, blob: {} })],
 ];
 for (const field of ["height", "depth"] as const) {
   for (const [label, value] of [["missing", undefined], ["negative", -1], ["fraction", 1.5], ["unsafe", 2 ** 53], ["string", "20"]] as const) {
@@ -156,7 +159,7 @@ for (const [name, response] of malformed) {
   });
 }
 
-test("getBlock returns only known fields and discards prototype keys", async () => {
+test("getBlock returns the full validated result and discards unknown fields", async () => {
   const poison = JSON.parse('{"__proto__":{"polluted":true},"constructor":{"prototype":{"polluted":true}},"extra":"<script>throw 1</script>"}');
   const response = { ...rpc({ ...block, ...poison, block_header: { ...header, ...poison } }), ...poison };
   const { node } = await setup("extra-fields", [response]);
@@ -168,7 +171,7 @@ test("getBlock returns only known fields and discards prototype keys", async () 
 });
 
 test("getBlock accepts an empty block with no transaction hash list", async () => {
-  const empty = { block_header: block.block_header, miner_tx_hash: block.miner_tx_hash };
+  const empty = { ...block, tx_hashes: undefined };
   const { node } = await setup("empty-block", [rpc(empty), rpc({ ...empty, tx_hashes: [] })]);
   expect(await node.getBlock({ height: 20 })).toEqual(empty);
   expect((await node.getBlock({ height: 20 }))!.tx_hashes).toEqual([]);
@@ -177,10 +180,12 @@ test("getBlock accepts an empty block with no transaction hash list", async () =
 test("getBlock normalizes accepted hashes for transaction comparisons", async () => {
   const expected = {
     block_header: { ...block.block_header, hash: "ab".repeat(32), prev_hash: "cd".repeat(32) },
+    ...block,
     miner_tx_hash: "ef".repeat(32), tx_hashes: ["a1".repeat(32)],
   };
   const upper = {
     block_header: { ...expected.block_header, hash: expected.block_header.hash.toUpperCase(), prev_hash: expected.block_header.prev_hash.toUpperCase() },
+    ...expected,
     miner_tx_hash: expected.miner_tx_hash.toUpperCase(), tx_hashes: expected.tx_hashes.map(hash => hash.toUpperCase()),
   };
   const { node } = await setup("uppercase-hashes", [rpc(upper)]);
