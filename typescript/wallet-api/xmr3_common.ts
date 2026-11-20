@@ -99,3 +99,12 @@ export type {
 } from "./tools/globals";
 export { sendToBackground } from "./tools/globals";
 export { scanTransaction, type ScannedTransaction } from "./viewpair/transactionParsing";
+export {
+  openTrackers,
+  type Trackers,
+  TransactionTracker,
+  type OpenTrackersOptions,
+  type NewTrackerResult,
+  type TransactionTrackerState,
+  type TrackedTransaction,
+} from "./node-interaction/openTrackers";
