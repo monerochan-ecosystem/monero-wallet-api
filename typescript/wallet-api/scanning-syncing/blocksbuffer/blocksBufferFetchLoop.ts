@@ -4,6 +4,8 @@ import {
   get_info,
   mergeRanges,
   NodeUrl,
+  selectAnchors,
+  replaceReorgRange,
   sleep,
   type BlockInfo,
   type CacheRange,
@@ -17,6 +19,7 @@ import {
 import { log } from "../../io/logging";
 export type GetBlocksBinBufferItem = {
   local_uuid: string;
+  reorg?: boolean;
   get_blocks_result_meta: GetBlocksResultMeta;
   data: Uint8Array;
 };
@@ -157,6 +160,7 @@ export async function* blocksBufferFetchLoop(
       connection_status.sync.scanned_ranges = parse_result.scanned_ranges;
       current_range = parse_result.current_range;
       if (parse_result.split_height) {
+        bufferItem.reorg = true;
         // push a new ReorgInfo entry for this reorg
         if (!connection_status.sync.reorg_info) {
           connection_status.sync.reorg_info = {
@@ -391,39 +395,7 @@ export async function updateBlocksBufferScanHeight(
     return { current_range: oldRange, scanned_ranges };
   }
 
-  // 1. add new scanned range
-  let anchor: BlockInfo | undefined = undefined;
-  let anchor_candidate: BlockInfo | undefined = undefined;
-  if (oldRange.block_hashes.length >= 3) {
-    const old_anchor = oldRange.block_hashes.at(-1);
-    const old_anchor_candidate = oldRange.block_hashes.at(-2);
-    anchor = old_anchor;
-    anchor_candidate = old_anchor_candidate;
-
-    if (
-      // if the old range has an anchor, and the anchor is more than 200 blocks old
-      typeof old_anchor?.block_height === "number" &&
-      current_blockhash.block_height - old_anchor.block_height > 200
-    ) {
-      anchor = old_anchor_candidate; // use the anchor_candidate as anchor
-      // new anchor_candidate: is the one 100 blocks in, or the old scan tip
-      anchor_candidate =
-        result_meta.block_infos.slice(-100)[0] || oldRange?.block_hashes.at(0); // use  use the old scan tip as anchor candidate
-    }
-  }
-  // if there is no old anchor, use the one 100 blocks in, or the last block hash
-  anchor =
-    anchor ||
-    result_meta.block_infos.slice(-100)[0] ||
-    last_block_hash_of_result;
-  // carry over the old anchor candidate or use the last block
-  anchor_candidate = anchor_candidate || last_block_hash_of_result;
-  const newRange = {
-    start: current_blockhash.block_height,
-    end: last_block_hash_of_result.block_height,
-    block_hashes: [last_block_hash_of_result, anchor_candidate, anchor],
-  };
-
+  const newRange = selectAnchors(result_meta.block_infos, 0, oldRange);
   return {
     current_range: makeNewBlocksBufferScanRange(newRange, scanned_ranges),
     scanned_ranges,
@@ -464,39 +436,7 @@ export async function handleBlocksBufferReorg(
     // still a chance to find the split height, (could be candidate_anchor or anchor)
     if (!split_height) continue;
 
-    // we found the split height
-    // find current range in scanned ranges and change its end value + latest_block_hash
-    oldRange.end = split_height.block_height;
-    oldRange.block_hashes[0] = split_height;
-    // fix current_range
-    let anchor: BlockInfo | undefined = result_meta.block_infos.slice(-100)[0]; // if we got lots of new blocks
-    const old_anchor = oldRange.block_hashes.at(-1);
-    if (
-      !anchor &&
-      old_anchor &&
-      split_height.block_height > old_anchor.block_height //if we did not get many new blocks + split height was candidate anchor
-    ) {
-      anchor = old_anchor; // we keep the anchor the same
-    }
-    if (!anchor) anchor = split_height;
-    let last_block_hash_of_result = result_meta.block_infos.at(-1)!;
-
-    const end = last_block_hash_of_result.block_height;
-
-    const start = current_range.start > end ? end : current_range.start;
-    // preserve the old deep anchor (3rd element) so subsequent reorgs
-    // have a fallback beyond the split height. without this, both anchors
-    // point to the same height and the next pop past it is catastrophic.
-    const oldDeepAnchor = oldRange.block_hashes.at(-1);
-    const newAnchor =
-      oldDeepAnchor && oldDeepAnchor.block_height < anchor.block_height
-        ? oldDeepAnchor
-        : anchor;
-    const newRange = {
-      start,
-      end,
-      block_hashes: [last_block_hash_of_result, anchor, newAnchor],
-    };
+    const newRange = replaceReorgRange(result_meta.block_infos, split_height_index, oldRange);
     return {
       current_range: makeNewBlocksBufferScanRange(newRange, scanned_ranges),
       scanned_ranges,

@@ -18,7 +18,17 @@
  *   works when scanning a subset of the batch via endIndex
  */
 import { test, expect } from "bun:test";
-import { selectAnchors, findTipIndex } from "../../../dist/xmr3";
+import {
+  CatastrophicReorgError,
+  findTipIndex,
+  makeWorkItemsFromBlocksBuffer,
+  processScanResult,
+  selectAnchors,
+  updateBlocksBufferScanHeight,
+  type GetBlocksResultMeta,
+  type ScanCache,
+  type WorkItem,
+} from "../../../dist/xmr3";
 import type { BlockInfo, CacheRange } from "../../../dist/xmr3";
 
 function bi(height: number, hash?: string): BlockInfo {
@@ -384,4 +394,70 @@ test("13: findTipIndex returns empty_blocks_array on empty block_infos", () => {
 
   console.log("[test 13] result:", result);
   expect(result).toBe("empty_blocks_array");
+});
+
+test("fetcher and wallet rotate the same anchors on one-block batches", async () => {
+  let range: CacheRange = { start: 0, end: 200, block_hashes: [bi(200), bi(0), bi(0)] };
+  const scannedRanges = [range];
+  for (const [tip, heights] of [[201, [201, 200, 0]], [202, [202, 201, 200]]] as const) {
+    const block_infos = [bi(tip - 1), bi(tip)];
+    const expected = heights.map((height) => bi(height));
+    expect(selectAnchors(block_infos, 0, range).block_hashes).toEqual(expected);
+    ({ current_range: range } = await updateBlocksBufferScanHeight(range, { block_infos } as GetBlocksResultMeta, scannedRanges));
+    expect(range.block_hashes).toEqual(expected);
+  }
+
+  const block_infos = [bi(199), bi(200, "new-200"), bi(201, "new-201"), bi(202, "new-202")];
+  await expect(updateBlocksBufferScanHeight(range, { block_infos } as GetBlocksResultMeta, scannedRanges))
+    .rejects.toBeInstanceOf(CatastrophicReorgError);
+});
+
+test.each([1004, 1005])("wallet and fetch ranges adopt a replacement tip at %i", async (end) => {
+  const previous: CacheRange = {
+    start: 0, end: 1005, block_hashes: [bi(1005), bi(999), bi(899)],
+  };
+  const block_infos = [
+    bi(999),
+    ...makeBlockInfos(1000, end - 999).map(({ block_height }) => bi(block_height, `new-${block_height}`)),
+  ];
+  const cache = {
+    primary_address: "test", daemon_height: 1006, outputs: {}, own_key_images: {},
+    scanned_ranges: [structuredClone(previous)],
+  } satisfies ScanCache;
+  await processScanResult({
+    from_height: 999, to_height: end,
+    result: {
+      primary_address: cache.primary_address, daemon_height: end + 1,
+      new_height: 999, block_infos, outputs: [], all_key_images: [],
+    },
+    scanCache: cache,
+  });
+  const fetch = await updateBlocksBufferScanHeight(previous, { block_infos } as GetBlocksResultMeta, [previous]);
+  const expected = { start: 0, end, block_hashes: [bi(end, `new-${end}`), bi(999), bi(899)] };
+  expect(cache.scanned_ranges).toEqual([expected]);
+  expect(fetch.current_range).toEqual(expected);
+});
+
+test("the coordinator schedules a shorter replacement batch even when its heights are covered", () => {
+  const cache: ScanCache = {
+    primary_address: "test", daemon_height: 1006, outputs: {}, own_key_images: {},
+    scanned_ranges: [{ start: 0, end: 1005, block_hashes: [bi(1005), bi(999), bi(899)] }],
+  };
+  const block_infos = [bi(999), ...makeBlockInfos(1000, 4)
+    .map(({ block_height }) => bi(block_height, "replacement_" + block_height))];
+  const batch = {
+    local_uuid: "replacement", reorg: true, data: new Uint8Array(),
+    get_blocks_result_meta: { block_infos } as GetBlocksResultMeta,
+  };
+  const wallet = { primary_address: "test", secret_view_key: "test", cache };
+  const work: WorkItem[] = [];
+  makeWorkItemsFromBlocksBuffer([{ ...batch, reorg: false }], work, wallet);
+  expect(work).toHaveLength(0);
+  makeWorkItemsFromBlocksBuffer([batch], work, wallet);
+  const extension = {
+    ...batch, local_uuid: "extension", reorg: false,
+    get_blocks_result_meta: { block_infos: [block_infos.at(-1)!, bi(1004, "replacement_1004")] } as GetBlocksResultMeta,
+  };
+  makeWorkItemsFromBlocksBuffer([extension], work, wallet);
+  expect(work.map(item => item.batch.local_uuid)).toEqual(["replacement", "extension"]);
 });

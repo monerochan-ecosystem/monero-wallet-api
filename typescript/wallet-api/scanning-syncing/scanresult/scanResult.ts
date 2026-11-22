@@ -49,6 +49,7 @@ export async function processScanResult(
     let tipIndex = findTipIndex(result.block_infos, oldRange.block_hashes[0]);
     if (tipIndex === "empty_blocks_array")
       return processResultReturnValue(cache, params, changed_outputs);
+    const reorg = tipIndex === "reorg_found";
     if (tipIndex === "reorg_found") {
       let split_height_index = null;
       for (const block_hash of oldRange.block_hashes) {
@@ -163,12 +164,9 @@ export async function processScanResult(
     const to_height_index = result.block_infos.findIndex(
       (b) => b.block_height === params.to_height,
     );
-    const new_range = selectAnchors(
-      result.block_infos,
-      tipIndex,
-      oldRange,
-      to_height_index,
-    );
+    const new_range = reorg
+      ? replaceReorgRange(result.block_infos, tipIndex, oldRange, to_height_index)
+      : selectAnchors(result.block_infos, tipIndex, oldRange, to_height_index);
     const last_height =
       typeof params.to_height === "number"
         ? params.to_height
@@ -452,6 +450,34 @@ export function selectAnchors(
     // newest, middle, oldest
   };
 }
+/**
+ * use the same reorg anchor rules in the fetcher and wallet. keep the oldest
+ * anchor if it is below the shared block.
+ * trim the old range before merging so an equal or shorter replacement can
+ * update the tip hash. for example, trim 1005 to 999 before merging up to 1004.
+ */
+export function replaceReorgRange(
+  blocks: BlockInfo[],
+  splitIndex: number,
+  oldRange: CacheRange,
+  endIndex = blocks.length - 1,
+): CacheRange {
+  const split = blocks[splitIndex];
+  const tip = blocks[endIndex];
+  const candidate = blocks[Math.max(splitIndex, endIndex - 100)];
+  const previousAnchor = oldRange.block_hashes[2];
+  const anchor = previousAnchor && previousAnchor.block_height < split.block_height
+    ? previousAnchor
+    : split;
+  oldRange.end = split.block_height;
+  oldRange.block_hashes = [split, split, anchor];
+  return {
+    start: split.block_height,
+    end: tip.block_height,
+    block_hashes: [tip, candidate, anchor],
+  };
+}
+
 export function shouldReplaceAnchor(oldRange: CacheRange, last: BlockInfo) {
   const oldAnchor = oldRange.block_hashes.at(2);
   if (!oldAnchor) throw new Error("old Range malformed");

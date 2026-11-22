@@ -242,7 +242,11 @@ export function makeWorkItemsFromBlocksBuffer(
         w.walletConfig.primary_address === walletConfig.primary_address,
     );
     if (!alreadyReferenced) {
-      const workToBeDone = workToBeDoneForBatch(
+      const reorgPending = batch.reorg || workItemBuffer.some(
+        (item) => item.batch.reorg && item.status !== "process_result_done" &&
+          item.walletConfig.primary_address === walletConfig.primary_address,
+      );
+      const workToBeDone = !reorgPending && workToBeDoneForBatch(
         walletConfig.cache,
         batch.get_blocks_result_meta.block_infos,
       );
