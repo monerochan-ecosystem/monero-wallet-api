@@ -18,6 +18,8 @@ import {
   type ExtensionPort,
   type ToolNotice,
 } from "../tools/globals";
+import { ActionLogIdbBackend } from "./backend/idbBackend";
+import { ActionLogSqliteBackend } from "./backend/sqliteBackend";
 
 export type ActionLogBackendKind = "sqlite" | "idb";
 export type ExtensionMessageBus = "worker" | "ui";
@@ -255,6 +257,16 @@ export class ActionLogOpened {
   getPort(invocationId: string): ExtensionPort | undefined {
     return this.ports.get(invocationId);
   }
+  // distinguish message handling by bus type 
+  private handlesMessage(kind: string): boolean {
+    if (this.bus === "ui")
+      return ["actionLogChanged", "walletsChanged", "walletCacheChanged"].includes(kind);
+    if (this.bus !== "worker") return false;
+    return kind.startsWith("worker.") || [
+      "openSidebar", "toolCall", "dismiss", "execute", "dismissNotice",
+      "shareViewkeyOK", "shareViewkeyFAILED",
+    ].includes(kind);
+  }
 
   private listenOnMessage(
     handle: (
@@ -265,6 +277,8 @@ export class ActionLogOpened {
     const rt = getExtensionRuntime();
     if (!rt) return;
     rt.onMessage.addListener((msg, sender: unknown, sendResponse?: (r: unknown) => void) => {
+      const kind = (msg as { kind?: string } | null)?.kind;
+      if (!kind || !this.handlesMessage(kind)) return false;
       const done = handle(
         msg as { kind: ExtensionMessageKind; payload: unknown },
         sender as { tab?: { windowId?: number } } | undefined,
@@ -350,6 +364,7 @@ export class ActionLogOpened {
     if (!env?.kind) return {};
     const ctx = this.toolCtx();
     switch (env.kind) {
+      // the chrome service worker handles "openSidebar" msg (sidepanel can only be opened from sw)
       case "openSidebar":
         this.openWalletUi(sender);
         return {};
@@ -544,12 +559,10 @@ async function openBackend(
   if (options.backendInstance) return options.backendInstance;
   const kind = options.backend ?? defaultBackendKind();
   if (kind === "idb") {
-    const { ActionLogIdbBackend } = await import("./backend/idbBackend");
     const path = options.path ?? "actionlog";
     return ActionLogIdbBackend.open(path);
   }
   if (kind === "sqlite") {
-    const { ActionLogSqliteBackend } = await import("./backend/sqliteBackend");
     const path = options.path ?? "actionlog.sqlite";
     return ActionLogSqliteBackend.open(path);
   }
