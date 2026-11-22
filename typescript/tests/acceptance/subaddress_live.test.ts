@@ -2,13 +2,13 @@ import { expect, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import {
-  makeTestKeyPair, openWallets, writeScanSettings, readCacheFileDefaultLocation,
+  makeTestKeyPair, openWallets, writeScanSettings, readCacheFileDefaultLocation, NodeUrl,
   type ManyScanCachesOpened,
 } from "../../dist/xmr3";
 
 const run = Bun.env.RUN_SUBADDRESS_REGTEST === "1" ? test : test.skip;
-const MONEROD_PATH = "tests/moneronode/monerod";
-const RPC_PORT = 18081;
+const MONEROD_PATH = Bun.env.MONEROD_PATH || "tests/moneronode/monerod";
+const RPC_PORT = Number(Bun.env.MONEROD_RPC_PORT ?? 18081);
 const NODE_URL = `http://127.0.0.1:${RPC_PORT}`;
 const OUT = resolve("test-data/subaddress-live");
 const SCAN_SETTINGS_PATH = OUT + "/ScanSettings.json";
@@ -35,11 +35,12 @@ async function waitForNode(timeoutMs = 30000): Promise<void> {
   }
   throw Error("Node did not become ready within timeout");
 }
-async function generateBlocks(address: string, count: number): Promise<void> {
+async function generateBlocks(address: string, count: number): Promise<string[]> {
   const resp = await fetch(`${NODE_URL}/json_rpc`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: "0", method: "generateblocks", params: { amount_of_blocks: count, wallet_address: address } }) });
   if (!resp.ok) throw Error(`generateblocks RPC failed: ${resp.statusText}`);
   const result = await resp.json();
   if (result.error) throw Error(`generateblocks error: ${JSON.stringify(result.error)}`);
+  return result.result.blocks;
 }
 
 run("a subaddress added through openWallets receives a payment without restarting the scan", async () => {
@@ -59,33 +60,45 @@ run("a subaddress added through openWallets receives a payment without restartin
   const json = (value: unknown) => JSON.stringify(value, (_key, v) => typeof v === "bigint" ? String(v) : v, 2);
   try {
     await waitForNode();
-    let initialDone!: () => void;
-    const initialSync = new Promise<void>((done) => { initialDone = done; });
-    let paymentDone!: () => void;
-    const paymentScan = new Promise<void>((done) => { paymentDone = done; });
+    const initialSync = Promise.withResolvers<void>();
+    const paymentScan = Promise.withResolvers<void>();
+    const synced = new Set<string>();
     mco = await openWallets({ scan_settings_path: SCAN_SETTINGS_PATH, pathPrefix: OUT + "/", no_stats: true,
       workerError: (error) => workerErrors.push(String(error)),
       notifyMasterChanged: ({ newCache }) => {
-        if (newCache.primary_address === sender && (newCache.scanned_ranges.at(-1)?.end ?? 0) >= 1000) initialDone();
-        if (newCache.primary_address === receiver && (newCache.scanned_ranges.at(-1)?.end ?? 0) >= 1001) paymentDone();
+        const height = newCache.scanned_ranges.at(-1)?.end ?? 0;
+        if (height >= 1000) synced.add(newCache.primary_address);
+        if (synced.size === 2) initialSync.resolve();
+        if (newCache.primary_address === receiver && height >= 1001) paymentScan.resolve();
       },
     });
     await generateBlocks(sender, 1000);
-    await initialSync;
+    await initialSync.promise;
+    const before = (await readCacheFileDefaultLocation(receiver, OUT + "/"))!;
+    await Bun.write(OUT + "/before.json", json(before));
+    expect(before.subaddresses?.map(({ minor }) => minor)).toEqual([1]);
     const subaddress = await mco.wallets[1]!.makeSubaddress();
     expect(subaddress.minor).toBe(2);
     expect((await Bun.file(SCAN_SETTINGS_PATH).json()).wallets[1].subaddress_index).toBe(2);
     mco.wallets[0]!.decoyRetry = true;
     const unsigned = await mco.wallets[0]!.makeStandardTransaction(subaddress.address, "100000000000");
     const signed = await mco.wallets[0]!.signTransaction(unsigned);
+    const txHash = mco.wallets[1]!.view_pair.scanTransaction({ tx_as_hex: signed }).tx_hash;
     const result = await mco.wallets[0]!.sendTransaction(signed);
     expect(result.status).toBe("OK");
-    await generateBlocks(sender, 1);
-    await paymentScan;
+    const [blockHash] = await generateBlocks(sender, 1);
+    const block = await (await NodeUrl.create(NODE_URL)).getBlock({ hash: blockHash! });
+    expect(block?.tx_hashes).toContain(txHash);
+    await paymentScan.promise;
     const cache = (await readCacheFileDefaultLocation(receiver, OUT + "/"))!;
+    await Bun.write(OUT + "/after.json", json(cache));
     const received = Object.values(cache.outputs).filter((output) => output.subaddress_index === subaddress.minor);
-    await Bun.write(OUT + "/results.json", json({ subaddress, received, scanRanges: cache.scanned_ranges, workerErrors }));
-    expect(received.map((output) => String(output.amount))).toEqual(["100000000000"]);
+    await Bun.write(OUT + "/results.json", json({ subaddress, received, txHash, blockHash, workerErrors }));
+    expect(received.map(({ tx_hash, amount }) => [tx_hash, String(amount)])).toEqual([[txHash, "100000000000"]]);
+    expect(cache.subaddresses).toEqual([
+      before.subaddresses![0],
+      expect.objectContaining({ minor: subaddress.minor, address: subaddress.address }),
+    ]);
     expect(workerErrors).toEqual([]);
   } finally {
     if (mco) { mco.unwatchConnectionStatus(); await mco.stopWorker(); }

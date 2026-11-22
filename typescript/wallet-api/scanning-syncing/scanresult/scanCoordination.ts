@@ -321,13 +321,21 @@ export async function handleBlocksYield(
  * process a scan result for a completed work item.
  * updates the cache, writes to disk, marks work item done, reconciles blockbuffer with this.
  */
-export async function processWorkItem(
-  item: WorkItem,
-  workBuffer: WorkItem[],
-  blocksBuffer: GetBlocksBinBufferItem[],
-  pathPrefix: string,
-  secret_spend_key?: string,
-): Promise<ProcessScanResult> {
+export async function processWorkItem({
+  item,
+  workBuffer,
+  blocksBuffer,
+  scanSettingsPath,
+  pathPrefix,
+  secret_spend_key,
+}: {
+  item: WorkItem;
+  workBuffer: WorkItem[];
+  blocksBuffer: GetBlocksBinBufferItem[];
+  scanSettingsPath?: string;
+  pathPrefix?: string;
+  secret_spend_key?: string;
+}): Promise<ProcessScanResult> {
   if (item.status !== "scanwork_done")
     throw new Error(
       "[processWorkItem] item not found or not scanwork not done. item_status=" +
@@ -360,6 +368,8 @@ export async function processWorkItem(
 
   let res;
   try {
+    const view = await ViewPair.create(cache.primary_address, item.walletConfig.secret_view_key);
+    await view.addSubaddressesToScanCache(cache, scanSettingsPath);
     res = await processScanResult({
       from_height: firstBlock.block_height,
       to_height: lastBlock.block_height,
@@ -373,7 +383,7 @@ export async function processWorkItem(
     throw error;
   }
 
-  await writeCacheToFile(cache, pathPrefix);
+  await writeCacheToFile(cache, getPathPrefix(scanSettingsPath, pathPrefix));
   // raw cpu ScanResult is fully merged into cache now. drop it so workBuffer
   // does not pin all_key_images / hash strings until left-edge free.
   item.result = undefined;
@@ -728,13 +738,14 @@ export async function* coordinatorMainMultithreaded(
       const blockCount = to_be_processed.to - to_be_processed.from + 1;
       totalBlocksScanned += blockCount;
 
-      const res = await processWorkItem(
-        to_be_processed,
+      const res = await processWorkItem({
+        item: to_be_processed,
         workBuffer,
         blocksBuffer,
-        getPathPrefix(scanSettingsPath, pathPrefix),
-        wallet.secret_spend_key,
-      );
+        scanSettingsPath,
+        pathPrefix,
+        secret_spend_key: wallet.secret_spend_key,
+      });
 
       const jumped = fastForwardFetch(
         work_to_be_done.wallet_configs,
