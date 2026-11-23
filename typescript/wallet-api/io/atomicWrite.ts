@@ -9,15 +9,15 @@ export async function atomicWrite(
   log("atomicWrite", ["writing to", targetPath]);
   // in the browser we don't have rename + indexedDB writes are atomic in any case
   if (areWeInTheBrowser) return await Bun.write(targetPath, data as BunFile);
-  const { rename } = await import("node:fs/promises");
+  const { rename, unlink } = await import("node:fs/promises");
 
   const tempPath = targetPath + ".tmp." + Date.now() + "." + Math.random();
-  const bytesWritten = await Bun.write(tempPath, data as BunFile);
   try {
+    const bytesWritten = await Bun.write(tempPath, data as BunFile);
     await rename(tempPath, targetPath);
-  } catch (e) {
-    //eat rename failed
+    return bytesWritten;
+  } catch (error) {
+    await unlink(tempPath).catch(() => {});
+    throw error;
   }
-
-  return bytesWritten;
 }
