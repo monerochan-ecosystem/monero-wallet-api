@@ -1560,7 +1560,7 @@ export class ManyScanCachesOpened {
       this._scanSettings,
       this._options,
     )) ?? [];
-    if (this.actionLogOpened.extensionMessageBus === "worker") {
+    if (this.actionLogOpened.extensionMessageBus === "background") {
       void sendToBackground("walletsChanged", {
         scan_settings_path: this._scanSettings.scan_settings_path,
       }).catch(() => {});

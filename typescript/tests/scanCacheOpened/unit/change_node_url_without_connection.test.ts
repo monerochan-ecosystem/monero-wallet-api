@@ -44,13 +44,15 @@ test("ui save fails when the background does not answer", async () => {
   expect(raw?.node_url).toBe(OLD);
 });
 
-test("worker save stores the url when no wallet ever connected", async () => {
-  const path = await settingsWithNoWallet("worker.json");
+test("background save stores the url when no wallet ever connected", async () => {
+  const path = await settingsWithNoWallet("background.json");
   const many = await openWallets({
     scan_settings_path: path,
-    extensionMessageBus: "worker",
+    extensionMessageBus: "background",
     no_worker: true,
   });
+
+  expect(many!.actionLogOpened.extensionMessageBus).toBe("background");
 
   await many!.changeNodeUrlAndStartHeight(NEXT, null);
 

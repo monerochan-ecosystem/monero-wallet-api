@@ -91,8 +91,8 @@ function open(role: string, settingsPath = path, noWorker = true): Promise<ManyS
   const rt = runtime(role);
   const operation = context.run(role, () => openWallets({
     scan_settings_path: settingsPath, no_worker: noWorker, no_stats: true,
-    extensionMessageBus: role === "worker" ? "worker" : "ui",
-    notifyMasterChanged: role === "worker" ? (params) => {
+    extensionMessageBus: role === "background" ? "background" : "ui",
+    notifyMasterChanged: role === "background" ? (params) => {
       void rt.sendMessage({ kind: "walletCacheChanged", payload: JSON.stringify(params) });
     } : undefined,
   })).then((mco) => {
@@ -105,13 +105,13 @@ function open(role: string, settingsPath = path, noWorker = true): Promise<ManyS
 function names(mco: ManyScanCachesOpened) {
   return mco.wallets.map((wallet) => wallet.primary_address);
 }
-async function cache(worker: ManyScanCachesOpened, address: string, timestamp: number) {
+async function cache(background: ManyScanCachesOpened, address: string, timestamp: number) {
   const value: ScanCache = {
     primary_address: address, daemon_height: 10, outputs: {}, own_key_images: {}, scanned_ranges: [],
     tx_logs: [{ timestamp, height: 9, inputs_index: [], payments: [], node_url: "http://127.0.0.1:1" }],
   };
   await Bun.write(`${directory}/${address}_cache.json`, JSON.stringify(value));
-  await context.run("worker", () => worker.wallets.find((wallet) => wallet.primary_address === address)!.feed({ newCache: value, changed_outputs: [] }));
+  await context.run("background", () => background.wallets.find((wallet) => wallet.primary_address === address)!.feed({ newCache: value, changed_outputs: [] }));
 }
 
 beforeEach(() => {
@@ -120,7 +120,7 @@ beforeEach(() => {
   for (const address of addresses) Bun.env["vk" + address] = "01".repeat(32);
   originalBrowser = Object.getOwnPropertyDescriptor(globalThis, "browser");
   Object.defineProperty(globalThis, "browser", {
-    configurable: true, get: () => ({ runtime: runtime(context.getStore() ?? "worker") }),
+    configurable: true, get: () => ({ runtime: runtime(context.getStore() ?? "background") }),
   });
   const viewPair = spyOn(ViewPair, "create").mockImplementation(async (primary_address) => {
     await block?.(context.getStore() ?? "", primary_address);
@@ -154,18 +154,18 @@ afterEach(async () => {
   }
 });
 
-test("worker rebuild updates every open UI mco without a consumer reload", async () => {
+test("background rebuild updates every open UI mco without a consumer reload", async () => {
   await prepare("add");
-  const worker = await open("worker");
+  const background = await open("background");
   const ui = await open("ui");
   const other = await open("other");
   await settings(addresses.slice(0, 2));
-  await context.run("worker", () => worker.buildWallets());
+  await context.run("background", () => background.buildWallets());
   await flush();
   expect(names(ui)).toEqual(addresses.slice(0, 2));
   expect(names(other)).toEqual(addresses.slice(0, 2));
   expect(messages.filter((message) => message.kind === "worker.buildWallets")).toEqual([]);
-  expect(messages.filter((message) => message.kind === "walletsChanged")).toEqual([{ from: "worker", kind: "walletsChanged" }]);
+  expect(messages.filter((message) => message.kind === "walletsChanged")).toEqual([{ from: "background", kind: "walletsChanged" }]);
 });
 
 test("a UI open does not unpause or rewrite wallet settings", async () => {
@@ -184,13 +184,13 @@ test("a UI role cannot start a scan worker", async () => {
 
 test("a change to another settings file does not reload this UI", async () => {
   await prepare("settings-scope");
-  const worker = await open("worker");
+  const background = await open("background");
   const otherPath = `${directory}/OtherSettings.json`;
   await Bun.write(otherPath, JSON.stringify({ wallets: [{ primary_address: addresses[2] }], node_url: "http://127.0.0.1:1", start_height: 0 }));
   const other = await open("other", otherPath);
   reloads.length = 0;
   await settings(addresses.slice(0, 2));
-  await context.run("worker", () => worker.buildWallets());
+  await context.run("background", () => background.buildWallets());
   await flush();
   expect(names(other)).toEqual([addresses[2]!]);
   expect(reloads.filter((role) => role === "other")).toEqual([]);
@@ -198,28 +198,28 @@ test("a change to another settings file does not reload this UI", async () => {
 
 test("remove and an empty list reach open UI mcos", async () => {
   await prepare("remove", addresses.slice(0, 2));
-  const worker = await open("worker");
+  const background = await open("background");
   const ui = await open("ui");
-  await context.run("worker", () => worker.removeWallet(addresses[1]!));
+  await context.run("background", () => background.removeWallet(addresses[1]!));
   await flush();
   expect(names(ui)).toEqual([addresses[0]!]);
-  await context.run("worker", () => worker.removeWallet(addresses[0]!));
+  await context.run("background", () => background.removeWallet(addresses[0]!));
   await flush();
   expect(names(ui)).toEqual([]);
 });
 
 test("a cache update during wallet reload reaches the new instance", async () => {
   await prepare("cache-during-reload");
-  const worker = await open("worker");
+  const background = await open("background");
   const ui = await open("ui");
   const gate = held(); let entered = false;
   block = async (role, address) => {
     if (role === "ui" && address === addresses[1]) { entered = true; await gate.promise; }
   };
   await settings(addresses.slice(0, 2));
-  await context.run("worker", () => worker.buildWallets());
+  await context.run("background", () => background.buildWallets());
   await until(() => entered);
-  await cache(worker, addresses[1]!, 123);
+  await cache(background, addresses[1]!, 123);
   gate.release();
   await flush();
   expect(ui.wallets[1]?.tx_logs[0]?.timestamp).toBe(123);
@@ -227,18 +227,18 @@ test("a cache update during wallet reload reaches the new instance", async () =>
 
 test("rapid wallet changes are not lost while a reload waits", async () => {
   await prepare("rapid-changes");
-  const worker = await open("worker");
+  const background = await open("background");
   const ui = await open("ui");
   const gate = held(); let entered = false;
   block = async (role, address) => {
     if (role === "ui" && address === addresses[1]) { entered = true; await gate.promise; }
   };
   await settings(addresses.slice(0, 2));
-  await context.run("worker", () => worker.buildWallets());
+  await context.run("background", () => background.buildWallets());
   await until(() => entered);
   await settings(addresses);
-  await context.run("worker", () => worker.buildWallets());
-  await context.run("worker", () => worker.removeWallet(addresses[0]!));
+  await context.run("background", () => background.buildWallets());
+  await context.run("background", () => background.removeWallet(addresses[0]!));
   gate.release();
   await flush();
   expect(names(ui)).toEqual(addresses.slice(1));
@@ -247,15 +247,15 @@ test("rapid wallet changes are not lost while a reload waits", async () => {
 for (const failure of ["missing", "invalid"]) {
   test(`${failure} settings clear the UI list and recovery restores it`, async () => {
     await prepare(failure, addresses.slice(0, 2));
-    const worker = await open("worker");
+    const background = await open("background");
     const ui = await open("ui");
     if (failure === "missing") await rm(path); else await Bun.write(path, "{");
-    await context.run("worker", () => runtime("worker").sendMessage({ kind: "walletsChanged", payload: { scan_settings_path: path } }));
+    await context.run("background", () => runtime("background").sendMessage({ kind: "walletsChanged", payload: { scan_settings_path: path } }));
     await flush();
     expect(names(ui)).toEqual([]);
     expect(await Bun.file(path).text().catch(() => "missing")).toBe(failure === "missing" ? "missing" : "{");
     await settings([addresses[1]!]);
-    await context.run("worker", () => worker.buildWallets());
+    await context.run("background", () => background.buildWallets());
     await flush();
     expect(names(ui)).toEqual([addresses[1]!]);
   });
@@ -263,7 +263,7 @@ for (const failure of ["missing", "invalid"]) {
 
 test("startup listeners receive changes while the UI opens", async () => {
   await prepare("startup");
-  const worker = await open("worker");
+  const background = await open("background");
   const gate = held(); let entered = false;
   block = async (role, address) => {
     if (role === "ui" && address === addresses[0]) { entered = true; await gate.promise; }
@@ -271,8 +271,8 @@ test("startup listeners receive changes while the UI opens", async () => {
   const opening = open("ui");
   await until(() => entered && !!listeners.get("ui")?.length);
   await settings(addresses.slice(0, 2));
-  await context.run("worker", () => worker.buildWallets());
-  await cache(worker, addresses[1]!, 234);
+  await context.run("background", () => background.buildWallets());
+  await cache(background, addresses[1]!, 234);
   gate.release();
   const ui = await opening;
   await flush();
@@ -282,10 +282,10 @@ test("startup listeners receive changes while the UI opens", async () => {
 
 test("cache updates do not reload the wallet list", async () => {
   await prepare("cache-only");
-  const worker = await open("worker");
+  const background = await open("background");
   const ui = await open("ui");
   reloads.length = 0;
-  for (let index = 1; index <= 3; index++) await cache(worker, addresses[0]!, index);
+  for (let index = 1; index <= 3; index++) await cache(background, addresses[0]!, index);
   await flush();
   expect(ui.wallets[0]?.tx_logs[0]?.timestamp).toBe(3);
   expect(reloads.filter((role) => role === "ui")).toEqual([]);

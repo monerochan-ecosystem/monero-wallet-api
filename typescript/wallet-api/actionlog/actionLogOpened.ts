@@ -22,7 +22,7 @@ import { ActionLogIdbBackend } from "./backend/idbBackend";
 import { ActionLogSqliteBackend } from "./backend/sqliteBackend";
 
 export type ActionLogBackendKind = "sqlite" | "idb";
-export type ExtensionMessageBus = "worker" | "ui";
+export type ExtensionMessageBus = "background" | "ui";
 
 export type ActionLogOpenedCreateOptions = {
   path?: string;
@@ -32,7 +32,7 @@ export type ActionLogOpenedCreateOptions = {
   extensionMessageBus?: ExtensionMessageBus;
 };
 
-type WorkerMessageResult =
+type BackgroundMessageResult =
   | { events?: ActionLogEvent[] }
   | { tx_logs: unknown }
   | { error: string }
@@ -261,7 +261,7 @@ export class ActionLogOpened {
   private handlesMessage(kind: string): boolean {
     if (this.bus === "ui")
       return ["actionLogChanged", "walletsChanged", "walletCacheChanged"].includes(kind);
-    if (this.bus !== "worker") return false;
+    if (this.bus !== "background") return false;
     return kind.startsWith("worker.") || [
       "openSidebar", "toolCall", "dismiss", "execute", "dismissNotice",
       "shareViewkeyOK", "shareViewkeyFAILED",
@@ -272,7 +272,7 @@ export class ActionLogOpened {
     handle: (
       env: { kind: ExtensionMessageKind; payload: unknown },
       sender?: { tab?: { windowId?: number } },
-    ) => Promise<WorkerMessageResult>,
+    ) => Promise<BackgroundMessageResult>,
   ) {
     const rt = getExtensionRuntime();
     if (!rt) return;
@@ -293,7 +293,7 @@ export class ActionLogOpened {
 
   installExtensionMessagebus() {
     if (this.runtimeInstalled) return;
-    if (this.bus === "worker") this.installWorkerMessagebus();
+    if (this.bus === "background") this.installBackgroundMessagebus();
     else if (this.bus === "ui") this.installUiMessagebus();
   }
 
@@ -306,11 +306,11 @@ export class ActionLogOpened {
     });
   }
 
-  private installWorkerMessagebus() {
+  private installBackgroundMessagebus() {
     const rt = getExtensionRuntime();
     if (!rt) return;
     this.runtimeInstalled = true;
-    this.listenOnMessage((env, sender) => this.handleWorkerMessage(env, sender));
+    this.listenOnMessage((env, sender) => this.handleBackgroundMessage(env, sender));
     rt.onConnect.addListener((port) => {
       const invocationId = port.name;
       const existing = this.ports.get(invocationId);
@@ -357,10 +357,10 @@ export class ActionLogOpened {
     return;
   }
 
-  private async handleWorkerMessage(
+  private async handleBackgroundMessage(
     env: { kind: ExtensionMessageKind; payload: unknown },
     sender?: { tab?: { windowId?: number } },
-  ): Promise<WorkerMessageResult> {
+  ): Promise<BackgroundMessageResult> {
     if (!env?.kind) return {};
     const ctx = this.toolCtx();
     switch (env.kind) {
