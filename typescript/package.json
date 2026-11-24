@@ -1,7 +1,7 @@
 {
   "name": "@spirobel/monero-wallet-api",
   "version": "0.6.19",
-  "description": "Monero wallet library built as a public good, supported by the Monero Community Crowdfunding System (CCS)",
+  "description": "Monero library built as a public good, supported by the Monero Community Crowdfunding System (CCS)",
   "repository": {
     "type": "git",
     "url": "https://github.com/monerochan-ecosystem/monero-wallet-api",
