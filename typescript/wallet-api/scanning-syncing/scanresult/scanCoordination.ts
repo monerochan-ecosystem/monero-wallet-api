@@ -346,22 +346,22 @@ export async function processWorkItem({
         item?.status,
     );
   const cache = item.walletConfig.cache;
-  const last_in_cache = lastRange(cache.scanned_ranges)?.block_hashes.at(0);
-  if (typeof last_in_cache !== "undefined") {
-    const actual_tip_index = findTipIndex(
-      item.batch.get_blocks_result_meta.block_infos,
-      last_in_cache,
-    );
-    if (typeof actual_tip_index === "number") {
-      item.from = actual_tip_index;
+  const blockInfos = item.batch.get_blocks_result_meta.block_infos;
+  let firstBlock = blockInfos[item.from];
+  // a shared reorg batch can start before this wallet's range. resume at its matching tip.
+  if (item.batch.reorg && !findRange(cache.scanned_ranges, firstBlock.block_height)) {
+    const nextRange = cache.scanned_ranges.find((range) => range.start > firstBlock.block_height);
+    const tip = nextRange?.block_hashes[0];
+    const tipIndex = tip && findTipIndex(blockInfos, tip);
+    if (typeof tipIndex === "number" && tipIndex >= item.from && tipIndex <= item.to) {
+      firstBlock = blockInfos[tipIndex];
     }
   }
-  const firstBlock = item.batch.get_blocks_result_meta.block_infos[item.from];
 
   log("processWorkItem", [
     `block_infos.length=${item.batch.get_blocks_result_meta.block_infos.length} from=${item.from} to=${item.to}`,
   ]);
-  const lastBlock = item.batch.get_blocks_result_meta.block_infos[item.to];
+  const lastBlock = blockInfos[item.to];
   log("processWorkItem", [
     item.walletConfig.primary_address.slice(0, 6),
     "@",

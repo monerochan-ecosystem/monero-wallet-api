@@ -17,14 +17,18 @@
  *   works with random tip offsets in large batches
  *   works when scanning a subset of the batch via endIndex
  */
-import { test, expect } from "bun:test";
+import { test, expect, spyOn } from "bun:test";
+import { mkdir, rm } from "node:fs/promises";
 import {
   CatastrophicReorgError,
+  currentScanHeightFromRanges,
   findTipIndex,
   makeWorkItemsFromBlocksBuffer,
   processScanResult,
+  processWorkItem,
   selectAnchors,
   updateBlocksBufferScanHeight,
+  ViewPair,
   type GetBlocksResultMeta,
   type ScanCache,
   type WorkItem,
@@ -460,4 +464,46 @@ test("the coordinator schedules a shorter replacement batch even when its height
   };
   makeWorkItemsFromBlocksBuffer([extension], work, wallet);
   expect(work.map(item => item.batch.local_uuid)).toEqual(["replacement", "extension"]);
+});
+
+// start height 0 -> 3 -> 0 leaves [0,1] and [3,9] in the cache file.
+// the fetch starts at the tip of [0,1], so the first batch is blocks 1 to 9.
+test("a batch from the start range tip grows the start range past a higher range", async () => {
+  const dir = "test-data/start-range-grows-past-higher-range";
+  await rm(dir, { recursive: true, force: true });
+  await mkdir(dir, { recursive: true });
+  const cache: ScanCache = {
+    primary_address: "test", daemon_height: 10, outputs: {}, own_key_images: {},
+    scanned_ranges: [
+      { start: 0, end: 1, block_hashes: [bi(1), bi(0), bi(0)] },
+      { start: 3, end: 9, block_hashes: [bi(9), bi(3), bi(3)] },
+    ],
+  };
+  const block_infos = makeBlockInfos(1, 9);
+  const batch = {
+    local_uuid: "from-1", data: new Uint8Array(),
+    get_blocks_result_meta: { block_infos, daemon_height: 10 } as GetBlocksResultMeta,
+  };
+  const work: WorkItem[] = [];
+  makeWorkItemsFromBlocksBuffer([batch], work, { primary_address: "test", secret_view_key: "test", cache });
+  expect(work.map((item) => [item.from, item.to])).toEqual([[0, 8]]);
+  const item = work[0]!;
+  item.status = "scanwork_done";
+  item.result = {
+    primary_address: "test", daemon_height: 10, new_height: 9, block_infos, all_key_images: [],
+    outputs: [{
+      amount: 1n, block_height: 2, block_timestamp: 1000, index_in_transaction: 0, index_on_blockchain: 20,
+      payment_id: 0, stealth_address: "stealth_2", tx_hash: "tx_2", is_miner_tx: true,
+      primary_address: "test", subaddress_index: null, serialized: "0".repeat(64),
+    }],
+  };
+  const view = spyOn(ViewPair, "create").mockResolvedValue({ addSubaddressesToScanCache: async () => {} } as unknown as ViewPair);
+  try {
+    await processWorkItem({ item, workBuffer: work, blocksBuffer: [batch], pathPrefix: dir });
+  } finally {
+    view.mockRestore();
+  }
+  expect(cache.scanned_ranges.map((range) => [range.start, range.end])).toEqual([[0, 9]]);
+  expect(currentScanHeightFromRanges(cache.scanned_ranges, 0)).toBe(9);
+  expect(Object.keys(cache.outputs)).toEqual(["20"]);
 });
