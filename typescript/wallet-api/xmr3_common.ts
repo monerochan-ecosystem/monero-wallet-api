@@ -43,7 +43,6 @@ export {
   getWorkerUrl,
   startWebworkerReady,
   type WorkerSet,
-  type TxCacheWriteMessage,
 } from "./scanning-syncing/backgroundWorker";
 
 export { spendable } from "./scanning-syncing/scanresult/scanResult";

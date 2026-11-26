@@ -19,7 +19,8 @@ import {
   type Input,
   type SendError,
 } from "../../send-functionality/transactionBuilding";
-import { createWebworker, type WorkerSet, type TxCacheWriteMessage } from "../backgroundWorker";
+import { createWebworker, type WorkerSet } from "../backgroundWorker";
+import type { CoordinatorCommand, CoordinatorCommands } from "./coordinatorCommand";
 import { applyTxCacheWrite } from "./scanCoordination";
 import { spendable } from "./scanResult";
 import {
@@ -49,6 +50,7 @@ import {
   type ScanCache,
   type Subaddress,
   type TxLog,
+  type TxCacheWriteMessage,
 } from "./scanCache";
 import {
   alignScanStatsWithCache,
@@ -74,7 +76,8 @@ export type ScanCacheOpenedCreateParams = {
   no_worker?: boolean;
   no_stats?: boolean;
   notify?: CacheChangedCallback;
-  cacheWriter?: { write?: WorkerSet["writeCache"] };
+  // the master wallet and its slaves share this object. the coordinator sets only write. a wallet with a worker sets only callCoordinator.
+  cacheWriter?: { write?: (message: TxCacheWriteMessage) => Promise<number>; callCoordinator?: WorkerSet["callCoordinator"] };
   masterCacheChanged?: CacheChangedCallback;
   workerError?: (error: unknown) => void;
 };
@@ -577,12 +580,27 @@ export class ScanCacheOpened {
   get tx_logs() {
     return this._cache.tx_logs || [];
   }
+  // an outer wallet sends the command to the coordinator through the worker of the master wallet.
+  // the wallet of the coordinator has no worker. this returns undefined there, and the method body runs.
+  private callCoordinator<K extends keyof CoordinatorCommands>(
+    kind: K,
+    params: CoordinatorCommands[K],
+    beforeBroadcast?: () => void,
+  ) {
+    return (this.cacheWriter?.callCoordinator ?? this.worker?.callCoordinator)?.({
+      kind, params, primary_address: this.primary_address,
+      decoySampleCount: this.decoySampleCount,
+      decoyRetry: this.decoyRetry,
+      decoyRetrySizes: this.decoyRetrySizes,
+    } as CoordinatorCommand<K>, beforeBroadcast);
+  }
+
   private async writeTxCache(
     message: Omit<TxCacheWriteMessage, "primary_address">,
     changed_outputs: ChangedOutput[] = [],
   ): Promise<number> {
     const payload = { ...message, primary_address: this.primary_address };
-    const write = this.cacheWriter?.write ?? this.worker?.writeCache;
+    const write = this.cacheWriter?.write;
     if (write) return write(payload);
     if (this.cacheWriter || !this.no_worker) throw new Error("scanner is not running");
     let index = -1;
@@ -642,6 +660,8 @@ export class ScanCacheOpened {
     });
   }
   public async makeSignSendTransaction(params: CreateTransactionParams) {
+    const command = this.callCoordinator("makeSignSendTransaction", params);
+    if (command) return command;
     let maybeInputs: Output[] = [];
     let maybeFeeEstimate: FeeEstimateResponse | undefined;
     let maybeSendResult: SendRawTransactionResult | undefined;
@@ -726,6 +746,8 @@ export class ScanCacheOpened {
     payments: Payment[];
     input_indexes: string[];
   }) {
+    const command = this.callCoordinator("makeSignSend", params);
+    if (command) return command;
     const { input_indexes, ...transaction } = params;
     return this.makeSignSendTransaction({
       ...transaction,
@@ -737,6 +759,8 @@ export class ScanCacheOpened {
     address: string;
     input_indexes: string[];
   }) {
+    const command = this.callCoordinator("sweepSignSend", params);
+    if (command) return command;
     const inputs = params.input_indexes.length
       ? this.outputsForIndexes(params.input_indexes)
       : this.spendableInputs();
@@ -781,6 +805,8 @@ export class ScanCacheOpened {
   }
 
   public async rebroadcastTx(txLogIndex: number) {
+    const command = this.callCoordinator("rebroadcastTx", { txLogIndex });
+    if (command) return command;
     const txlog = this._cache.tx_logs?.[txLogIndex];
     if (!txlog?.signed_tx) throw new Error("no signed tx to rebroadcast");
     const inputs = txlog.inputs_index
@@ -825,7 +851,9 @@ export class ScanCacheOpened {
     return rows;
   }
 
-  public async dismissSendPlate() {
+  public async dismissSendPlate(txLogIndex?: number) {
+    const command = this.callCoordinator("dismissSendPlate", { txLogIndex });
+    if (command) return command;
     await this.writeTxCache({ dismiss: true });
   }
   /**
@@ -944,7 +972,9 @@ export class ScanCacheOpened {
         worker.terminate();
       } catch {
       }
-      if (this.cacheWriter && this.cacheWriter.write === worker.writeCache) this.cacheWriter.write = undefined;
+      if (this.cacheWriter && this.cacheWriter.callCoordinator === worker.callCoordinator) {
+        this.cacheWriter.callCoordinator = undefined;
+      }
     }
   }
   public async unpause() {
@@ -957,7 +987,7 @@ export class ScanCacheOpened {
         this.pathPrefix,
         (params) => this._onWorkerError(params),
       );
-      if (this.cacheWriter) this.cacheWriter.write = this.worker?.writeCache;
+      if (this.cacheWriter) this.cacheWriter.callCoordinator = this.worker?.callCoordinator;
     }
     return await this._scanSettings.unhaltWallet(
       this.view_pair.primary_address,

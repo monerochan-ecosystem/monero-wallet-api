@@ -297,6 +297,16 @@ export type TxLog = {
   hidden_on_send_plate?: boolean;
 };
 
+export type TxCacheWriteMessage = {
+  primary_address: string;
+  txLog?: Partial<TxLog>;
+  txLogIndex?: number;
+  broadcast?: boolean;
+  tx_hash?: string;
+  releaseInputs?: boolean;
+  dismiss?: boolean;
+};
+
 export type ChangeReason =
   | "spent"
   | "added"

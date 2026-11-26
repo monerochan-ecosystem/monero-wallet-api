@@ -77,7 +77,15 @@ await restored.stop();
 A small VPS can check the payment on receipt, show its status, and track confirmations without syncing a wallet.
 Use `openWallets()` to discover payments without a handover.**
 
-## kitchen sink + transaction sending
+## ScanCache durability
+
+The ScanCache stores scan progress, outputs, and the wallet's transaction log (TxLog). The wallet reserves inputs, saves the signed bytes, and records the broadcast attempt before it sends those bytes to a node or hands them to a checkout. It saves the result when it receives one. The same coordinator writes the cache in Bun and in the browser wallet.
+
+When the wallet process stops or crashes, the scan resumes from saved progress on reopen. An interrupted send keeps any saved input reservations. You can release the inputs manually or rebroadcast the same transaction if the TxLog has its signed bytes. The scan records the spend when it finds the transaction on chain.
+
+**Transaction API.** Use `makeSignSendTransaction()` or `sweepSignSend()` for a tracked send, or use `makeSignTransaction()` and `sendSignedTransaction()` to separate signing from broadcast. These methods use the active coordinator. The lower-level `ViewPair` builders and the raw wallet build, sign, and broadcast helpers leave TxLog writes and input reservations to the caller.
+
+## transaction sending
 
 ```ts
 import { openWallets } from "@spirobel/monero-wallet-api";

@@ -39,10 +39,17 @@ import {
   type CacheRange,
   type ChangedOutput,
   type ScanCache,
+  type TxCacheWriteMessage,
 } from "./scanCache";
 import { sendToCpuWorker } from "../worker-mains/cpubound-main";
 import { log } from "../../io/logging";
-import type { TxCacheWriteMessage } from "../backgroundWorker";
+import { ScanCacheOpened } from "./scanCacheOpened";
+import {
+  createCoordinatorCommandHandler,
+  drainCoordinatorCommands,
+  waitForCoordinatorCommands,
+} from "./coordinatorCommand";
+
 export type WalletConfig = {
   primary_address: string;
   secret_view_key: string;
@@ -528,13 +535,7 @@ export type BlocksBufferRacer = {
   value: BlocksBufferIteratorResult;
 };
 export type ScanLoopRacer = ScanLoopYield;
-export type Racers = BlocksBufferRacer | ScanLoopRacer | { src: "cache_write" };
-const cacheWrites: MessageEvent<TxCacheWriteMessage>[] = [];
-let cacheWriteReady = Promise.withResolvers<{ src: "cache_write" }>();
-export function queueCacheWrite(event: MessageEvent<TxCacheWriteMessage>) {
-  cacheWrites.push(event);
-  cacheWriteReady.resolve({ src: "cache_write" });
-}
+export type Racers = BlocksBufferRacer | ScanLoopRacer | { src: "coordinator_command" };
 
 export function applyTxCacheWrite(cache: ScanCache, message: TxCacheWriteMessage): number {
   if (message.dismiss) {
@@ -621,6 +622,14 @@ export async function* coordinatorMainMultithreaded(
       "[coordinatorMain Multithreaded] findWorkToBeDone returned false",
     );
   const work_to_be_done = ctx.work_to_be_done;
+  const cachePath = getPathPrefix(scanSettingsPath, pathPrefix);
+  const handleCommand = createCoordinatorCommandHandler({
+    wallets: work_to_be_done.wallet_configs,
+    createWallet: ScanCacheOpened.create,
+    scanSettingsPath,
+    pathPrefix,
+    signal: stopSync,
+  });
   let blocksBuffer = ctx.blocksBuffer;
   const workBuffer = ctx.workBuffer;
 
@@ -658,7 +667,7 @@ export async function* coordinatorMainMultithreaded(
       .map((ps) => ps.promise!);
 
     const races: Promise<Racers>[] = [
-      cacheWriteReady.promise,
+      waitForCoordinatorCommands(),
       ...scan_promises,
       blocksPromise.then((v) => ({
         src: "blocks" as const,
@@ -667,27 +676,29 @@ export async function* coordinatorMainMultithreaded(
     ];
     log("coordinatorMainMultithreaded", ["races", races]);
     const winner = await Promise.race(races);
-    if (cacheWrites.length) {
-      while (cacheWrites.length) {
-        const message = cacheWrites.shift()!;
-        const replyPort = message.ports[0]!;
-        try {
-          const wallet = work_to_be_done.wallet_configs.find((wallet) => wallet.primary_address === message.data.primary_address);
-          if (!wallet) throw new Error("wallet not found");
-          const cache = { ...wallet.cache };
-          const txLogIndex = applyTxCacheWrite(cache, message.data);
-          await writeCacheToFile(cache, getPathPrefix(scanSettingsPath, pathPrefix));
-          wallet.cache = cache;
-          const changed_outputs = message.data.reserve
-            ? cache.tx_logs![txLogIndex]!.inputs_index.map((id) => ({ change_reason: "spent" as const, output: cache.outputs[id]! }))
-            : [];
-          yield { type: "scan_ready", address: wallet.primary_address, newCache: cache, changed_outputs, replyPort, txLogIndex };
-        } catch (error) {
-          replyPort.postMessage({ error: String(error) });
-          replyPort.close();
-        }
+    for (const item of drainCoordinatorCommands()) {
+      if (!("write" in item)) {
+        handleCommand(item);
+        continue;
       }
-      cacheWriteReady = Promise.withResolvers();
+      const message = item.write;
+      const replyPort = message.ports[0]!;
+      try {
+        const wallet = work_to_be_done.wallet_configs.find((wallet) => wallet.primary_address === message.data.primary_address);
+        if (!wallet) throw new Error("wallet not found");
+        const cache = { ...wallet.cache };
+        const txLogIndex = applyTxCacheWrite(cache, message.data);
+        await writeCacheToFile(cache, cachePath);
+        wallet.cache = cache;
+        item.onSaved?.(txLogIndex);
+        const changed_outputs = message.data.reserve
+          ? cache.tx_logs![txLogIndex]!.inputs_index.map((id) => ({ change_reason: "spent" as const, output: cache.outputs[id]! }))
+          : [];
+        yield { type: "scan_ready", address: wallet.primary_address, newCache: cache, changed_outputs, replyPort, txLogIndex };
+      } catch (error) {
+        replyPort.postMessage({ error: error instanceof Error ? error.message : String(error) });
+        replyPort.close();
+      }
     }
     log("coordinatorMainMultithreaded", "cpu ports status");
 
