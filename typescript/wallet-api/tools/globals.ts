@@ -106,7 +106,7 @@ export type ExtensionRuntime = {
   connect: (info: { name: string }) => ExtensionPort;
   getURL: (path: string) => string;
   onMessage: {
-    addListener: (cb: (msg: unknown, sender: unknown) => void) => void;
+    addListener: (cb: (msg: unknown, sender: unknown, reply?: (value: unknown) => void) => void | boolean) => void;
   };
   onConnect: { addListener: (cb: (port: ExtensionPort) => void) => void };
 };

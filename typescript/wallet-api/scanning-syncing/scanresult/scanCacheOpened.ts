@@ -36,7 +36,7 @@ import {
   type ActionLogBackendKind,
   type ExtensionMessageBus,
 } from "../../actionlog/actionLogOpened";
-import { sendToBackground, type ExtensionMessageByKind } from "../../tools/globals";
+import type { ExtensionMessageByKind } from "../../tools/globals";
 import type { LogSetting, PossibleLogs } from "../../io/logging";
 import {
   findRange,
@@ -1116,14 +1116,6 @@ export type ManyScanCachesOpenedCreateOptions = {
   extensionMessageBus?: ExtensionMessageBus;
 };
 
-function defaultNotifyMasterChanged(params: CacheChangedCallbackParameters) {
-  void sendToBackground(
-    "walletCacheChanged",
-    JSON.stringify(params, (_k, v) =>
-      typeof v === "bigint" ? v.toString() : v,
-    ),
-  ).catch(() => {});
-}
 export class ManyScanCachesOpened {
   get start_height(): number | null {
     if (this.wallets.length === 0) return this._scanSettings.start_height;
@@ -1150,19 +1142,7 @@ export class ManyScanCachesOpened {
   ) {
     if (this.actionLogOpened.extensionMessageBus === "ui") {
       // the background owns the worker. it stops, then writes. do not write here first.
-      const result = await sendToBackground("worker.changeNodeUrlAndStartHeight", {
-        node_url,
-        start_height,
-      });
-      if (
-        result &&
-        typeof result === "object" &&
-        "error" in result &&
-        (result as { error?: unknown }).error
-      ) {
-        throw new Error(String((result as { error: unknown }).error));
-      }
-      if (result == null) throw new Error("background did not save the node url");
+      await this.actionLogOpened.callExtensionBackground("worker.changeNodeUrlAndStartHeight", { node_url, start_height });
       return;
     }
     if (this.wallets.length === 0) {
@@ -1180,7 +1160,7 @@ export class ManyScanCachesOpened {
   }
   public async stopWorker() {
     if (this.actionLogOpened.extensionMessageBus === "ui") {
-      await sendToBackground("worker.stopWorker", null).catch(() => {});
+      await this.actionLogOpened.callExtensionBackground("worker.stopWorker", null);
       return;
     }
     if (this.wallets.length === 0) return;
@@ -1197,7 +1177,7 @@ export class ManyScanCachesOpened {
 
   public async changeNodeUrl(node_url: string) {
     if (this.actionLogOpened.extensionMessageBus === "ui") {
-      await sendToBackground("worker.setNodeUrl", { node_url }).catch(() => {});
+      await this.actionLogOpened.callExtensionBackground("worker.setNodeUrl", { node_url });
       return;
     }
     if (this.wallets.length === 0) {
@@ -1215,18 +1195,18 @@ export class ManyScanCachesOpened {
     return wallet;
   }
 
+  // an outer wallet with the ui role sends the command to the background wallet over the bus.
+  // the public result type of a send stays the same on both roles.
   public async makeSignSend(params: ExtensionMessageByKind["worker.makeSignSend"]) {
     if (this.actionLogOpened.extensionMessageBus === "ui") {
-      await sendToBackground("worker.makeSignSend", params).catch(() => {});
-      return;
+      return this.actionLogOpened.callExtensionBackground("worker.makeSignSend", params);
     }
     return this.walletByAddress(params.primary_address).makeSignSend(params);
   }
 
   public async sweepSignSend(params: ExtensionMessageByKind["worker.sweepSignSend"]) {
     if (this.actionLogOpened.extensionMessageBus === "ui") {
-      await sendToBackground("worker.sweepSignSend", params).catch(() => {});
-      return;
+      return this.actionLogOpened.callExtensionBackground("worker.sweepSignSend", params);
     }
     return this.walletByAddress(params.primary_address).sweepSignSend(params);
   }
@@ -1236,15 +1216,14 @@ export class ManyScanCachesOpened {
     tx_log_index: number;
   }) {
     if (this.actionLogOpened.extensionMessageBus === "ui") {
-      await sendToBackground("worker.rebroadcastTx", params).catch(() => {});
-      return;
+      return this.actionLogOpened.callExtensionBackground("worker.rebroadcastTx", params);
     }
     return this.walletByAddress(params.primary_address).rebroadcastTx(params.tx_log_index);
   }
 
   public async dismissSendPlate(params: { primary_address: string }) {
     if (this.actionLogOpened.extensionMessageBus === "ui") {
-      await sendToBackground("worker.dismissSendPlate", params).catch(() => {});
+      await this.actionLogOpened.callExtensionBackground("worker.dismissSendPlate", params);
       return;
     }
     return this.walletByAddress(params.primary_address).dismissSendPlate();
@@ -1295,11 +1274,11 @@ export class ManyScanCachesOpened {
     logs_exclude?: string[] | null,
   ) {
     if (this.actionLogOpened.extensionMessageBus === "ui") {
-      await sendToBackground("worker.setLogSettings", {
+      await this.actionLogOpened.callExtensionBackground("worker.setLogSettings", {
         logs,
         logs_include,
         logs_exclude,
-      }).catch(() => {});
+      });
     }
     await this._scanSettings.setLogSettings(
       logs,
@@ -1318,9 +1297,9 @@ export class ManyScanCachesOpened {
   }
   public async changeStartHeight(start_height: number | null) {
     if (this.actionLogOpened.extensionMessageBus === "ui") {
-      await sendToBackground("worker.setStartHeight", {
+      await this.actionLogOpened.callExtensionBackground("worker.setStartHeight", {
         start_height,
-      }).catch(() => {});
+      });
       return;
     }
     if (this.wallets.length === 0) {
@@ -1461,9 +1440,22 @@ export class ManyScanCachesOpened {
     const newOptions = { ...options };
     const ui = newOptions.extensionMessageBus === "ui";
     if (ui) newOptions.no_worker = true;
-    // browser worker (background.ts): broadcast cache to sidebar 
-    if (!newOptions.notifyMasterChanged && !newOptions.no_worker) {
-      newOptions.notifyMasterChanged = defaultNotifyMasterChanged;
+    // browser worker (background.ts): push each cache change to the sidebar over the bus.
+    // a scan result can arrive before the bus exists. those are kept and sent first.
+    const beforeBus: CacheChangedCallbackParameters[] = [];
+    let bus: ActionLogOpened | undefined;
+    const pushToSidebar = (params: CacheChangedCallbackParameters) => {
+      if (!bus) {
+        beforeBus.push(params);
+        return;
+      }
+      const payload = JSON.stringify(params, (_k, v) =>
+        typeof v === "bigint" ? v.toString() : v,
+      );
+      bus.callExtensionSidebar("walletCacheChanged", payload);
+    };
+    if (!newOptions.notifyMasterChanged && !newOptions.no_worker && newOptions.extensionMessageBus) {
+      newOptions.notifyMasterChanged = pushToSidebar;
     }
     let connectionFailedShown = false;
     if (autoRetry) {
@@ -1523,6 +1515,8 @@ export class ManyScanCachesOpened {
       onChange: newOptions.onActionLogChange ?? null,
       extensionMessageBus: newOptions.extensionMessageBus,
     });
+    bus = actionLogOpened;
+    for (const params of beforeBus.splice(0)) pushToSidebar(params);
 
     instance = new ManyScanCachesOpened(
       wallets,
@@ -1546,7 +1540,7 @@ export class ManyScanCachesOpened {
 
   public async buildWallets() {
     if (this.actionLogOpened.extensionMessageBus === "ui") {
-      await sendToBackground("worker.buildWallets", null).catch(() => {});
+      await this.actionLogOpened.callExtensionBackground("worker.buildWallets", null);
       return;
     }
     await this.stopWorker();
@@ -1561,9 +1555,9 @@ export class ManyScanCachesOpened {
       this._options,
     )) ?? [];
     if (this.actionLogOpened.extensionMessageBus === "background") {
-      void sendToBackground("walletsChanged", {
+      this.actionLogOpened.callExtensionSidebar("walletsChanged", {
         scan_settings_path: this._scanSettings.scan_settings_path,
-      }).catch(() => {});
+      });
     }
   }
 

@@ -37,7 +37,7 @@ test("ui save fails when the background does not answer", async () => {
   });
 
   await expect(many!.changeNodeUrlAndStartHeight(NEXT, 0)).rejects.toThrow(
-    "background did not save the node url",
+    "no reply from the extension bus for worker.changeNodeUrlAndStartHeight",
   );
 
   const raw = await openScanSettingsFile(path);

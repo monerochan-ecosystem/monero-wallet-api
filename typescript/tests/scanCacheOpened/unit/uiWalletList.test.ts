@@ -3,6 +3,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { mkdir, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import {
+  ActionLogOpened,
   openWallets,
   ScanCacheOpened,
   type ManyScanCachesOpened,
@@ -87,14 +88,12 @@ async function prepare(name: string, initial = addresses.slice(0, 1)) {
   await mkdir(directory, { recursive: true });
   await settings(initial);
 }
-function open(role: string, settingsPath = path, noWorker = true): Promise<ManyScanCachesOpened> {
-  const rt = runtime(role);
+// the background page gets no_worker false, so the library installs its own cache push.
+// unpause is mocked, so no worker starts.
+function open(role: string, settingsPath = path, noWorker = role !== "background"): Promise<ManyScanCachesOpened> {
   const operation = context.run(role, () => openWallets({
     scan_settings_path: settingsPath, no_worker: noWorker, no_stats: true,
     extensionMessageBus: role === "background" ? "background" : "ui",
-    notifyMasterChanged: role === "background" ? (params) => {
-      void rt.sendMessage({ kind: "walletCacheChanged", payload: JSON.stringify(params) });
-    } : undefined,
   })).then((mco) => {
     models.push({ role, mco });
     return mco;
@@ -152,6 +151,88 @@ afterEach(async () => {
     const key = "vk" + addresses[index];
     if (keys[index] === undefined) delete Bun.env[key]; else Bun.env[key] = keys[index];
   }
+});
+
+test("a UI send requires a reply from the background wallet", async () => {
+  await prepare("send-without-background");
+  const ui = await open("ui");
+  const send = () => context.run("ui", () => ui.makeSignSend({
+    primary_address: "missing-wallet", payments: [], input_indexes: [],
+  }));
+  await expect(send()).rejects.toThrow("no reply from the extension bus");
+  const background = await open("background");
+  await expect(send()).rejects.toThrow("wallet not found");
+  const result = {
+    status: "OK", cache_error: "disk full", reason: "", double_spend: false,
+    fee_too_low: false, invalid_input: false, invalid_output: false, low_mixin: false,
+    not_relayed: false, overspend: false, too_big: false, untrusted: false,
+  };
+  const reply = spyOn(background.wallets[0]!, "makeSignSend").mockResolvedValue(result);
+  restore.push(() => reply.mockRestore());
+  expect(await context.run("ui", () => ui.makeSignSend({
+    primary_address: addresses[0]!, payments: [], input_indexes: [],
+  }))).toEqual(result);
+});
+
+test("every background command from the UI goes through callExtensionBackground", async () => {
+  await prepare("one-bus-method");
+  const ui = await open("ui");
+  const sent: string[] = [];
+  const send = spyOn(ui.actionLogOpened, "callExtensionBackground").mockImplementation(async (kind: string) => {
+    sent.push(kind);
+    return {};
+  });
+  restore.push(() => send.mockRestore());
+  const address = addresses[0]!;
+  await context.run("ui", async () => {
+    await ui.stopWorker();
+    await ui.changeNodeUrl("http://127.0.0.1:2");
+    await ui.changeStartHeight(3);
+    await ui.changeNodeUrlAndStartHeight("http://127.0.0.1:3", 4);
+    await ui.setLogSettings("off");
+    await ui.buildWallets();
+    await ui.makeSignSend({ primary_address: address, payments: [], input_indexes: [] });
+    await ui.sweepSignSend({ primary_address: address, address: "dest", input_indexes: [] });
+    await ui.rebroadcastTx({ primary_address: address, tx_log_index: 0 });
+    await ui.dismissSendPlate({ primary_address: address });
+  });
+  // each background command has one kind. the bus method is the only way to the runtime.
+  expect(sent).toEqual([
+    "worker.stopWorker", "worker.setNodeUrl", "worker.setStartHeight", "worker.changeNodeUrlAndStartHeight",
+    "worker.setLogSettings", "worker.buildWallets", "worker.makeSignSend", "worker.sweepSignSend",
+    "worker.rebroadcastTx", "worker.dismissSendPlate",
+  ]);
+  expect(messages.filter((message) => message.kind.startsWith("worker."))).toEqual([]);
+});
+
+test("a background error reaches the UI for a command that used to ignore the reply", async () => {
+  await prepare("background-error");
+  const background = await open("background");
+  const ui = await open("ui");
+  const stop = spyOn(background, "stopWorker").mockRejectedValue(new Error("scanner refuses to stop"));
+  restore.push(() => stop.mockRestore());
+  await expect(context.run("ui", () => ui.stopWorker())).rejects.toThrow("scanner refuses to stop");
+});
+
+test("a background page without a wallet answers an error for every command", async () => {
+  await prepare("background-not-ready");
+  // a listener but no bound wallet: the time before openWallets binds it, or an open that failed after create
+  await context.run("background", () => ActionLogOpened.create({ extensionMessageBus: "background", path: `${directory}/not-ready-actionlog.sqlite` }));
+  const ui = await open("ui");
+  const calls = [
+    () => ui.stopWorker(), () => ui.buildWallets(), () => ui.changeNodeUrl("http://127.0.0.1:2"),
+    () => ui.changeStartHeight(3), () => ui.changeNodeUrlAndStartHeight("http://127.0.0.1:3", 4), () => ui.setLogSettings("off"),
+  ];
+  for (const call of calls) await expect(context.run("ui", call)).rejects.toThrow("background wallet is not ready");
+});
+
+test("a background error of changeNodeUrlAndStartHeight reaches the UI", async () => {
+  await prepare("node-url-error");
+  const background = await open("background");
+  const ui = await open("ui");
+  const change = spyOn(background, "changeNodeUrlAndStartHeight").mockRejectedValue(new Error("node url refused"));
+  restore.push(() => change.mockRestore());
+  await expect(context.run("ui", () => ui.changeNodeUrlAndStartHeight("http://127.0.0.1:2", 1))).rejects.toThrow("node url refused");
 });
 
 test("background rebuild updates every open UI mco without a consumer reload", async () => {
