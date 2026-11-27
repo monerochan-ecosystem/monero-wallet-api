@@ -266,10 +266,12 @@ export class NodeUrl extends WasmProcessor {
     signal: AbortSignal,
     interval = 1000,
     onError?: (error: unknown) => void,
+    // a round asks the node only while active() is true
+    active: () => boolean = () => true,
   ): Promise<void> {
     let lastHash: string | undefined;
     while (!signal.aborted) {
-      try {
+      if (active()) try {
         const started_at = performance.now();
         const { height, top_block_hash } = await this.getInfo(signal);
         const hash = top_block_hash.toLowerCase();

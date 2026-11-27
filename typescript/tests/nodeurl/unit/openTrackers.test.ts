@@ -82,8 +82,11 @@ async function setup(options: OpenTrackersOptions = {}) {
   });
   const send = spyOn(NodeUrl.prototype, "sendRawTransaction").mockResolvedValue(accepted);
   let deliverTip: ((tip?: GetBlock, started_at?: number) => Promise<void>) | undefined;
-  const pollTip = spyOn(NodeUrl.prototype, "pollTip").mockImplementation(async (notify, signal) => {
+  // the check that tells the poll whether a round may ask the node. the default is the old behavior.
+  let active: () => boolean = () => true;
+  const pollTip = spyOn(NodeUrl.prototype, "pollTip").mockImplementation(async (notify, signal, _interval, _onError, check) => {
     deliverTip = async (tip, started_at) => { await notify(tip ?? blocks.at(-1)!, signal, started_at); };
+    if (check) active = check;
   });
   cleanup.push(() => {
     getInfo.mockRestore();
@@ -93,8 +96,24 @@ async function setup(options: OpenTrackersOptions = {}) {
   });
   const trackers = await openTrackers(options);
   cleanup.push(() => trackers.stop());
-  return { blocks, reads, mine, getInfo, getBlock, send, trackers, deliverTip: deliverTip! };
+  return { blocks, reads, mine, getInfo, getBlock, send, trackers, deliverTip: deliverTip!, active: () => active() };
 }
+
+test("the tip poll asks the node only while a tracker follows the chain", async () => {
+  const { trackers, active } = await setup();
+  const seen = [active()];
+  await newTracker(trackers, { ...paymentOptions, merchant_confirmations: 1 });
+  seen.push(active());
+  trackers.removeTracker({ payment_id, primary_address: paymentOptions.view_pair.primary_address });
+  seen.push(active());
+  await newTracker(trackers, { ...paymentOptions, merchant_confirmations: 0 });
+  seen.push(active());
+  const dir = resolve("test-data/open-trackers-idle");
+  await rm(dir, { recursive: true, force: true });
+  await mkdir(dir, { recursive: true });
+  await Bun.write(`${dir}/result.json`, JSON.stringify({ steps: ["no tracker", "accepted", "removed", "confirmed at once"], seen }));
+  expect(seen).toEqual([false, true, false, false]);
+});
 
 test("wrong payment ID and invoice amount stop before tracking or broadcast", async () => {
   const notify = mock(() => {});

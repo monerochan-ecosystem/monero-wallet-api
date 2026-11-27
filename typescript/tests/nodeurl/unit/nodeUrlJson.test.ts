@@ -104,6 +104,20 @@ for (const interval_ms of [undefined, 1000]) {
   });
 }
 
+test("pollTip makes no node call while active() is false", async () => {
+  const { node, requests } = await setup("poll-tip-active", [rpc(info), rpc(block)]);
+  const controller = new AbortController();
+  let rounds = 0;
+  const delivered: string[] = [];
+  await node.pollTip(({ block_header }) => {
+    delivered.push(block_header.hash);
+    controller.abort();
+  }, controller.signal, 0, undefined, () => ++rounds > 3);
+  expect(rounds).toBe(4);
+  expect(delivered).toEqual([header.hash]);
+  expect(requests.map(request => (request.body as { method: string }).method)).toEqual(["get_info", "get_block"]);
+});
+
 test("pollTip caches and delivers each new tip, including a replacement at the same height", async () => {
   const replacement = { ...block, block_header: { ...header, hash: "ab".repeat(32) } };
   const newInfo = { ...info, top_block_hash: replacement.block_header.hash };

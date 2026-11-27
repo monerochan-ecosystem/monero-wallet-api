@@ -128,8 +128,10 @@ export class Trackers {
     }
     for (const { tracker } of latest.values()) this.addTracker(tracker);
     const report = (error: unknown) => options.onError?.(error instanceof Error ? error : new Error(String(error)));
+    // with nothing to follow, the poll makes no node call
     void this.node.pollTip((tip, _signal, startedAt) => this.trackAll(tip, startedAt),
-      this.lifetime.signal, options.interval, report).catch(report);
+      this.lifetime.signal, options.interval, report,
+      () => [...this.tracker_instances].some(([tracker, status]) => this.follows(status, tracker.data))).catch(report);
   }
 
   public get transactionTrackers(): TransactionTracker[] { return [...this.tracker_instances.keys()]; }
@@ -233,6 +235,11 @@ export class Trackers {
     this.lifetime.abort(new Error("transaction trackers are stopped"));
   }
 
+  // a tracker follows the chain once its send started, until it is confirmed
+  private follows(status: TrackerStatus, data: TransactionTrackerState): boolean {
+    return status.ready && data.state !== "scanned" && data.state !== "confirmed";
+  }
+
   private async trackAll(tip: GetBlock, startedAt = performance.now()): Promise<void> {
     if (startedAt < this.latestPoll) return;
     this.latestPoll = startedAt;
@@ -241,7 +248,7 @@ export class Trackers {
     let lowest = top;
     for (const [tracker, status] of this.tracker_instances) {
       const data = tracker.data;
-      if (!status.ready || data.state === "scanned" || data.state === "confirmed") continue;
+      if (!this.follows(status, data)) continue;
       lowest = Math.min(lowest, data.position?.height ?? data.search_from_height);
       active.push({ tracker, data });
     }
