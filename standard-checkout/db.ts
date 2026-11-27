@@ -124,6 +124,43 @@ export function releaseTxHash(id: number, tx_hash: string): SQL.Query<CheckoutSe
   `.execute();
 }
 
+export function getOpenTrackedSessions(): SQL.Query<(CheckoutSessionRow & { tracker_state: string })[]> {
+  return sql`SELECT * FROM checkout_session WHERE paid_status = 0 AND tracker_state IS NOT NULL`.execute();
+}
+
+function writeCheckoutTrackers(states: readonly { id: number; data: TransactionTrackerState }[]): SQL.Query<CheckoutSessionRow[]> {
+  const rows = states.map(({ id, data }) => ({
+    id, data, paid: data.state === "confirmed" ? 1 : 0,
+    block: data.state === "in_block" || data.state === "confirmed" ? data.position : undefined,
+  }));
+  // check all rows before changing any so concurrent requests cannot see a partial update.
+  return sql`
+    WITH updates AS MATERIALIZED (
+      SELECT checkout_session.id, value
+      FROM json_each(${JSON.stringify(rows)})
+      JOIN checkout_session ON checkout_session.id = value ->> 'id'
+      WHERE (paid_status = 0 OR value ->> 'paid' = 1)
+        AND (tx_hash IS NULL OR tx_hash = value ->> '$.data.tx_hash')
+    )
+    UPDATE checkout_session
+    SET tracker_state = value -> 'data', tx_hash = value ->> '$.data.tx_hash',
+        tx_block_height = value ->> '$.block.height', tx_block_hash = value ->> '$.block.hash',
+        tx_confirmations = value ->> '$.data.confirmations', paid_status = value ->> 'paid'
+    FROM updates
+    WHERE checkout_session.id = updates.id
+      AND (SELECT COUNT(DISTINCT id) FROM updates) = ${rows.length}
+    RETURNING *
+  `.execute();
+}
+
+export function saveCheckoutTracker(id: number, data: TransactionTrackerState): SQL.Query<CheckoutSessionRow[]> {
+  return writeCheckoutTrackers([{ id, data }]);
+}
+
+export async function saveCheckoutTrackers(states: readonly { id: number; data: TransactionTrackerState }[]): Promise<void> {
+  if ((await writeCheckoutTrackers(states)).length !== states.length) throw new Error("checkout state was not saved");
+}
+
 // confirmations follow the chain. paid stays set once the required count is reached.
 export function updateTransactionStatus(id: number, tx_hash: string, status: TransactionStatus | null): SQL.Query<CheckoutSessionRow[]> {
   const confirmations = status?.confirmations ?? 0;

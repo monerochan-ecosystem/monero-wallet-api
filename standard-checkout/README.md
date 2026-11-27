@@ -46,6 +46,10 @@ The entire payment flow is driven by **HTTP headers and server-side rendering**,
 
 5. **`/monerochan001/:address`** implements a validation endpoint that the Monero wallet API calls to verify the displayed monero address belongs to the merchant. This API is accessed by the customers wallet when he clicks the "pay with browser wallet" link.
 
+## Submission privacy
+
+The merchant receives the signed transaction from the buyer's browser session and sends it to the merchant's node. The node sees the merchant as a source of the transaction.
+
 ## Browser-wallet handover
 
 `001` address validation supplies the session's return URL and advertises the same address route for handover. The wallet submits the signed transaction with `POST /monerochan001/:address`. `acceptance.ts` checks the scanned amount and payment ID, awaits the transaction-hash write, and then lets the library send the exact transaction to the merchant's node. The node answers OK for a new transaction and for one that it has already.

@@ -42,6 +42,7 @@ test("checkout upgrades a saved session and keeps its transaction hash", async (
     const [row] = await upgraded.getCheckoutSessionBySessionId("existing");
     expect(row).toMatchObject({ amount: "0.1337", tx_hash: hash, tracker_state: null });
     expect(checkout.statusMessage(row, checkout.storedStatus(row))).toBe("Payment received");
+    expect(await upgraded.getOpenTrackedSessions()).toEqual([]);
     const [confirmed] = await upgraded.updateTransactionStatus(row.id, hash, { confirmations: 1, block_height: 123, in_pool: false });
     expect(confirmed).toMatchObject({ tx_hash: hash, tx_block_height: 123, tx_confirmations: 1 });
   } finally {
@@ -187,6 +188,18 @@ function fakeRoute(answers: { hash: string; ok: boolean; gate?: Promise<void> }[
 const merchant = { node_url: "http://node", primary_address: "primary", view_key: "view" };
 const handover = async (row: any, options = {}) => checkout.handoverRequest(new Request(`https://merchant/handover?id=${row.session_id}`), (await db.getCheckoutSessionBySessionId(row.session_id))[0], { ...merchant, ...options });
 const saved = async (row: any) => (await db.getCheckoutSessionBySessionId(row.session_id))[0];
+const trackedIds = async () => (await db.getOpenTrackedSessions()).map((tracked: any) => tracked.id);
+async function persist(now: { id: number; tx_hash: string; block_height: number | null; confirmations: number }) {
+  const row = (await db.getCheckoutSessionByPrimaryId(now.id))[0];
+  return db.saveCheckoutTracker(now.id, {
+    primary_address: "primary", merchant_confirmations: row.required_confirmations,
+    tx_hash: now.tx_hash, search_from_height: 0, timestamp: 1000,
+    state: now.confirmations >= row.required_confirmations ? "confirmed" : now.block_height === null ? "accepted" : "in_block",
+    confirmations: now.confirmations,
+    position: now.block_height === null ? undefined : { height: now.block_height, hash: `block${now.block_height}` },
+  });
+}
+
 test("a handover the node rejects releases the checkout for another transaction", async () => {
   const row = await session();
   const restore = fakeRoute([{ hash: "a".repeat(64), ok: false }, { hash: "d".repeat(64), ok: true }]);
@@ -210,6 +223,93 @@ test("a failed handover keeps the hash while another handover of it is still run
     hold.resolve();
     expect(await (await first).json()).toMatchObject({ ok: true });
     expect((await db.getCheckoutSessionBySessionId(row.session_id))[0].tx_hash).toBe("a".repeat(64));
+  } finally { hold.resolve(); restore(); }
+});
+
+test("restore selects only unpaid sessions with saved tracker state", async () => {
+  const waiting = await session();
+  const walletScan = await session();
+  const row = await session();
+  const hash = "c".repeat(64);
+  const restore = fakeRoute([{ hash, ok: true }]);
+  try {
+    expect(await (await handover(walletScan)).json()).toMatchObject({ ok: true });
+    expect(await trackedIds()).not.toContain(walletScan.id);
+  } finally { restore(); }
+  await persist({ id: row.id, tx_hash: hash, block_height: null, confirmations: 0 });
+  const tracked = (await db.getOpenTrackedSessions()).find((item) => item.id === row.id)!;
+  expect(JSON.parse(tracked.tracker_state)).toMatchObject({ tx_hash: hash, search_from_height: 0 });
+  expect(await trackedIds()).not.toContain(waiting.id);
+});
+
+test("a handover that the node rejects is not tracked", async () => {
+  const row = await session();
+  const restore = fakeRoute([{ hash: "a".repeat(64), ok: false }]);
+  try {
+    await handover(row);
+    expect((await saved(row)).tx_hash).toBeNull();
+    expect(await trackedIds()).not.toContain(row.id);
+  } finally { restore(); }
+});
+
+test("the tracker result stores the block and the confirmations, and paid is final", async () => {
+  const row = await session("0.1337", 2);
+  const hash = "d".repeat(64);
+  await db.updateTxHash(row.id, hash);
+  await persist({ id: row.id, tx_hash: hash, block_height: 181, confirmations: 1 });
+  expect(await saved(row)).toMatchObject({ tx_block_height: 181, tx_confirmations: 1, paid_status: 0 });
+  expect((await db.getOpenTrackedSessions()).find((item: any) => item.id === row.id)).toMatchObject({ tx_block_height: 181, tx_confirmations: 1 });
+  // a reorg: the transaction is in no block
+  await persist({ id: row.id, tx_hash: hash, block_height: null, confirmations: 0 });
+  expect(await saved(row)).toMatchObject({ tx_block_height: null, tx_confirmations: 0, paid_status: 0 });
+  await persist({ id: row.id, tx_hash: hash, block_height: 183, confirmations: 2 });
+  expect(await saved(row)).toMatchObject({ tx_block_height: 183, tx_confirmations: 2, paid_status: 1 });
+  expect(await trackedIds()).not.toContain(row.id);
+  // a late result of an old pass, or a reorg after the required count, does not take paid back
+  await persist({ id: row.id, tx_hash: hash, block_height: null, confirmations: 0 });
+  expect(await saved(row)).toMatchObject({ tx_block_height: 183, tx_confirmations: 2, paid_status: 1 });
+});
+
+test("a tracker result for another hash changes nothing", async () => {
+  const row = await session();
+  await db.updateTxHash(row.id, "a".repeat(64));
+  await persist({ id: row.id, tx_hash: "b".repeat(64), block_height: 5, confirmations: 5 });
+  expect(await saved(row)).toMatchObject({ tx_block_height: null, tx_confirmations: 0, paid_status: 0 });
+});
+
+test("a released hash is not tracked, and a hash with a block is not released", async () => {
+  const row = await session();
+  const hash = "a".repeat(64);
+  await db.updateTxHash(row.id, hash);
+  await db.releaseTxHash(row.id, hash);
+  expect((await saved(row)).tx_hash).toBeNull();
+  expect(await trackedIds()).not.toContain(row.id);
+  await db.updateTxHash(row.id, hash);
+  await persist({ id: row.id, tx_hash: hash, block_height: 181, confirmations: 1 });
+  await db.releaseTxHash(row.id, hash);
+  expect(await saved(row)).toMatchObject({ tx_hash: hash, tx_block_height: 181 });
+});
+
+test("the status of a session comes from its row, with no node request", async () => {
+  const row = await session("0.1337", 3);
+  const message = async () => { const current = await saved(row); return checkout.statusMessage(current, checkout.storedStatus(current)); };
+  const hash = "a".repeat(64);
+  const hold = Promise.withResolvers<void>();
+  const restore = fakeRoute([{ hash, ok: true, gate: hold.promise }]);
+  try {
+    globalThis.fetch = (() => { throw new Error("the status must not contact the node"); }) as unknown as typeof fetch;
+    expect(await message()).toBe("Waiting for payment... (0/3 confirmations)");
+    // the node did not answer the handover yet
+    const running = handover(row);
+    while (!(await saved(row)).tx_hash) await Bun.sleep(1);
+    expect(await message()).toBe("Transaction is valid & amount correct.");
+    hold.resolve();
+    await running;
+    expect(await message()).toBe("Transaction is valid & amount correct.");
+    await persist({ id: row.id, tx_hash: hash, block_height: 181, confirmations: 2 });
+    expect(await message()).toBe("Transaction confirming (2/3)");
+    await persist({ id: row.id, tx_hash: hash, block_height: 181, confirmations: 3 });
+    expect(await message()).toBe("Payment received");
   } finally { hold.resolve(); restore(); }
 });
 
@@ -266,6 +366,38 @@ test("standard checkout counts only live outputs for the invoice and keeps paid 
   expect(paid).toMatchObject({ paid_status: 1, tx_hash: tx.tx_hash });
   expect(orphaned).toMatchObject({ paid_status: 1, tx_block_height: null, tx_confirmations: 0 });
 });
+
+test("each checkout stores its own tracker state and a save replaces only that row", async () => {
+  const first = await session();
+  const second = await session();
+  await persist({ id: first.id, tx_hash: "a".repeat(64), block_height: null, confirmations: 0 });
+  await persist({ id: second.id, tx_hash: "b".repeat(64), block_height: null, confirmations: 0 });
+  const before = (await saved(second)).tracker_state;
+  await persist({ id: first.id, tx_hash: "a".repeat(64), block_height: 15, confirmations: 2 });
+  expect(JSON.parse((await saved(first)).tracker_state!)).toMatchObject({ state: "in_block", position: { height: 15, hash: "block15" }, confirmations: 2 });
+  expect((await saved(second)).tracker_state).toBe(before);
+});
+
+test("a checkout batch rolls back when a row refuses the transaction hash", async () => {
+  const first = await session();
+  const second = await session();
+  const secondHash = "b".repeat(64);
+  await db.updateTxHash(second.id, secondHash);
+  const data = {
+    search_from_height: 0, merchant_confirmations: 3, state: "sending" as const,
+    confirmations: 0, tx_hash: "a".repeat(64), timestamp: 1000,
+  };
+
+  await expect(db.saveCheckoutTrackers([{ id: first.id, data }, { id: second.id, data }]))
+    .rejects.toThrow("checkout state was not saved");
+  expect(await saved(first)).toMatchObject({ tracker_state: null, tx_hash: null });
+  expect(await saved(second)).toMatchObject({ tracker_state: null, tx_hash: secondHash });
+
+  await db.saveCheckoutTrackers([{ id: first.id, data }, { id: second.id, data: { ...data, tx_hash: secondHash } }]);
+  expect(JSON.parse((await saved(first)).tracker_state!)).toEqual(data);
+  expect(JSON.parse((await saved(second)).tracker_state!)).toEqual({ ...data, tx_hash: secondHash });
+});
+
 
 test("walletless checkout offers only browser payment while standard checkout keeps address and QR", async () => {
   const { checkoutPage } = (await import("../page")).page;
