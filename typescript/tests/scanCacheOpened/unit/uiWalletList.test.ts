@@ -194,13 +194,14 @@ test("every background command from the UI goes through callExtensionBackground"
     await ui.makeSignSend({ primary_address: address, payments: [], input_indexes: [] });
     await ui.sweepSignSend({ primary_address: address, address: "dest", input_indexes: [] });
     await ui.rebroadcastTx({ primary_address: address, tx_log_index: 0 });
-    await ui.dismissSendPlate({ primary_address: address });
+    await ui.releaseInputs({ primary_address: address, tx_log_index: 0 });
+    await ui.dismissSendPlate({ primary_address: address, tx_log_index: 0 });
   });
   // each background command has one kind. the bus method is the only way to the runtime.
   expect(sent).toEqual([
     "worker.stopWorker", "worker.setNodeUrl", "worker.setStartHeight", "worker.changeNodeUrlAndStartHeight",
     "worker.setLogSettings", "worker.buildWallets", "worker.makeSignSend", "worker.sweepSignSend",
-    "worker.rebroadcastTx", "worker.dismissSendPlate",
+    "worker.rebroadcastTx", "worker.releaseInputs", "worker.dismissSendPlate",
   ]);
   expect(messages.filter((message) => message.kind.startsWith("worker."))).toEqual([]);
 });

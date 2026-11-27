@@ -17,7 +17,8 @@ import {
   type ExtensionPort,
   type ToolNotice,
 } from "../tools/globals";
-import type { ManyScanCachesOpened, ScanCacheOpened } from "../scanning-syncing/scanresult/scanCacheOpened";
+import type { CoordinatorResults } from "../scanning-syncing/scanresult/coordinatorCommand";
+import type { ManyScanCachesOpened } from "../scanning-syncing/scanresult/scanCacheOpened";
 import { ActionLogIdbBackend } from "./backend/idbBackend";
 import { ActionLogSqliteBackend } from "./backend/sqliteBackend";
 
@@ -30,12 +31,6 @@ export type ActionLogOpenedCreateOptions = {
   backendInstance?: ActionLogBackend;
   onChange?: (() => void) | null;
   extensionMessageBus?: ExtensionMessageBus;
-};
-
-type BackgroundSendMethod = "makeSignSend" | "sweepSignSend" | "rebroadcastTx";
-
-type ExtensionBackgroundResults = {
-  [Method in BackgroundSendMethod as `worker.${Method}`]: Awaited<ReturnType<ScanCacheOpened[Method]>>;
 };
 
 type BackgroundMessageResult =
@@ -254,7 +249,7 @@ export class ActionLogOpened {
   callExtensionBackground<K extends keyof ExtensionMessageByKind>(
     kind: K,
     payload: ExtensionMessageByKind[K],
-  ): Promise<K extends keyof ExtensionBackgroundResults ? ExtensionBackgroundResults[K] : unknown>;
+  ): Promise<K extends `worker.${infer C extends keyof CoordinatorResults}` ? CoordinatorResults[C] : unknown>;
   async callExtensionBackground<K extends keyof ExtensionMessageByKind>(
     kind: K,
     payload: ExtensionMessageByKind[K],
@@ -435,6 +430,10 @@ export class ActionLogOpened {
         const p = env.payload as ExtensionMessageByKind["worker.sweepSignSend"];
         const result = await this.requireWallets().sweepSignSend(p);
         return { ok: true, result };
+      }
+      case "worker.releaseInputs": {
+        await this.requireWallets().releaseInputs(env.payload as ExtensionMessageByKind["worker.releaseInputs"]);
+        return { ok: true };
       }
       case "worker.rebroadcastTx": {
         const p = env.payload as ExtensionMessageByKind["worker.rebroadcastTx"];

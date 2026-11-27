@@ -9,6 +9,7 @@ export { ViewPair } from "./viewpair/ViewPair";
 export {
   ScanCacheOpened,
   ManyScanCachesOpened,
+  type SignedSend,
 } from "./scanning-syncing/scanresult/scanCacheOpened";
 
 export * from "./node-interaction/binaryEndpoints";

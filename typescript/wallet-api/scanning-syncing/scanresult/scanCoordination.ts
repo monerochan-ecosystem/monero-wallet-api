@@ -31,6 +31,11 @@ import {
 } from "../../xmr3_common";
 import {
   currentScanHeightFromRanges,
+  canReleaseInputs,
+  canReserveInput,
+  recoverInterruptedSends,
+  txFailed,
+  txLogHoldsFunds,
   findRange,
   initScanCacheFile,
   lastRange,
@@ -536,30 +541,50 @@ export type BlocksBufferRacer = {
 };
 export type ScanLoopRacer = ScanLoopYield;
 export type Racers = BlocksBufferRacer | ScanLoopRacer | { src: "coordinator_command" };
+function writesInputLock(message: TxCacheWriteMessage): boolean {
+  return !!message.broadcast ||
+    (message.txLogIndex === undefined && !!message.txLog && !txFailed(message.txLog));
+}
 
 export function applyTxCacheWrite(cache: ScanCache, message: TxCacheWriteMessage): number {
   if (message.dismiss) {
-    cache.tx_logs = cache.tx_logs?.map((row) => ({ ...row, hidden_on_send_plate: true }));
+    if (message.txLogIndex !== undefined && !cache.tx_logs?.[message.txLogIndex]) throw new Error("tx log missing");
+    cache.tx_logs = cache.tx_logs?.map((row, index) => message.txLogIndex === undefined || index === message.txLogIndex
+      ? { ...row, hidden_on_send_plate: true } : row);
     return -1;
   }
   const index = message.txLogIndex ?? cache.tx_logs?.length ?? 0;
   const previous = cache.tx_logs?.[index];
   if (message.txLogIndex !== undefined && !previous) throw new Error("tx log missing");
   const row = { ...previous, ...message.txLog } as NonNullable<ScanCache["tx_logs"]>[number];
-  if (message.reserve) {
+  if (previous?.sendResult?.status === "OK" || row.sendResult?.status === "OK") row.broadcast_accepted = true;
+  if (message.releaseInputs) {
+    if (!canReleaseInputs(cache, index)) throw new Error("inputs cannot be released");
+    row.inputs_unlocked = true;
+  }
+  if (message.broadcast) {
+    if (!row.signed_tx) throw new Error("signed transaction required");
+    // the scan can mark the inputs spent after the command read them. so this is decided here.
+    if (message.tx_hash && row.inputs_index.length && row.inputs_index.every((id) => cache.outputs[id]?.spent_in_tx_hash === message.tx_hash)) return index;
+    row.last_broadcast_at = Date.now();
+    row.inputs_unlocked = false;
+  }
+  if (writesInputLock(message)) {
     if (new Set(row.inputs_index).size !== row.inputs_index.length) throw new Error("duplicate inputs selected");
     for (const id of row.inputs_index) {
-      const output = cache.outputs[id];
-      const owner = cache.pending_spent_utxos?.[id];
-      if (!output || output.spent_in_tx_hash || typeof output.burned === "number" || (owner !== undefined && owner !== index))
+      if (!canReserveInput(cache, id, index))
         throw new Error(`input not spendable: ${id}`);
     }
   }
   cache.tx_logs = [...cache.tx_logs ?? []];
   cache.tx_logs[index] = row;
   cache.pending_spent_utxos = { ...cache.pending_spent_utxos };
-  if (message.reserve) for (const id of row.inputs_index) cache.pending_spent_utxos[id] = index;
-  if (row.error || (row.sendResult && row.sendResult.status !== "OK")) {
+  // a late acceptance takes precedence over a draft that selected the released inputs.
+  if (writesInputLock(message) || row.broadcast_accepted) {
+    for (const id of row.inputs_index) cache.pending_spent_utxos[id] = index;
+  }
+  // release signing failures and legacy finalized failures without a recorded attempt.
+  if (!txLogHoldsFunds(row) && (message.releaseInputs || row.last_broadcast_at == null)) {
     for (const id of row.inputs_index) {
       if (cache.pending_spent_utxos[id] === index) delete cache.pending_spent_utxos[id];
     }
@@ -630,6 +655,11 @@ export async function* coordinatorMainMultithreaded(
     pathPrefix,
     signal: stopSync,
   });
+  for (const { cache } of work_to_be_done.wallet_configs) {
+    if (!recoverInterruptedSends(cache)) continue;
+    await writeCacheToFile(cache, cachePath);
+    yield { type: "scan_ready", address: cache.primary_address, newCache: cache, changed_outputs: [] };
+  }
   let blocksBuffer = ctx.blocksBuffer;
   const workBuffer = ctx.workBuffer;
 
@@ -691,7 +721,7 @@ export async function* coordinatorMainMultithreaded(
         await writeCacheToFile(cache, cachePath);
         wallet.cache = cache;
         item.onSaved?.(txLogIndex);
-        const changed_outputs = message.data.reserve
+        const changed_outputs = writesInputLock(message.data) && txLogIndex >= 0
           ? cache.tx_logs![txLogIndex]!.inputs_index.map((id) => ({ change_reason: "spent" as const, output: cache.outputs[id]! }))
           : [];
         yield { type: "scan_ready", address: wallet.primary_address, newCache: cache, changed_outputs, replyPort, txLogIndex };

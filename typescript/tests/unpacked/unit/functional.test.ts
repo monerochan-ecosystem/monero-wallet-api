@@ -103,6 +103,11 @@ async function transportFixture(name: string, rowFields: Record<string, unknown>
         entered.resolve();
         return new Promise<Response>((resolve) => held.push(resolve));
       }
+      if (new URL(request.url).pathname === "/send_raw_transaction") {
+        methods.push("send_raw_transaction");
+        return Response.json({ double_spend: false, fee_too_low: false, invalid_input: false, invalid_output: false,
+          low_mixin: false, not_relayed: false, overspend: false, reason: "", status: "OK", too_big: false, untrusted: false });
+      }
       const message = await request.json() as { method: string; params?: { start_height: number } };
       methods.push(message.method);
       if (message.method === "get_block_headers_range") return Response.json({ id: "0", jsonrpc: "2.0", result: {
@@ -198,6 +203,26 @@ test("production coordinator command rejects an invalid index and accepts the ne
     expect(cache.tx_logs).toHaveLength(1);
     expect(cache.tx_logs[0].broadcast_accepted).toBe(true);
     await Bun.write(`${fixture.dir}/result.json`, JSON.stringify({ cache }, null, 2));
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("production send runs the broadcast callback after the lock is on disk and before the node call", async () => {
+  const fixture = await transportFixture("transport-before-broadcast", { signed_tx: "aa", invocationId: "before-broadcast" });
+  try {
+    const nodeSends = () => fixture.methods.filter((method) => method === "send_raw_transaction").length;
+    let atCallback: { lockOnDisk: boolean; nodeSends: number } | undefined;
+    const sent = await withDeadline(fixture.mco.wallets[0]!.sendSignedTransaction({ txLogIndex: 0, signedTx: "aa" }, "before-broadcast", async () => {
+      const row = JSON.parse(await Bun.file(fixture.path).text()).tx_logs[0];
+      atCallback = { lockOnDisk: typeof row.last_broadcast_at === "number", nodeSends: nodeSends() };
+    }), "send reply missing");
+    const cache = JSON.parse(await Bun.file(fixture.path).text());
+    await Bun.write(`${fixture.dir}/result.json`, JSON.stringify({ atCallback, sent, nodeSends: nodeSends(), row: cache.tx_logs[0] }, null, 2));
+    expect(atCallback).toEqual({ lockOnDisk: true, nodeSends: 0 });
+    expect(sent.status).toBe("OK");
+    expect(nodeSends()).toBe(1);
+    expect(cache.tx_logs[0].sendResult.status).toBe("OK");
   } finally {
     await fixture.close();
   }

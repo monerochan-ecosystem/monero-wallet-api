@@ -47,8 +47,13 @@ export type ExtensionMessageByKind = {
     primary_address: string;
     tx_log_index: number;
   };
+  "worker.releaseInputs": {
+    primary_address: string;
+    tx_log_index: number;
+  };
   "worker.dismissSendPlate": {
     primary_address: string;
+    tx_log_index?: number;
   };
   "worker.setLogSettings": {
     logs?: "console" | "file" | "console-and-file" | "off" | null;

@@ -1,7 +1,7 @@
 import { CatastrophicReorgError, type BlockInfo, type Output } from "../../xmr3_common";
 import { computeKeyImage, type KeyImage } from "./computeKeyImage";
 import { log } from "../../io/logging";
-import { mergeRanges, findRange, findRangeThrows } from "./scanCache";
+import { mergeRanges, findRange, findRangeThrows, isInputLocked } from "./scanCache";
 import { type ErrorResponse } from "../../node-interaction/binaryEndpoints";
 import type {
   CacheChangedCallback,
@@ -380,20 +380,12 @@ export type OutputStatus =
   | Burnt
   | Reorged
   | Spendable;
+
 export function outputStatus(
   output: Output,
   cache: ScanCache,
   current_height: number,
 ): OutputStatus {
-  if (
-    // order matters, check this before "spent" check + "pending" check
-    // tx log index 0 is a real lock. 0 must not count as missing.
-    cache.pending_spent_utxos &&
-    cache.pending_spent_utxos[output.index_on_blockchain.toString()] !==
-      undefined
-  ) {
-    return { status: "prepending" };
-  }
   if (typeof output.burned === "number") {
     return { status: "burnt" };
   }
@@ -401,6 +393,9 @@ export function outputStatus(
     return { status: "spent" };
   }
 
+  // burnt and spent are on-chain facts. they win over the lock.
+  // the lock still runs before pending and spendable, so a reserved output is never spendable.
+  if (isInputLocked(cache, String(output.index_on_blockchain))) return { status: "prepending" };
   const unlock_height = unlockedAtHeight(output);
   // current_height is the top block index. monerod compares against the
   // block count (top index + 1), the height the spending tx would land in.

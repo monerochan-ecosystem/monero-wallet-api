@@ -24,11 +24,11 @@ function method(source: string, start: string) {
 }
 
 describe("action log bus send types", () => {
-  test("callExtensionBackground gives a send command the wallet method's result type", async () => {
+  test("callExtensionBackground gives a worker command kind the result type of that coordinator command", async () => {
     const call = method(await declarations("actionlog/actionLogOpened.d.ts"), "callExtensionBackground<K");
     await Bun.write(`${dir}/call-extension-background.txt`, `${call}\n`);
     expect(call).toEndWith(
-      ": Promise<K extends keyof ExtensionBackgroundResults ? ExtensionBackgroundResults[K] : unknown>;",
+      ": Promise<K extends `worker.${infer C extends keyof CoordinatorResults}` ? CoordinatorResults[C] : unknown>;",
     );
   });
 
@@ -49,6 +49,6 @@ describe("action log bus send types", () => {
     ].map((start) => method(source, start));
     await Bun.write(`${dir}/mco-sends.txt`, `${found.join("\n")}\n`);
     for (const declaration of found)
-      expect(declaration).toEndWith("): Promise<SendRawTransactionResult>;");
+      expect(declaration).toEndWith("): Promise<SendRawTransactionResult & { cache_error?: string; }>;");
   });
 });
