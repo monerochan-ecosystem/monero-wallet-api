@@ -90,6 +90,17 @@ export * from "./keypairs-seeds/keypairs";
 export * from "./send-functionality/conversion";
 export * from "./send-functionality/inputSelection";
 export * from "./tools/monero-tools";
+import { tools as contentTools } from "./tools/monero-tools";
+import { execute_route } from "./tools/calls/001-route";
+
+// the server route needs wallet code. keep it out of the content-script entry.
+export const tools = {
+  ...contentTools,
+  "001": {
+    ...contentTools["001"],
+    counterparty: { ...contentTools["001"].counterparty, execute_route },
+  },
+};
 export type {
   ToolArm,
   ToolContentZone,

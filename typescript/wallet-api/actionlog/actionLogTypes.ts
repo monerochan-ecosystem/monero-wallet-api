@@ -1,4 +1,4 @@
-import type { ToolId } from "../tools/monero-tools";
+import { tools, type ToolId } from "../tools/monero-tools";
 import type {
   ExtensionPort,
   ToolInvocationValidity,
@@ -170,6 +170,9 @@ export function advanceInvo(
   prev: InvocationState | null,
   event: ActionLogEvent,
 ): InvocationState {
+  if (prev && tools[event.toolId]?.worker.should_apply_event?.(prev, event) === false)
+    return prev;
+
   const next = new Invocation({
     ...(prev ?? {
       invocationId: event.invocationId,

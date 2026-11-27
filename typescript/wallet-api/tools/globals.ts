@@ -1,4 +1,4 @@
-import type { ToolWorkerContext } from "../actionlog/actionLogTypes";
+import type { ActionLogEvent, InvocationState, ToolWorkerContext } from "../actionlog/actionLogTypes";
 import type { TransactionFeeOptions } from "../send-functionality/transactionBuilding";
 
 export const TOOL_MAGIC_STRING = "monerochan";
@@ -22,6 +22,7 @@ export type ExtensionMessageByKind = {
   dismiss: { invocationId: string };
   dismissNotice: { noticeId: string };
   openSidebar: null;
+  "tabs.create": { url: string };
   actionLogChanged: null;
   walletCacheChanged: string;
   walletsChanged: { scan_settings_path: string };
@@ -100,10 +101,11 @@ export type ToolUiCopy = {
 
 export type ExtensionPort = {
   name: string;
+  sender?: { tab?: { id?: number }; frameId?: number; url?: string };
   postMessage: (msg: unknown) => void;
   disconnect: () => void;
-  onMessage: { addListener: (cb: (msg: unknown) => void) => void };
-  onDisconnect: { addListener: (cb: () => void) => void };
+  onMessage: { addListener: (cb: (msg: unknown) => void) => void; removeListener?: (cb: (msg: unknown) => void) => void };
+  onDisconnect: { addListener: (cb: () => void) => void; removeListener?: (cb: () => void) => void };
 };
 
 export type ExtensionRuntime = {
@@ -121,6 +123,7 @@ export type ExtensionRuntime = {
 export type ExtensionBrowser = {
   runtime: ExtensionRuntime;
   tabs: {
+    create: (options: { url: string }) => Promise<{ id?: number }>;
     query: (query: { url?: string }) => Promise<{ id?: number }[]>;
     remove: (ids: number[]) => Promise<void>;
     update: (
@@ -148,6 +151,7 @@ export function sendToBackground<K extends ExtensionMessageKind>(
 }
 
 export type PortMessageByKind = {
+  handover: { handoverUrl: string; tx_as_hex: string };
   shareViewkey: {
     viewkey: string;
     primary_address: string;
@@ -193,9 +197,12 @@ export type ToolContentZone<TPayload = unknown> = {
     invo: ToolInvocationForValidate,
   ) => Promise<ToolInvocationValidity> | ToolInvocationValidity;
   execute_deliver?: (invo: ToolInvocationForValidate) => void;
+  install?: () => void;
 };
 
 export type ToolWorkerZone = {
+  /** check an event against the current state just before applying it. */
+  should_apply_event?: (current: InvocationState, event: ActionLogEvent) => boolean;
   invoke_write?: (
     ctx: ToolWorkerContext,
     invo: ToolInvocationForValidate,

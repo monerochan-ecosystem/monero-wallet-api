@@ -131,3 +131,14 @@ test("ordinary navigation and subframes do not open a confirmation page", async 
   await settle();
   expect(b.created).toHaveLength(0);
 });
+
+// content scripts are classic scripts, and service workers refuse top-level await.
+// io/indexedDB opens indexedDB with a top-level await, so an iife build of a graph with it throws.
+test("the tools entries bundle as classic scripts without the indexedDB shim", async () => {
+  for (const entry of ["monero-tools", "content"]) {
+    const build = await Bun.build({ entrypoints: [`${import.meta.dir}/../../../dist/tools/${entry}.js`], target: "browser", format: "iife" });
+    const code = await build.outputs[0]!.text();
+    expect(code).not.toContain("IndexedDBBun");
+    expect(() => new Function(code)).not.toThrow();
+  }
+});

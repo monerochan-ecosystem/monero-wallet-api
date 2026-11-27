@@ -336,6 +336,7 @@ export class ActionLogOpened {
       if (existing) existing.disconnect();
       this.ports.set(invocationId, port);
       port.onDisconnect.addListener(() => {
+        if (this.ports.get(invocationId) !== port) return;
         this.ports.delete(invocationId);
         void this.dispatchPortDisconnect(invocationId);
       });

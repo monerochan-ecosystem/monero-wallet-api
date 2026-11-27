@@ -284,6 +284,32 @@ test("a failed payer broadcast remains locked until manual release through the c
   expect(wallet.cache.pending_spent_utxos!["7"]).toBe(1);
 });
 
+test("001 merchant acceptance completes the tool and prevents reuse after payer failure", async () => {
+  const { dir, mco, wallet } = await fixture("001-payer-failure");
+  wallet.sendTransaction = async () => { throw new Error("payer node offline"); };
+  const input = coordinator.parseToolInvocation(`https://merchant.test/pay#monerochan001_amount_0.1_address_${"4".repeat(95)}`, "", { href: "https://merchant.test/checkout", hostname: "merchant.test" } as Location)!;
+  input.valid = "valid";
+  Object.assign(input.tool.payload, { successUrl: "https://merchant.test/return", handoverUrl: "https://merchant.test/handover" });
+  await mco.actionLogOpened.toolCall(input);
+  const listeners = new Set<(message: unknown) => void>();
+  let received = "";
+  const port = { name: input.invocation_id, sender: { url: "https://merchant.test/checkout", tab: { id: 1 }, frameId: 0 },
+    onMessage: { addListener: (fn: any) => listeners.add(fn), removeListener: (fn: any) => listeners.delete(fn) },
+    onDisconnect: { addListener() {}, removeListener() {} }, disconnect() {},
+    postMessage(message: any) { received = message.payload.tx_as_hex; queueMicrotask(() => { for (const fn of listeners) fn({ ok: true, tx_hash: "hash" }); }); },
+  };
+  await coordinator.tools["001"].worker.execute_run!({ log: mco.actionLogOpened, getWallets: () => mco, getPort: () => port }, input.invocation_id, { wallet_to_send_from_pa: addresses[1] });
+  const result = (await mco.actionLogOpened.invocation(input.invocation_id))!.events.at(-1)!;
+  expect(result).toMatchObject({ ok: true, error: "payer node offline", handover: { ok: true } });
+  expect(received).toBe("signed");
+  expect(wallet.failed_txs).toHaveLength(0);
+  expect(isInputLocked(wallet.cache, "7")).toBe(true);
+  const saved = await readCacheFileDefaultLocation(addresses[1]!, dir);
+  expect(saved!.tx_logs![0]!.error).toContain("payer node offline");
+  expect(saved!.tx_logs![0]!.last_broadcast_at).toBeNumber();
+  await Bun.write(`${dir}/result.json`, stringify({ result, cache: saved }));
+});
+
 test("reset and dismiss keep locked failures available until manual release", async () => {
   const { dir, mco, wallet } = await fixture("dismiss-one-failure");
   const primary_address = addresses[1]!;
@@ -671,4 +697,52 @@ test("reopening wallets recovers signed drafts and attempts from disk", async ()
   } finally {
     node.mockRestore();
   }
+});
+
+// a lost merchant reply, then a retry while the scan marks the inputs spent.
+// the mark comes right after the coordinator read the inputs and queued its renewal.
+async function retryWhileScanMarksSpent(name: string, spentBy: string) {
+  const { dir, mco, wallet } = await fixture(name);
+  const input = coordinator.parseToolInvocation(`https://merchant.test/pay#monerochan001_amount_0.1_address_${"4".repeat(95)}`, "", { href: "https://merchant.test/checkout", hostname: "merchant.test" } as Location)!;
+  input.valid = "valid";
+  Object.assign(input.tool.payload, { successUrl: "https://merchant.test/return", handoverUrl: "https://merchant.test/handover" });
+  await mco.actionLogOpened.toolCall(input);
+  const listeners = new Set<(message: unknown) => void>();
+  const received: string[] = [];
+  let merchant: { ok: boolean; error?: string; tx_hash?: string } = { ok: false, error: "test lost reply" };
+  const port = { name: input.invocation_id, sender: { url: "https://merchant.test/checkout", tab: { id: 1 }, frameId: 0 },
+    onMessage: { addListener: (fn: any) => listeners.add(fn), removeListener: (fn: any) => listeners.delete(fn) },
+    onDisconnect: { addListener() {}, removeListener() {} }, disconnect() {},
+    postMessage(message: any) { received.push(message.payload.tx_as_hex); const reply = merchant; queueMicrotask(() => { for (const fn of listeners) fn(reply); }); },
+  };
+  const ctx = { log: mco.actionLogOpened, getWallets: () => mco, getPort: () => port };
+  await coordinator.tools["001"].worker.execute_run!(ctx, input.invocation_id, { wallet_to_send_from_pa: addresses[1] });
+  expect((await mco.actionLogOpened.invocation(input.invocation_id))!.events.at(-1)).toMatchObject({ ok: false, sent: true });
+  const renew = ScanCacheOpened.prototype.renewTransactionLock as AnyMethod;
+  const spy = spyOn(ScanCacheOpened.prototype, "renewTransactionLock").mockImplementation(function (this: ScanCacheOpened, ...args: any[]) {
+    const pending = renew.apply(this, args);
+    // the coordinator copy shares its outputs with the scan loop. detectOwnspends sets this mark in place.
+    if (!mco.wallets.includes(this)) for (const id of this.tx_logs[args[0]]!.inputs_index) this.cache.outputs[id]!.spent_in_tx_hash = spentBy;
+    return pending;
+  });
+  restore.push(() => spy.mockRestore());
+  merchant = { ok: true, tx_hash: "hash-signed" };
+  await coordinator.tools["001"].worker.execute_run!(ctx, input.invocation_id, { retryHandover: true });
+  const events = (await mco.actionLogOpened.invocation(input.invocation_id))!.events;
+  await Bun.write(`${dir}/result.json`, stringify({ events, received, cache: await readCacheFileDefaultLocation(addresses[1]!, dir) }));
+  return { events, received, wallet };
+}
+
+test("a handover retry delivers the same bytes when the scan marks them mined between the renewal read and its write", async () => {
+  const { events, received, wallet } = await retryWhileScanMarksSpent("retry-mined-between", "hash-signed");
+  expect(events.at(-1)).toMatchObject({ type: "execute_result", ok: true, sent: true, handover: { ok: true, tx_hash: "hash-signed" } });
+  expect(received).toEqual(["signed", "signed"]);
+  expect(wallet.tx_logs).toHaveLength(1);
+});
+
+test("a handover retry does not deliver bytes whose inputs another transaction spent", async () => {
+  const { events, received } = await retryWhileScanMarksSpent("retry-spent-by-other", "other");
+  expect(events.at(-1)).toMatchObject({ type: "execute_result", ok: false, sent: true, handover: { ok: false } });
+  expect(String((events.at(-1) as { handover?: { error?: string } }).handover?.error)).toContain("input not spendable");
+  expect(received).toEqual(["signed"]);
 });
