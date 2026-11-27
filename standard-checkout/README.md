@@ -46,6 +46,14 @@ The entire payment flow is driven by **HTTP headers and server-side rendering**,
 
 5. **`/monerochan001/:address`** implements a validation endpoint that the Monero wallet API calls to verify the displayed monero address belongs to the merchant. This API is accessed by the customers wallet when he clicks the "pay with browser wallet" link.
 
+## Browser-wallet handover
+
+`001` address validation supplies the session's return URL and advertises the same address route for handover. The wallet submits the signed transaction with `POST /monerochan001/:address`. `acceptance.ts` checks the scanned amount and payment ID, awaits the transaction-hash write, and then lets the library send the exact transaction to the merchant's node. The node answers OK for a new transaction and for one that it has already.
+
+The node URL comes from the opened wallet's scan settings. There are no separate hard-coded display and relay nodes. The status page reads the saved checkout row. The wallet scan updates the confirmation count when the chain changes. A checkout stays paid after it reaches the required confirmation count, even if a later reorg removes the payment block. If the scanner reports a failure, the status page shows that verification is unavailable.
+
+The status iframe uses `Refresh: 1`. It can show the handover receipt while the wallet scans for the payment.
+
 ## Mininext Tutorial
 
 If you understand these 3 basic concepts you can build your own website with mininext:
