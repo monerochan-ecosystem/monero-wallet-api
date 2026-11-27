@@ -87,6 +87,8 @@ type NewTrackerOptions = {
   payment_id: number;
   invoice_amount: bigint;
   merchant_confirmations: number;
+  // when the invoice was created (unix milliseconds). a payment cannot be older than its invoice.
+  created_at?: number;
 };
 
 export type NewTrackerResult = TransactionTracker | { error: string };
@@ -100,6 +102,12 @@ type TrackerStatus = {
 export async function openTrackers(options: OpenTrackersOptions = {}) {
   return new Trackers(options);
 }
+
+// a new search starts this many blocks below the tip. the payment can already be in one of them,
+// or a reorg can move it there.
+const SEARCH_BELOW_TIP = 20;
+// a block takes two minutes on mainnet. one block per minute is a safe margin when an invoice age becomes a height.
+const MS_PER_BLOCK_FOR_AGE = 60_000;
 
 export class Trackers {
   private readonly lifetime = new AbortController();
@@ -144,7 +152,9 @@ export class Trackers {
     signal.throwIfAborted();
     let tracker = payment;
     if (!(tracker instanceof TransactionTracker)) {
-      const { tx_as_hex, view_pair, payment_id, invoice_amount, merchant_confirmations } = tracker;
+      const { tx_as_hex, view_pair, payment_id, invoice_amount, merchant_confirmations, created_at } = tracker;
+      // an old invoice makes the search start lower
+      const ageBlocks = Number.isFinite(created_at) ? Math.max(0, Math.ceil((Date.now() - (created_at ?? 0)) / MS_PER_BLOCK_FOR_AGE)) : 0;
       if (!Number.isSafeInteger(merchant_confirmations) || merchant_confirmations < 0) {
         throw new Error("required merchant confirmations must be zero or a positive safe integer");
       }
@@ -170,7 +180,7 @@ export class Trackers {
       tracker = new TransactionTracker({
         tx_as_hex, tx_hash: tx_hash.toLowerCase(), primary_address: view_pair.primary_address,
         payment_id, merchant_confirmations, received_amount: received_amount.toString(),
-        state: "scanned", confirmations: 0, timestamp: Date.now(), search_from_height: Math.max(0, height - 1),
+        state: "scanned", confirmations: 0, timestamp: Date.now(), search_from_height: Math.max(0, height - 1 - Math.max(SEARCH_BELOW_TIP, ageBlocks)),
       });
       this.tracker_instances.set(tracker, { saved: tracker.data, ready: false });
     }

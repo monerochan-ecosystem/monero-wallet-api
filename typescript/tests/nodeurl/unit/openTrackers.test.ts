@@ -121,7 +121,8 @@ test("send records and saves the starting state before publishing the bytes", as
   const events: string[] = [];
   const { send, trackers } = await setup({
     notify: ([tracker]) => {
-      expect(tracker!.data).toMatchObject({ search_from_height: 10, tx_hash, tx_as_hex, timestamp: Date.now() });
+      // the search starts 20 blocks below the tip 10, so at 0
+      expect(tracker!.data).toMatchObject({ search_from_height: 0, tx_hash, tx_as_hex, timestamp: Date.now() });
       events.push(tracker!.data.state);
     },
   });
@@ -197,6 +198,51 @@ test("a tip sends one batch with all changed payments", async () => {
   await trackers.track();
   expect([first.data.confirmations, second.data.confirmations]).toEqual([2, 2]);
   expect(notify.mock.calls).toEqual([[[first, second]], [[first, second]]]);
+});
+
+test("a payment that is already in a block below the handover tip is found", async () => {
+  const { mine, trackers } = await setup();
+  // the payer sent the bytes itself before the handover
+  const payment = mine(tx_hash);
+  for (let i = 0; i < 4; i++) mine();
+  const tracker = await newTracker(trackers, { ...paymentOptions, merchant_confirmations: 10 });
+  await trackers.track();
+  expect(tracker.data).toMatchObject({
+    state: "in_block", position: { height: 11, hash: payment.block_header.hash }, confirmations: 5,
+  });
+});
+
+test("a reorg that moves the payment below the handover tip does not hide it", async () => {
+  const { blocks, mine, trackers, deliverTip } = await setup();
+  const tracker = await newTracker(trackers, { ...paymentOptions, merchant_confirmations: 10 });
+  mine(tx_hash);
+  await deliverTip();
+  expect(tracker.data).toMatchObject({ state: "in_block", confirmations: 1 });
+  // the reorg removes blocks 8 to 11. the new chain has the payment at 8, below the handover tip 10.
+  blocks.length = 8;
+  const lower = mine(tx_hash);
+  mine();
+  await deliverTip();
+  expect(tracker.data).toMatchObject({
+    state: "in_block", position: { height: 8, hash: lower.block_header.hash }, confirmations: 2,
+  });
+});
+
+test("a late handover finds a payment that is older than 20 blocks when the invoice is older", async () => {
+  const { mine, trackers } = await setup();
+  for (let i = 0; i < 60; i++) mine();
+  const payment = mine(tx_hash);                     // the payment is in block 71
+  for (let i = 0; i < 30; i++) mine();               // tip 101: the payment is 30 blocks below it
+  // without an invoice time the search starts 20 blocks below the tip and misses the payment
+  const late = await newTracker(trackers, { ...paymentOptions, merchant_confirmations: 10 });
+  expect(late.data.search_from_height).toBe(81);
+  // the invoice is 80.5 minutes old. one block per minute puts its block 81 blocks below the tip
+  const tracker = await newTracker(trackers, { ...paymentOptions, merchant_confirmations: 10,
+    created_at: Date.now() - 80.5 * 60_000 });
+  expect(tracker.data.search_from_height).toBe(20);
+  await trackers.track();
+  expect(tracker.data).toMatchObject({ state: "confirmed", confirmations: 31,
+    position: { height: 71, hash: payment.block_header.hash } });
 });
 
 test("a tip change fills gaps and a same-height reorg replaces the payment block", async () => {
@@ -317,7 +363,7 @@ test("a restarted tracker follows the chain from its saved position", async () =
   await reopened.track();
   expect(reads.every(height => height >= 12)).toBe(true);
   expect(reopened.transactionTrackers[0]?.data).toMatchObject({
-    state: "in_block", search_from_height: 10, position: { height: 13, hash: payment.block_header.hash }, confirmations: 1, timestamp: 2000,
+    state: "in_block", search_from_height: 0, position: { height: 13, hash: payment.block_header.hash }, confirmations: 1, timestamp: 2000,
   });
   expect(reopened.transactionTrackers[0]?.transaction).toEqual({
     tx_hash, payment_id: 42, amount: received_amount, confirmations: 1, state: "in_block",
@@ -395,7 +441,8 @@ async function setupRpc(name: string) {
     depth: top - height, difficulty: 1, difficulty_top64: 0, hash: hash(height), height,
     long_term_weight: 0, major_version: 16, miner_tx_hash: hash(1000 + height), minor_version: 0,
     nonce: 0, num_txes: payments.get(height)?.length ?? 0, orphan_status: false, pow_hash: "",
-    prev_hash: hash(height - 1), reward: 0, timestamp: 1, wide_cumulative_difficulty: "1", wide_difficulty: "1",
+    // a real genesis block has a zero prev_hash. the search window can reach block 0 on this short chain.
+    prev_hash: hash(Math.max(0, height - 1)), reward: 0, timestamp: 1, wide_cumulative_difficulty: "1", wide_difficulty: "1",
   });
   const info = () => ({
     adjusted_time: 0, alt_blocks_count: 0, block_size_limit: 0, block_size_median: 0,
@@ -481,7 +528,7 @@ for (const mode of ["packed", "unpacked"] as const) {
       if ("error" in tracker) throw new Error(tracker.error);
       expect(tracker.data.state).toBe("accepted");
       const saved = await Bun.file(`${local.dir}/sending.json`).json();
-      expect(saved).toMatchObject({ state: "sending", tx_hash, tx_as_hex, payment_id: paymentId, search_from_height: 20, received_amount: fixture.expected.amount });
+      expect(saved).toMatchObject({ state: "sending", tx_hash, tx_as_hex, payment_id: paymentId, search_from_height: 0, received_amount: fixture.expected.amount });
       const sends = local.requests.filter(request => request.method === "/send_raw_transaction");
       expect(sends).toEqual([{ method: "/send_raw_transaction", height: undefined, tx_bytes: tx_as_hex.length / 2 }]);
 

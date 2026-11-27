@@ -51,7 +51,7 @@ if ("error" in result) console.error(result.error);
 
 `invoice_amount` is the minimum payment in atomic units. If the scan fails, the payment ID is wrong, or the amount is below the invoice, `new()` returns `{ error }` before it starts a tracker.
 
-Tracking starts at the tip observed before submission. A tip change triggers a consecutive block read. If a reorg replaces the payment block, the tracker searches again. `openTrackers()` scans one transaction per checkout submission and shares block reads across trackers, so a server can serve many wallets with little CPU time.
+Tracking starts 20 blocks below the tip observed before submission, so it also finds a payment that is already in a block or that a reorg moves below that tip. With `created_at`, the invoice time, the start also goes back one block per minute of invoice age, so a late handover finds an older payment. A tip change triggers a consecutive block read. If a reorg replaces the payment block, the tracker searches again. `openTrackers()` scans one transaction per checkout submission and shares block reads across trackers, so a server can serve many wallets with little CPU time.
 
 `notify` receives only the trackers that changed. This example uses one wallet and appends one JSON line per changed `tracker.data`. Use `tracker.transaction` for the history row, which shows the received amount in atomic units as a `bigint` and block details when the payment tx was mined. On restart, `openTrackers()` restores the latest state for each wallet and payment ID.
 

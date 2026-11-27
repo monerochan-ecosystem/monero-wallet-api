@@ -153,10 +153,10 @@ run("openTrackers runs a signed library transfer through confirmation and a reor
     }));
     if ("error" in single) throw new Error(single.error);
     const tx_hash = single.data.tx_hash;
-    expect(single.data).toMatchObject({ state: "accepted", confirmations: 0, search_from_height: start });
+    expect(single.data).toMatchObject({ state: "accepted", confirmations: 0, search_from_height: start - 20 });
     expect(await Bun.file(out + "/sending.json").json()).toMatchObject({
       state: "sending", tx_hash, tx_as_hex, payment_id: paymentId,
-      search_from_height: start, received_amount: amount,
+      search_from_height: start - 20, received_amount: amount,
     });
     await inPool(tx_hash);
 
