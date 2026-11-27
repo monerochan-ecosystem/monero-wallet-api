@@ -15,7 +15,77 @@ import { openWallets } from "@spirobel/monero-wallet-api";
 const wallets = await openWallets();
 ```
 
-## kitchen sink + transaction sending
+## wallet less transaction tracker
+
+Use `ViewPair` to make the checkout address. `trackers.new()` scans the signed transaction, verifies the payment ID and invoice amount, then submits it and tracks its confirmations.
+
+```js
+import { appendFile } from "node:fs/promises";
+import { openTrackers, ViewPair } from "@spirobel/monero-wallet-api";
+
+const viewPair = await ViewPair.create(primary_address, secret_view_key);
+const payment_id = 42;
+const address = viewPair.makeIntegratedAddress(payment_id);
+// show the address at checkout.
+
+const states = Bun.JSONL.parse(await Bun.file("checkouts.jsonl").bytes());
+async function saveStates(changed) {
+  const lines = changed.map(({ data }) => JSON.stringify(data));
+  await appendFile("checkouts.jsonl", lines.join("\n") + "\n");
+}
+
+const trackers = await openTrackers({
+  node_url: "http://127.0.0.1:18081",
+  notify: saveStates,
+  transactionTrackers: states,
+});
+const result = await trackers.new({
+  tx_as_hex,
+  view_pair: viewPair,
+  payment_id,
+  invoice_amount: 100_000_000_000n,
+  merchant_confirmations: 3,
+});
+if ("error" in result) console.error(result.error);
+```
+
+`invoice_amount` is the minimum payment in atomic units. If the scan fails, the payment ID is wrong, or the amount is below the invoice, `new()` returns `{ error }` before it starts a tracker.
+
+Tracking starts 20 blocks below the tip observed before submission, so it also finds a payment that is already in a block or that a reorg moves below that tip. With `created_at`, the invoice time, the start also goes back one block per minute of invoice age, so a late handover finds an older payment. A tip change triggers a consecutive block read. If a reorg replaces the payment block, the tracker searches again. `openTrackers()` scans one transaction per checkout submission and shares block reads across trackers, so a server can serve many wallets with little CPU time.
+
+`notify` receives only the trackers that changed. This example uses one wallet and appends one JSON line per changed `tracker.data`. Use `tracker.transaction` for the history row, which shows the received amount in atomic units as a `bigint` and block details when the payment tx was mined. On restart, `openTrackers()` restores the latest state for each wallet and payment ID.
+
+```ts
+import { appendFile } from "node:fs/promises";
+import { openTrackers, type TransactionTracker, type TransactionTrackerState } from "@spirobel/monero-wallet-api";
+
+const saved = Bun.JSONL.parse(await Bun.file("checkouts.jsonl").bytes()) as TransactionTrackerState[];
+const restored = await openTrackers({
+  node_url: "http://127.0.0.1:18081",
+  transactionTrackers: saved,
+  notify: async (changed: readonly TransactionTracker[]) => {
+    const lines = changed.map(({ data }) => JSON.stringify(data));
+    await appendFile("checkouts.jsonl", lines.join("\n") + "\n");
+  },
+});
+
+// call this to shutdown.
+await restored.stop();
+```
+
+**Walletless transaction tracking is useful for browser-wallet checkouts with [Tool 001 handover](../mids/mid-0003.md#handover) and atomic swap protocols that pass a signed transaction directly to the counterparty.
+A small VPS can check the payment on receipt, show its status, and track confirmations without syncing a wallet.
+Use `openWallets()` to discover payments without a handover.**
+
+## ScanCache durability
+
+The ScanCache stores scan progress, outputs, and the wallet's transaction log (TxLog). The wallet reserves inputs, saves the signed bytes, and records the broadcast attempt before it sends those bytes to a node or hands them to a checkout. It saves the result when it receives one. The same coordinator writes the cache in Bun and in the browser wallet.
+
+When the wallet process stops or crashes, the scan resumes from saved progress on reopen. An interrupted send keeps any saved input reservations. You can release the inputs manually or rebroadcast the same transaction if the TxLog has its signed bytes. The scan records the spend when it finds the transaction on chain.
+
+**Transaction API.** Use `makeSignSendTransaction()` or `sweepSignSend()` for a tracked send, or use `makeSignTransaction()` and `sendSignedTransaction()` to separate signing from broadcast. These methods use the active coordinator. The lower-level `ViewPair` builders and the raw wallet build, sign, and broadcast helpers leave TxLog writes and input reservations to the caller.
+
+## transaction sending
 
 ```ts
 import { openWallets } from "@spirobel/monero-wallet-api";
@@ -159,9 +229,15 @@ docker build -t monero-wallet-api-build .
 build the library -> find the result in target/wasm32-wasip1/release
 
 ```bash
+cd rust || cd ../rust
 docker run -v $(pwd):/app -it monero-wallet-api-build
 ```
-
+frost-dkg
+```bash
+cd frost-dkg || cd ../frost-dkg
+docker run -v $(pwd):/app -it monero-wallet-api-build
+```
+typescript
 ```bash
 cd typescript || cd ../typescript
 bun run build

@@ -14,8 +14,8 @@
     "typescript": "5.9.3"
   },
   "dependencies": {
-    "@spirobel/mininext": "0.8.5",
-    "@spirobel/monero-wallet-api": "0.6.1",
+    "@spirobel/mininext": "0.9.2",
+    "@spirobel/monero-wallet-api": "file:../typescript",
     "qrcode": "1.5.4"
   }
 }

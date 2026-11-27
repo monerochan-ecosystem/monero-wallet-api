@@ -202,14 +202,19 @@ test("legacy call uses the existing 001 log and execute path", async () => {
     invocations: async (status) => active.invocations(status),
   } });
   const sent: unknown[] = [];
-  log.bindMco({ wallets: [{ primary_address: ADDRESS, makeSignSendTransaction: async (p: unknown) => { sent.push(p); } }] } as never);
+  const broadcasts: unknown[] = [];
+  log.bindMco({ wallets: [{ primary_address: ADDRESS,
+    makeSignTransaction: async (p: unknown) => { sent.push(p); return { signedTx: "signed", txLogIndex: 0 }; },
+    sendSignedTransaction: async (signed: unknown, invocationId?: string) => { broadcasts.push({ signed, invocationId }); return { status: "OK" }; },
+  }] } as never);
   const invo = parseToolInvocation(`monero:${ADDRESS}`, "pay", page)!;
   await log.toolCall(invo);
   expect(log.getActiveByPermissions(["spend"])[0]?.no_check).toBe(true);
   expect((await log.invocation(invo.invocation_id))?.context_href).toBe(page.href);
   // no wallet, wasm, or node. only the last send method is a stub.
   await log.execute(invo.invocation_id, { amount: "0.4", wallet_to_send_from_pa: ADDRESS });
-  expect(sent).toEqual([{ payments: [{ address: ADDRESS, amount: "400000000000" }], invocationId: invo.invocation_id }]);
+  expect(sent).toMatchObject([{ payments: [{ address: ADDRESS, amount: "400000000000" }], invocationId: invo.invocation_id }]);
+  expect(broadcasts).toMatchObject([{ signed: { signedTx: "signed", txLogIndex: 0 }, invocationId: invo.invocation_id }]);
   expect((await log.invocation(invo.invocation_id))?.ok).toBe(true);
   expect(log.getActiveByPermissions(["spend"])).toHaveLength(0);
 });

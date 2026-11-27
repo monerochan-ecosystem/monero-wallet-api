@@ -27,3 +27,18 @@ test("coinbase output unlocks at top index block_height + 59", () => {
     status: "spendable",
   });
 });
+
+test("a reserved input is never spendable. a mined or burnt one is not prepending", () => {
+  // tx log index 0 is a real lock. 0 must not count as missing.
+  const reserved = {
+    outputs: {}, pending_spent_utxos: { "7": 0 },
+    tx_logs: [{ inputs_index: ["7"], last_broadcast_at: null, signed_tx: "aa" }],
+  } as unknown as ScanCache;
+  expect(outputStatus(output(false), reserved, 109)).toEqual({ status: "prepending" });
+  // burnt and spent are on-chain facts. they win over the lock
+  expect(outputStatus({ ...output(false), spent_in_tx_hash: "mined" }, reserved, 109)).toEqual({ status: "spent" });
+  expect(outputStatus({ ...output(false), burned: 1 }, reserved, 109)).toEqual({ status: "burnt" });
+  // a released draft holds no funds, so its entry is not a lock
+  const released = { ...reserved, tx_logs: [{ ...reserved.tx_logs[0], inputs_unlocked: true }] } as unknown as ScanCache;
+  expect(outputStatus(output(false), released, 109)).toEqual({ status: "spendable" });
+});

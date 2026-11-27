@@ -4,6 +4,7 @@ import {
   writeScanSettings,
   openWallets,
   cacheFileDefaultLocation,
+  readCacheFileDefaultLocation,
   readConnectionStatusDefaultLocation,
   type ScanSettings,
   type ManyScanCachesOpened,
@@ -658,4 +659,97 @@ test(
     }
   },
   { timeout: 30000 },
+);
+
+test(
+  "d: separately scanned wallets resume after a shared reorg",
+  async () => {
+    const dir = "test-data/reorg-separate-wallets";
+    await rm(dir, { recursive: true, force: true });
+    await mkdir(dir, { recursive: true });
+
+    const pathPrefix = `${dir}/`;
+    const settingsPath = `${pathPrefix}ScanSettings.json`;
+    const keypairs = await Bun.file(KEYPAIRS_PATH).json() as Keypair[];
+    const firstAddress = keypairs[0].view_key.mainnet_primary;
+    const secondAddress = keypairs[1].view_key.mainnet_primary;
+    const proc = await startNode();
+    let wallets: ManyScanCachesOpened | undefined;
+    let scanError: unknown;
+
+    async function open(startHeight: number, activeWallets: ScanSettings["wallets"]) {
+      scanError = undefined;
+      await writeScanSettings({
+        start_height: startHeight,
+        node_url: NODE_URL,
+        wallets: activeWallets,
+      }, settingsPath);
+      wallets = await openWallets({
+        scan_settings_path: settingsPath,
+        pathPrefix,
+        no_stats: true,
+        workerError: (error) => { scanError = error; },
+      });
+    }
+
+    async function waitForCache(address: string, height: number): Promise<ScanCache> {
+      const deadline = Date.now() + 12000;
+      while (Date.now() < deadline) {
+        if (scanError) throw scanError;
+        const cache = await readCacheFileDefaultLocation(address, pathPrefix);
+        if (cache?.scanned_ranges.some((range) => range.end >= height)) return cache;
+        await Bun.sleep(50);
+      }
+      throw new Error(`Wallet cache did not reach height ${height}`);
+    }
+
+    async function stopWallets() {
+      await wallets?.stopWorker();
+      wallets = undefined;
+    }
+
+    try {
+      await waitForNode();
+      await generateBlocks(firstAddress, 30);
+      await open(0, [{ primary_address: firstAddress }]);
+      const firstBefore = await waitForCache(firstAddress, 30);
+      expect(firstBefore.scanned_ranges.map(({ start, end }) => [start, end])).toEqual([[0, 30]]);
+      await stopWallets();
+
+      const pop = await fetch(`${NODE_URL}/pop_blocks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nblocks: 5 }),
+      });
+      expect(pop.ok).toBe(true);
+      await generateBlocks(secondAddress, 6);
+      await open(28, [
+        { primary_address: secondAddress },
+        { primary_address: firstAddress, halted: true },
+      ]);
+      const secondBefore = await waitForCache(secondAddress, 31);
+      expect(secondBefore.scanned_ranges.map(({ start, end }) => [start, end])).toEqual([[28, 31]]);
+      expect(Object.keys(secondBefore.outputs)).toHaveLength(4);
+      await stopWallets();
+
+      await open(28, [
+        { primary_address: secondAddress },
+        { primary_address: firstAddress },
+      ]);
+      const firstAfter = await waitForCache(firstAddress, 31);
+      const secondAfter = await readCacheFileDefaultLocation(secondAddress, pathPrefix);
+      expect(firstAfter.scanned_ranges.map(({ start, end }) => [start, end])).toEqual([[0, 31]]);
+      expect(firstAfter.scanned_ranges[0].block_hashes[0].block_hash).toBe(
+        secondBefore.scanned_ranges[0].block_hashes[0].block_hash,
+      );
+      expect(firstAfter.reorg_info?.split_heights.length).toBeGreaterThan(0);
+      expect(secondAfter?.scanned_ranges).toEqual(secondBefore.scanned_ranges);
+      expect(secondAfter?.outputs).toEqual(secondBefore.outputs);
+      expect(secondAfter?.reorg_info).toEqual(secondBefore.reorg_info);
+    } finally {
+      await stopWallets();
+      await stopNode(proc);
+    }
+  },
+  { timeout: 60000 },
 );

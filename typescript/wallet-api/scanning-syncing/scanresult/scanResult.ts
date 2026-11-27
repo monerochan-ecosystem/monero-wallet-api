@@ -1,7 +1,7 @@
 import { CatastrophicReorgError, type BlockInfo, type Output } from "../../xmr3_common";
 import { computeKeyImage, type KeyImage } from "./computeKeyImage";
 import { log } from "../../io/logging";
-import { mergeRanges, findRange, findRangeThrows } from "./scanCache";
+import { mergeRanges, findRange, findRangeThrows, isInputLocked } from "./scanCache";
 import { type ErrorResponse } from "../../node-interaction/binaryEndpoints";
 import type {
   CacheChangedCallback,
@@ -49,6 +49,7 @@ export async function processScanResult(
     let tipIndex = findTipIndex(result.block_infos, oldRange.block_hashes[0]);
     if (tipIndex === "empty_blocks_array")
       return processResultReturnValue(cache, params, changed_outputs);
+    const reorg = tipIndex === "reorg_found";
     if (tipIndex === "reorg_found") {
       let split_height_index = null;
       for (const block_hash of oldRange.block_hashes) {
@@ -163,12 +164,9 @@ export async function processScanResult(
     const to_height_index = result.block_infos.findIndex(
       (b) => b.block_height === params.to_height,
     );
-    const new_range = selectAnchors(
-      result.block_infos,
-      tipIndex,
-      oldRange,
-      to_height_index,
-    );
+    const new_range = reorg
+      ? replaceReorgRange(result.block_infos, tipIndex, oldRange, to_height_index)
+      : selectAnchors(result.block_infos, tipIndex, oldRange, to_height_index);
     const last_height =
       typeof params.to_height === "number"
         ? params.to_height
@@ -382,20 +380,12 @@ export type OutputStatus =
   | Burnt
   | Reorged
   | Spendable;
+
 export function outputStatus(
   output: Output,
   cache: ScanCache,
   current_height: number,
 ): OutputStatus {
-  if (
-    // order matters, check this before "spent" check + "pending" check
-    // tx log index 0 is a real lock. 0 must not count as missing.
-    cache.pending_spent_utxos &&
-    cache.pending_spent_utxos[output.index_on_blockchain.toString()] !==
-      undefined
-  ) {
-    return { status: "prepending" };
-  }
   if (typeof output.burned === "number") {
     return { status: "burnt" };
   }
@@ -403,6 +393,9 @@ export function outputStatus(
     return { status: "spent" };
   }
 
+  // burnt and spent are on-chain facts. they win over the lock.
+  // the lock still runs before pending and spendable, so a reserved output is never spendable.
+  if (isInputLocked(cache, String(output.index_on_blockchain))) return { status: "prepending" };
   const unlock_height = unlockedAtHeight(output);
   // current_height is the top block index. monerod compares against the
   // block count (top index + 1), the height the spending tx would land in.
@@ -452,6 +445,34 @@ export function selectAnchors(
     // newest, middle, oldest
   };
 }
+/**
+ * use the same reorg anchor rules in the fetcher and wallet. keep the oldest
+ * anchor if it is below the shared block.
+ * trim the old range before merging so an equal or shorter replacement can
+ * update the tip hash. for example, trim 1005 to 999 before merging up to 1004.
+ */
+export function replaceReorgRange(
+  blocks: BlockInfo[],
+  splitIndex: number,
+  oldRange: CacheRange,
+  endIndex = blocks.length - 1,
+): CacheRange {
+  const split = blocks[splitIndex];
+  const tip = blocks[endIndex];
+  const candidate = blocks[Math.max(splitIndex, endIndex - 100)];
+  const previousAnchor = oldRange.block_hashes[2];
+  const anchor = previousAnchor && previousAnchor.block_height < split.block_height
+    ? previousAnchor
+    : split;
+  oldRange.end = split.block_height;
+  oldRange.block_hashes = [split, split, anchor];
+  return {
+    start: split.block_height,
+    end: tip.block_height,
+    block_hashes: [tip, candidate, anchor],
+  };
+}
+
 export function shouldReplaceAnchor(oldRange: CacheRange, last: BlockInfo) {
   const oldAnchor = oldRange.block_hashes.at(2);
   if (!oldAnchor) throw new Error("old Range malformed");

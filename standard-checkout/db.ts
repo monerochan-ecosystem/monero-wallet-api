@@ -1,11 +1,14 @@
 import { SQL } from "bun";
+import type { TransactionTrackerState, TransactionStatus } from "@spirobel/monero-wallet-api";
 
 const sql = new SQL({
   adapter: "sqlite",
-  filename: "monero_payments.db",
+  filename: Bun.env.CHECKOUT_DB || "monero_payments.db",
   create: true,
 });
 await sql`PRAGMA journal_mode = WAL`;
+// concurrent checkout requests use the same database
+await sql`PRAGMA busy_timeout = 5000`;
 
 await sql`
 CREATE TABLE IF NOT EXISTS checkout_session (
@@ -17,9 +20,19 @@ CREATE TABLE IF NOT EXISTS checkout_session (
     required_confirmations INTEGER NOT NULL DEFAULT 10,
     tx_confirmations INTEGER NOT NULL DEFAULT 0,
     tx_hash TEXT,
+    tx_block_hash TEXT,
+    tx_block_height INTEGER,
+    tracker_state TEXT,
     timestamp TEXT DEFAULT CURRENT_TIMESTAMP
   );
 `.execute();
+
+const columns: { name: string }[] = await sql`SELECT name FROM pragma_table_info('checkout_session')`;
+for (const [name, type] of [["tx_block_hash", "TEXT"], ["tx_block_height", "INTEGER"], ["tracker_state", "TEXT"]]) {
+  if (!columns.some((column) => column.name === name)) {
+    await sql.unsafe(`ALTER TABLE checkout_session ADD COLUMN ${name} ${type}`).execute();
+  }
+}
 
 export type CheckoutSessionRow = {
   id: number;
@@ -30,6 +43,9 @@ export type CheckoutSessionRow = {
   required_confirmations: number;
   tx_confirmations: number;
   tx_hash: string | null;
+  tx_block_hash: string | null;
+  tx_block_height: number | null;
+  tracker_state: string | null;
   timestamp: string;
 };
 
@@ -93,7 +109,69 @@ export function updateTxHash(
   return sql`
     UPDATE checkout_session
     SET tx_hash = ${tx_hash}
-    WHERE id = ${id}
+    WHERE id = ${id} AND (tx_hash IS NULL OR tx_hash = ${tx_hash})
+    RETURNING *
+  `.execute();
+}
+
+// only unpaid sessions with no confirmations can release their hash.
+export function releaseTxHash(id: number, tx_hash: string): SQL.Query<CheckoutSessionRow[]> {
+  return sql`
+    UPDATE checkout_session
+    SET tx_hash = NULL
+    WHERE id = ${id} AND tx_hash = ${tx_hash} AND tx_confirmations = 0 AND paid_status = 0
+    RETURNING *
+  `.execute();
+}
+
+export function getOpenTrackedSessions(): SQL.Query<(CheckoutSessionRow & { tracker_state: string })[]> {
+  return sql`SELECT * FROM checkout_session WHERE paid_status = 0 AND tracker_state IS NOT NULL`.execute();
+}
+
+function writeCheckoutTrackers(states: readonly { id: number; data: TransactionTrackerState }[]): SQL.Query<CheckoutSessionRow[]> {
+  const rows = states.map(({ id, data }) => ({
+    id, data, paid: data.state === "confirmed" ? 1 : 0,
+    block: data.state === "in_block" || data.state === "confirmed" ? data.position : undefined,
+  }));
+  // check all rows before changing any so concurrent requests cannot see a partial update.
+  return sql`
+    WITH updates AS MATERIALIZED (
+      SELECT checkout_session.id, value
+      FROM json_each(${JSON.stringify(rows)})
+      JOIN checkout_session ON checkout_session.id = value ->> 'id'
+      WHERE (paid_status = 0 OR value ->> 'paid' = 1)
+        AND (tx_hash IS NULL OR tx_hash = value ->> '$.data.tx_hash')
+    )
+    UPDATE checkout_session
+    SET tracker_state = value -> 'data', tx_hash = value ->> '$.data.tx_hash',
+        tx_block_height = value ->> '$.block.height', tx_block_hash = value ->> '$.block.hash',
+        tx_confirmations = value ->> '$.data.confirmations', paid_status = value ->> 'paid'
+    FROM updates
+    WHERE checkout_session.id = updates.id
+      AND (SELECT COUNT(DISTINCT id) FROM updates) = ${rows.length}
+    RETURNING *
+  `.execute();
+}
+
+export function saveCheckoutTracker(id: number, data: TransactionTrackerState): SQL.Query<CheckoutSessionRow[]> {
+  return writeCheckoutTrackers([{ id, data }]);
+}
+
+export async function saveCheckoutTrackers(states: readonly { id: number; data: TransactionTrackerState }[]): Promise<void> {
+  if ((await writeCheckoutTrackers(states)).length !== states.length) throw new Error("checkout state was not saved");
+}
+
+// confirmations follow the chain. paid stays set once the required count is reached.
+export function updateTransactionStatus(id: number, tx_hash: string, status: TransactionStatus | null): SQL.Query<CheckoutSessionRow[]> {
+  const confirmations = status?.confirmations ?? 0;
+  return sql`
+    UPDATE checkout_session
+    SET tx_confirmations = ${confirmations},
+        tx_block_hash = ${status?.block_hash ?? null},
+        tx_block_height = ${status?.block_height ?? null},
+        paid_status = CASE WHEN ${status !== null} AND ${confirmations} >= required_confirmations THEN 1 ELSE paid_status END
+    WHERE id = ${id} AND tx_hash = ${tx_hash}
+    RETURNING *
   `.execute();
 }
 

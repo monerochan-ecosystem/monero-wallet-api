@@ -155,26 +155,6 @@ export async function readCacheFileDefaultLocation(
     cacheFileDefaultLocation(primary_address, pathPrefix),
   );
 }
-export type WriteCacheFileParams = {
-  primary_address: string;
-  pathPrefix?: string;
-  writeCallback: (cache: ScanCache) => void | Promise<void>;
-};
-export async function writeCacheFileDefaultLocationThrows(
-  params: WriteCacheFileParams,
-) {
-  const cache = await readCacheFileDefaultLocation(
-    params.primary_address,
-    params.pathPrefix,
-  );
-  if (!cache)
-    throw new Error(
-      `cache not found for primary address: ${params.primary_address}, and path prefix: ${params.pathPrefix}`,
-    );
-  await params.writeCallback(cache);
-  // write to cache
-  await writeCacheToFile(cache, params.pathPrefix);
-}
 export async function writeCacheToFile(cache: ScanCache, pathPrefix?: string) {
   // write to cache
   return await atomicWrite(
@@ -294,8 +274,89 @@ export type TxLog = {
   error?: string;
   invocationId?: string;
   signed_tx?: string;
+  // null marks an unsent draft. old rows can lack this field.
+  last_broadcast_at?: number | null;
+  broadcast_accepted?: boolean;
+  inputs_unlocked?: boolean;
   hidden_on_send_plate?: boolean;
 };
+
+export type TxCacheWriteMessage = {
+  primary_address: string;
+  txLog?: Partial<TxLog>;
+  txLogIndex?: number;
+  broadcast?: boolean;
+  tx_hash?: string;
+  releaseInputs?: boolean;
+  dismiss?: boolean;
+};
+
+function txAccepted(row: Pick<TxLog, "sendResult" | "broadcast_accepted">): boolean {
+  return row.broadcast_accepted === true || row.sendResult?.status === "OK";
+}
+
+export function txFailed(row: Pick<TxLog, "error" | "sendResult" | "broadcast_accepted">): boolean {
+  return !txAccepted(row) && (!!row.error || !!row.sendResult);
+}
+
+// only the new coordinator can recover unfinished rows from the previous run.
+export function recoverInterruptedSends(cache: ScanCache): boolean {
+  const interruptedDraft = "send interrupted before broadcast";
+  let changed = false;
+  for (const index of new Set(Object.values(cache.pending_spent_utxos ?? {}))) {
+    const row = cache.tx_logs?.[index];
+    if (!row || row.inputs_unlocked || row.sendResult || row.broadcast_accepted) continue;
+    if (!row.error) {
+      // older wallets could send the bytes before recording the attempt.
+      if (row.last_broadcast_at === undefined) row.last_broadcast_at = Date.now();
+      row.error = row.last_broadcast_at === null
+        ? interruptedDraft
+        : "send interrupted before broadcast result";
+      changed = true;
+    }
+    // older versions saved the recovery error without an explicit lock.
+    if (row.error === interruptedDraft && row.last_broadcast_at === null && row.inputs_unlocked === undefined) {
+      row.inputs_unlocked = false;
+      changed = true;
+    }
+  }
+  return changed;
+}
+export function txLogHoldsFunds(row: TxLog): boolean {
+  if (row.inputs_unlocked !== undefined) return txAccepted(row) || !row.inputs_unlocked;
+  return !txFailed(row) || row.last_broadcast_at != null;
+}
+export function isInputLocked(cache: ScanCache, id: string): boolean {
+  const owner = cache.pending_spent_utxos?.[id];
+  if (owner === undefined) return false;
+  const row = cache.tx_logs?.[owner];
+  // keep old reservations with missing log data locked rather than spending blindly.
+  return !row || txLogHoldsFunds(row);
+}
+
+export function canReserveInput(cache: ScanCache, id: string, txLogIndex: number): boolean {
+  const output = cache.outputs[id];
+  const owner = cache.pending_spent_utxos?.[id];
+  return !!output && !output.spent_in_tx_hash && typeof output.burned !== "number" &&
+    (owner === txLogIndex || !isInputLocked(cache, id));
+}
+
+/** checks saved reservation state. the coordinator checks it again before release. */
+export function canReleaseInputs(cache: ScanCache, txLogIndex: number): boolean {
+  const row = cache.tx_logs?.[txLogIndex];
+  if (!row || txAccepted(row) || !txLogHoldsFunds(row)) return false;
+  const draftReady = row.last_broadcast_at === null && !!row.signed_tx;
+  if (!draftReady && !row.error && !row.sendResult) return false;
+  return row.inputs_index.some((id) => cache.pending_spent_utxos?.[id] === txLogIndex &&
+    canReserveInput(cache, id, txLogIndex));
+}
+
+/** checks whether the saved transaction can reserve all of its original inputs. */
+export function canRebroadcastTx(cache: ScanCache, txLogIndex: number): boolean {
+  const row = cache.tx_logs?.[txLogIndex];
+  return !!row?.signed_tx && row.inputs_index.length > 0 &&
+    row.inputs_index.every((id) => canReserveInput(cache, id, txLogIndex));
+}
 
 export type ChangeReason =
   | "spent"

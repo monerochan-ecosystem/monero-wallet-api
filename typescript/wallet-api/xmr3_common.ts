@@ -9,6 +9,7 @@ export { ViewPair } from "./viewpair/ViewPair";
 export {
   ScanCacheOpened,
   ManyScanCachesOpened,
+  type SignedSend,
 } from "./scanning-syncing/scanresult/scanCacheOpened";
 
 export * from "./node-interaction/binaryEndpoints";
@@ -43,7 +44,6 @@ export {
   getWorkerUrl,
   startWebworkerReady,
   type WorkerSet,
-  type TxCacheWriteMessage,
 } from "./scanning-syncing/backgroundWorker";
 
 export { spendable } from "./scanning-syncing/scanresult/scanResult";
@@ -90,6 +90,17 @@ export * from "./keypairs-seeds/keypairs";
 export * from "./send-functionality/conversion";
 export * from "./send-functionality/inputSelection";
 export * from "./tools/monero-tools";
+import { tools as contentTools } from "./tools/monero-tools";
+import { execute_route } from "./tools/calls/001-route";
+
+// the server route needs wallet code. keep it out of the content-script entry.
+export const tools = {
+  ...contentTools,
+  "001": {
+    ...contentTools["001"],
+    counterparty: { ...contentTools["001"].counterparty, execute_route },
+  },
+};
 export type {
   ToolArm,
   ToolContentZone,
@@ -98,3 +109,13 @@ export type {
   ToolInvocationForValidate,
 } from "./tools/globals";
 export { sendToBackground } from "./tools/globals";
+export { scanTransaction, type ScannedTransaction } from "./viewpair/transactionParsing";
+export {
+  openTrackers,
+  type Trackers,
+  TransactionTracker,
+  type OpenTrackersOptions,
+  type NewTrackerResult,
+  type TransactionTrackerState,
+  type TrackedTransaction,
+} from "./node-interaction/openTrackers";

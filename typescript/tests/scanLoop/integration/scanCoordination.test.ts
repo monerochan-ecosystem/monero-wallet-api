@@ -10,6 +10,7 @@ import { test, expect, beforeAll, afterAll } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import {
   findWorkToBeDone,
+  openWallets, readCacheFileDefaultLocation, writeCacheToFile, isInputLocked,
   setupBlocksBufferGenerator,
   handleConnectionStatusChanges,
   writeScanSettings,
@@ -347,6 +348,35 @@ test("d: full pipeline with real blocks", async () => {
   );
   expect(cs.last_packet.status).toBe("OK");
 });
+
+test("openWallets recovers an unfinished send and publishes it at an idle tip", async () => {
+  const dir = `${OUT}/interrupted-send`;
+  await rm(dir, { force: true, recursive: true });
+  await mkdir(dir, { recursive: true });
+  const settingsPath = `${dir}/ScanSettings.json`;
+  await writeScanSettings({ wallets: [{ primary_address: kp1.addr }], node_url: URL, start_height: null }, settingsPath);
+  const work = await findWorkToBeDone(settingsPath, dir + "/");
+  if (!work) throw new Error("test wallet missing");
+  const cache = work.wallet_configs[0]!.cache;
+  cache.tx_logs = [{ payments: [], inputs_index: ["7"], timestamp: 1, height: work.start_height, node_url: URL }];
+  cache.pending_spent_utxos = { "7": 0 };
+  await writeCacheToFile(cache, dir + "/");
+
+  const wallets = await openWallets({ scan_settings_path: settingsPath, pathPrefix: dir + "/", no_stats: true });
+  try {
+    const wallet = wallets.wallets[0]!;
+    const deadline = Date.now() + 6000;
+    while (!wallet.tx_logs[0]?.error && Date.now() < deadline) await Bun.sleep(50);
+    expect(wallet.tx_logs[0]?.error).toBe("send interrupted before broadcast result");
+    expect(isInputLocked(wallet.cache, "7")).toBe(true);
+    const saved = await readCacheFileDefaultLocation(kp1.addr, dir + "/");
+    expect(saved!.tx_logs).toEqual(wallet.tx_logs);
+    expect(wallet.current_height).toBe(work.start_height);
+  } finally {
+    wallets.unwatchConnectionStatus();
+    await wallets.stopWorker();
+  }
+}, 15000);
 
 afterAll(() => {
   proc.kill(9);

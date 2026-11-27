@@ -17,8 +17,22 @@
  *   works with random tip offsets in large batches
  *   works when scanning a subset of the batch via endIndex
  */
-import { test, expect } from "bun:test";
-import { selectAnchors, findTipIndex } from "../../../dist/xmr3";
+import { test, expect, spyOn } from "bun:test";
+import { mkdir, rm } from "node:fs/promises";
+import {
+  CatastrophicReorgError,
+  currentScanHeightFromRanges,
+  findTipIndex,
+  makeWorkItemsFromBlocksBuffer,
+  processScanResult,
+  processWorkItem,
+  selectAnchors,
+  updateBlocksBufferScanHeight,
+  ViewPair,
+  type GetBlocksResultMeta,
+  type ScanCache,
+  type WorkItem,
+} from "../../../dist/xmr3";
 import type { BlockInfo, CacheRange } from "../../../dist/xmr3";
 
 function bi(height: number, hash?: string): BlockInfo {
@@ -384,4 +398,112 @@ test("13: findTipIndex returns empty_blocks_array on empty block_infos", () => {
 
   console.log("[test 13] result:", result);
   expect(result).toBe("empty_blocks_array");
+});
+
+test("fetcher and wallet rotate the same anchors on one-block batches", async () => {
+  let range: CacheRange = { start: 0, end: 200, block_hashes: [bi(200), bi(0), bi(0)] };
+  const scannedRanges = [range];
+  for (const [tip, heights] of [[201, [201, 200, 0]], [202, [202, 201, 200]]] as const) {
+    const block_infos = [bi(tip - 1), bi(tip)];
+    const expected = heights.map((height) => bi(height));
+    expect(selectAnchors(block_infos, 0, range).block_hashes).toEqual(expected);
+    ({ current_range: range } = await updateBlocksBufferScanHeight(range, { block_infos } as GetBlocksResultMeta, scannedRanges));
+    expect(range.block_hashes).toEqual(expected);
+  }
+
+  const block_infos = [bi(199), bi(200, "new-200"), bi(201, "new-201"), bi(202, "new-202")];
+  await expect(updateBlocksBufferScanHeight(range, { block_infos } as GetBlocksResultMeta, scannedRanges))
+    .rejects.toBeInstanceOf(CatastrophicReorgError);
+});
+
+test.each([1004, 1005])("wallet and fetch ranges adopt a replacement tip at %i", async (end) => {
+  const previous: CacheRange = {
+    start: 0, end: 1005, block_hashes: [bi(1005), bi(999), bi(899)],
+  };
+  const block_infos = [
+    bi(999),
+    ...makeBlockInfos(1000, end - 999).map(({ block_height }) => bi(block_height, `new-${block_height}`)),
+  ];
+  const cache = {
+    primary_address: "test", daemon_height: 1006, outputs: {}, own_key_images: {},
+    scanned_ranges: [structuredClone(previous)],
+  } satisfies ScanCache;
+  await processScanResult({
+    from_height: 999, to_height: end,
+    result: {
+      primary_address: cache.primary_address, daemon_height: end + 1,
+      new_height: 999, block_infos, outputs: [], all_key_images: [],
+    },
+    scanCache: cache,
+  });
+  const fetch = await updateBlocksBufferScanHeight(previous, { block_infos } as GetBlocksResultMeta, [previous]);
+  const expected = { start: 0, end, block_hashes: [bi(end, `new-${end}`), bi(999), bi(899)] };
+  expect(cache.scanned_ranges).toEqual([expected]);
+  expect(fetch.current_range).toEqual(expected);
+});
+
+test("the coordinator schedules a shorter replacement batch even when its heights are covered", () => {
+  const cache: ScanCache = {
+    primary_address: "test", daemon_height: 1006, outputs: {}, own_key_images: {},
+    scanned_ranges: [{ start: 0, end: 1005, block_hashes: [bi(1005), bi(999), bi(899)] }],
+  };
+  const block_infos = [bi(999), ...makeBlockInfos(1000, 4)
+    .map(({ block_height }) => bi(block_height, "replacement_" + block_height))];
+  const batch = {
+    local_uuid: "replacement", reorg: true, data: new Uint8Array(),
+    get_blocks_result_meta: { block_infos } as GetBlocksResultMeta,
+  };
+  const wallet = { primary_address: "test", secret_view_key: "test", cache };
+  const work: WorkItem[] = [];
+  makeWorkItemsFromBlocksBuffer([{ ...batch, reorg: false }], work, wallet);
+  expect(work).toHaveLength(0);
+  makeWorkItemsFromBlocksBuffer([batch], work, wallet);
+  const extension = {
+    ...batch, local_uuid: "extension", reorg: false,
+    get_blocks_result_meta: { block_infos: [block_infos.at(-1)!, bi(1004, "replacement_1004")] } as GetBlocksResultMeta,
+  };
+  makeWorkItemsFromBlocksBuffer([extension], work, wallet);
+  expect(work.map(item => item.batch.local_uuid)).toEqual(["replacement", "extension"]);
+});
+
+// start height 0 -> 3 -> 0 leaves [0,1] and [3,9] in the cache file.
+// the fetch starts at the tip of [0,1], so the first batch is blocks 1 to 9.
+test("a batch from the start range tip grows the start range past a higher range", async () => {
+  const dir = "test-data/start-range-grows-past-higher-range";
+  await rm(dir, { recursive: true, force: true });
+  await mkdir(dir, { recursive: true });
+  const cache: ScanCache = {
+    primary_address: "test", daemon_height: 10, outputs: {}, own_key_images: {},
+    scanned_ranges: [
+      { start: 0, end: 1, block_hashes: [bi(1), bi(0), bi(0)] },
+      { start: 3, end: 9, block_hashes: [bi(9), bi(3), bi(3)] },
+    ],
+  };
+  const block_infos = makeBlockInfos(1, 9);
+  const batch = {
+    local_uuid: "from-1", data: new Uint8Array(),
+    get_blocks_result_meta: { block_infos, daemon_height: 10 } as GetBlocksResultMeta,
+  };
+  const work: WorkItem[] = [];
+  makeWorkItemsFromBlocksBuffer([batch], work, { primary_address: "test", secret_view_key: "test", cache });
+  expect(work.map((item) => [item.from, item.to])).toEqual([[0, 8]]);
+  const item = work[0]!;
+  item.status = "scanwork_done";
+  item.result = {
+    primary_address: "test", daemon_height: 10, new_height: 9, block_infos, all_key_images: [],
+    outputs: [{
+      amount: 1n, block_height: 2, block_timestamp: 1000, index_in_transaction: 0, index_on_blockchain: 20,
+      payment_id: 0, stealth_address: "stealth_2", tx_hash: "tx_2", is_miner_tx: true,
+      primary_address: "test", subaddress_index: null, serialized: "0".repeat(64),
+    }],
+  };
+  const view = spyOn(ViewPair, "create").mockResolvedValue({ addSubaddressesToScanCache: async () => {} } as unknown as ViewPair);
+  try {
+    await processWorkItem({ item, workBuffer: work, blocksBuffer: [batch], pathPrefix: dir });
+  } finally {
+    view.mockRestore();
+  }
+  expect(cache.scanned_ranges.map((range) => [range.start, range.end])).toEqual([[0, 9]]);
+  expect(currentScanHeightFromRanges(cache.scanned_ranges, 0)).toBe(9);
+  expect(Object.keys(cache.outputs)).toEqual(["20"]);
 });

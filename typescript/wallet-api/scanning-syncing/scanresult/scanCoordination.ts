@@ -31,6 +31,11 @@ import {
 } from "../../xmr3_common";
 import {
   currentScanHeightFromRanges,
+  canReleaseInputs,
+  canReserveInput,
+  recoverInterruptedSends,
+  txFailed,
+  txLogHoldsFunds,
   findRange,
   initScanCacheFile,
   lastRange,
@@ -39,10 +44,17 @@ import {
   type CacheRange,
   type ChangedOutput,
   type ScanCache,
+  type TxCacheWriteMessage,
 } from "./scanCache";
 import { sendToCpuWorker } from "../worker-mains/cpubound-main";
 import { log } from "../../io/logging";
-import type { TxCacheWriteMessage } from "../backgroundWorker";
+import { ScanCacheOpened } from "./scanCacheOpened";
+import {
+  createCoordinatorCommandHandler,
+  drainCoordinatorCommands,
+  waitForCoordinatorCommands,
+} from "./coordinatorCommand";
+
 export type WalletConfig = {
   primary_address: string;
   secret_view_key: string;
@@ -242,7 +254,11 @@ export function makeWorkItemsFromBlocksBuffer(
         w.walletConfig.primary_address === walletConfig.primary_address,
     );
     if (!alreadyReferenced) {
-      const workToBeDone = workToBeDoneForBatch(
+      const reorgPending = batch.reorg || workItemBuffer.some(
+        (item) => item.batch.reorg && item.status !== "process_result_done" &&
+          item.walletConfig.primary_address === walletConfig.primary_address,
+      );
+      const workToBeDone = !reorgPending && workToBeDoneForBatch(
         walletConfig.cache,
         batch.get_blocks_result_meta.block_infos,
       );
@@ -321,35 +337,43 @@ export async function handleBlocksYield(
  * process a scan result for a completed work item.
  * updates the cache, writes to disk, marks work item done, reconciles blockbuffer with this.
  */
-export async function processWorkItem(
-  item: WorkItem,
-  workBuffer: WorkItem[],
-  blocksBuffer: GetBlocksBinBufferItem[],
-  pathPrefix: string,
-  secret_spend_key?: string,
-): Promise<ProcessScanResult> {
+export async function processWorkItem({
+  item,
+  workBuffer,
+  blocksBuffer,
+  scanSettingsPath,
+  pathPrefix,
+  secret_spend_key,
+}: {
+  item: WorkItem;
+  workBuffer: WorkItem[];
+  blocksBuffer: GetBlocksBinBufferItem[];
+  scanSettingsPath?: string;
+  pathPrefix?: string;
+  secret_spend_key?: string;
+}): Promise<ProcessScanResult> {
   if (item.status !== "scanwork_done")
     throw new Error(
       "[processWorkItem] item not found or not scanwork not done. item_status=" +
         item?.status,
     );
   const cache = item.walletConfig.cache;
-  const last_in_cache = lastRange(cache.scanned_ranges)?.block_hashes.at(0);
-  if (typeof last_in_cache !== "undefined") {
-    const actual_tip_index = findTipIndex(
-      item.batch.get_blocks_result_meta.block_infos,
-      last_in_cache,
-    );
-    if (typeof actual_tip_index === "number") {
-      item.from = actual_tip_index;
+  const blockInfos = item.batch.get_blocks_result_meta.block_infos;
+  let firstBlock = blockInfos[item.from];
+  // a shared reorg batch can start before this wallet's range. resume at its matching tip.
+  if (item.batch.reorg && !findRange(cache.scanned_ranges, firstBlock.block_height)) {
+    const nextRange = cache.scanned_ranges.find((range) => range.start > firstBlock.block_height);
+    const tip = nextRange?.block_hashes[0];
+    const tipIndex = tip && findTipIndex(blockInfos, tip);
+    if (typeof tipIndex === "number" && tipIndex >= item.from && tipIndex <= item.to) {
+      firstBlock = blockInfos[tipIndex];
     }
   }
-  const firstBlock = item.batch.get_blocks_result_meta.block_infos[item.from];
 
   log("processWorkItem", [
     `block_infos.length=${item.batch.get_blocks_result_meta.block_infos.length} from=${item.from} to=${item.to}`,
   ]);
-  const lastBlock = item.batch.get_blocks_result_meta.block_infos[item.to];
+  const lastBlock = blockInfos[item.to];
   log("processWorkItem", [
     item.walletConfig.primary_address.slice(0, 6),
     "@",
@@ -360,6 +384,8 @@ export async function processWorkItem(
 
   let res;
   try {
+    const view = await ViewPair.create(cache.primary_address, item.walletConfig.secret_view_key);
+    await view.addSubaddressesToScanCache(cache, scanSettingsPath);
     res = await processScanResult({
       from_height: firstBlock.block_height,
       to_height: lastBlock.block_height,
@@ -373,7 +399,7 @@ export async function processWorkItem(
     throw error;
   }
 
-  await writeCacheToFile(cache, pathPrefix);
+  await writeCacheToFile(cache, getPathPrefix(scanSettingsPath, pathPrefix));
   // raw cpu ScanResult is fully merged into cache now. drop it so workBuffer
   // does not pin all_key_images / hash strings until left-edge free.
   item.result = undefined;
@@ -514,37 +540,51 @@ export type BlocksBufferRacer = {
   value: BlocksBufferIteratorResult;
 };
 export type ScanLoopRacer = ScanLoopYield;
-export type Racers = BlocksBufferRacer | ScanLoopRacer | { src: "cache_write" };
-const cacheWrites: MessageEvent<TxCacheWriteMessage>[] = [];
-let cacheWriteReady = Promise.withResolvers<{ src: "cache_write" }>();
-export function queueCacheWrite(event: MessageEvent<TxCacheWriteMessage>) {
-  cacheWrites.push(event);
-  cacheWriteReady.resolve({ src: "cache_write" });
+export type Racers = BlocksBufferRacer | ScanLoopRacer | { src: "coordinator_command" };
+function writesInputLock(message: TxCacheWriteMessage): boolean {
+  return !!message.broadcast ||
+    (message.txLogIndex === undefined && !!message.txLog && !txFailed(message.txLog));
 }
 
 export function applyTxCacheWrite(cache: ScanCache, message: TxCacheWriteMessage): number {
   if (message.dismiss) {
-    cache.tx_logs = cache.tx_logs?.map((row) => ({ ...row, hidden_on_send_plate: true }));
+    if (message.txLogIndex !== undefined && !cache.tx_logs?.[message.txLogIndex]) throw new Error("tx log missing");
+    cache.tx_logs = cache.tx_logs?.map((row, index) => message.txLogIndex === undefined || index === message.txLogIndex
+      ? { ...row, hidden_on_send_plate: true } : row);
     return -1;
   }
   const index = message.txLogIndex ?? cache.tx_logs?.length ?? 0;
   const previous = cache.tx_logs?.[index];
   if (message.txLogIndex !== undefined && !previous) throw new Error("tx log missing");
   const row = { ...previous, ...message.txLog } as NonNullable<ScanCache["tx_logs"]>[number];
-  if (message.reserve) {
+  if (previous?.sendResult?.status === "OK" || row.sendResult?.status === "OK") row.broadcast_accepted = true;
+  if (message.releaseInputs) {
+    if (!canReleaseInputs(cache, index)) throw new Error("inputs cannot be released");
+    row.inputs_unlocked = true;
+  }
+  if (message.broadcast) {
+    if (!row.signed_tx) throw new Error("signed transaction required");
+    // the scan can mark the inputs spent after the command read them. so this is decided here.
+    if (message.tx_hash && row.inputs_index.length && row.inputs_index.every((id) => cache.outputs[id]?.spent_in_tx_hash === message.tx_hash)) return index;
+    row.last_broadcast_at = Date.now();
+    row.inputs_unlocked = false;
+  }
+  if (writesInputLock(message)) {
     if (new Set(row.inputs_index).size !== row.inputs_index.length) throw new Error("duplicate inputs selected");
     for (const id of row.inputs_index) {
-      const output = cache.outputs[id];
-      const owner = cache.pending_spent_utxos?.[id];
-      if (!output || output.spent_in_tx_hash || typeof output.burned === "number" || (owner !== undefined && owner !== index))
+      if (!canReserveInput(cache, id, index))
         throw new Error(`input not spendable: ${id}`);
     }
   }
   cache.tx_logs = [...cache.tx_logs ?? []];
   cache.tx_logs[index] = row;
   cache.pending_spent_utxos = { ...cache.pending_spent_utxos };
-  if (message.reserve) for (const id of row.inputs_index) cache.pending_spent_utxos[id] = index;
-  if (row.error || (row.sendResult && row.sendResult.status !== "OK")) {
+  // a late acceptance takes precedence over a draft that selected the released inputs.
+  if (writesInputLock(message) || row.broadcast_accepted) {
+    for (const id of row.inputs_index) cache.pending_spent_utxos[id] = index;
+  }
+  // release signing failures and legacy finalized failures without a recorded attempt.
+  if (!txLogHoldsFunds(row) && (message.releaseInputs || row.last_broadcast_at == null)) {
     for (const id of row.inputs_index) {
       if (cache.pending_spent_utxos[id] === index) delete cache.pending_spent_utxos[id];
     }
@@ -607,6 +647,19 @@ export async function* coordinatorMainMultithreaded(
       "[coordinatorMain Multithreaded] findWorkToBeDone returned false",
     );
   const work_to_be_done = ctx.work_to_be_done;
+  const cachePath = getPathPrefix(scanSettingsPath, pathPrefix);
+  const handleCommand = createCoordinatorCommandHandler({
+    wallets: work_to_be_done.wallet_configs,
+    createWallet: ScanCacheOpened.create,
+    scanSettingsPath,
+    pathPrefix,
+    signal: stopSync,
+  });
+  for (const { cache } of work_to_be_done.wallet_configs) {
+    if (!recoverInterruptedSends(cache)) continue;
+    await writeCacheToFile(cache, cachePath);
+    yield { type: "scan_ready", address: cache.primary_address, newCache: cache, changed_outputs: [] };
+  }
   let blocksBuffer = ctx.blocksBuffer;
   const workBuffer = ctx.workBuffer;
 
@@ -644,7 +697,7 @@ export async function* coordinatorMainMultithreaded(
       .map((ps) => ps.promise!);
 
     const races: Promise<Racers>[] = [
-      cacheWriteReady.promise,
+      waitForCoordinatorCommands(),
       ...scan_promises,
       blocksPromise.then((v) => ({
         src: "blocks" as const,
@@ -653,27 +706,29 @@ export async function* coordinatorMainMultithreaded(
     ];
     log("coordinatorMainMultithreaded", ["races", races]);
     const winner = await Promise.race(races);
-    if (cacheWrites.length) {
-      while (cacheWrites.length) {
-        const message = cacheWrites.shift()!;
-        const replyPort = message.ports[0]!;
-        try {
-          const wallet = work_to_be_done.wallet_configs.find((wallet) => wallet.primary_address === message.data.primary_address);
-          if (!wallet) throw new Error("wallet not found");
-          const cache = { ...wallet.cache };
-          const txLogIndex = applyTxCacheWrite(cache, message.data);
-          await writeCacheToFile(cache, getPathPrefix(scanSettingsPath, pathPrefix));
-          wallet.cache = cache;
-          const changed_outputs = message.data.reserve
-            ? cache.tx_logs![txLogIndex]!.inputs_index.map((id) => ({ change_reason: "spent" as const, output: cache.outputs[id]! }))
-            : [];
-          yield { type: "scan_ready", address: wallet.primary_address, newCache: cache, changed_outputs, replyPort, txLogIndex };
-        } catch (error) {
-          replyPort.postMessage({ error: String(error) });
-          replyPort.close();
-        }
+    for (const item of drainCoordinatorCommands()) {
+      if (!("write" in item)) {
+        handleCommand(item);
+        continue;
       }
-      cacheWriteReady = Promise.withResolvers();
+      const message = item.write;
+      const replyPort = message.ports[0]!;
+      try {
+        const wallet = work_to_be_done.wallet_configs.find((wallet) => wallet.primary_address === message.data.primary_address);
+        if (!wallet) throw new Error("wallet not found");
+        const cache = { ...wallet.cache };
+        const txLogIndex = applyTxCacheWrite(cache, message.data);
+        await writeCacheToFile(cache, cachePath);
+        wallet.cache = cache;
+        item.onSaved?.(txLogIndex);
+        const changed_outputs = writesInputLock(message.data) && txLogIndex >= 0
+          ? cache.tx_logs![txLogIndex]!.inputs_index.map((id) => ({ change_reason: "spent" as const, output: cache.outputs[id]! }))
+          : [];
+        yield { type: "scan_ready", address: wallet.primary_address, newCache: cache, changed_outputs, replyPort, txLogIndex };
+      } catch (error) {
+        replyPort.postMessage({ error: error instanceof Error ? error.message : String(error) });
+        replyPort.close();
+      }
     }
     log("coordinatorMainMultithreaded", "cpu ports status");
 
@@ -728,13 +783,14 @@ export async function* coordinatorMainMultithreaded(
       const blockCount = to_be_processed.to - to_be_processed.from + 1;
       totalBlocksScanned += blockCount;
 
-      const res = await processWorkItem(
-        to_be_processed,
+      const res = await processWorkItem({
+        item: to_be_processed,
         workBuffer,
         blocksBuffer,
-        getPathPrefix(scanSettingsPath, pathPrefix),
-        wallet.secret_spend_key,
-      );
+        scanSettingsPath,
+        pathPrefix,
+        secret_spend_key: wallet.secret_spend_key,
+      });
 
       const jumped = fastForwardFetch(
         work_to_be_done.wallet_configs,

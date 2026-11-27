@@ -1,0 +1,4 @@
+{
+  "extends": "../standard-checkout/tsconfig.json",
+  "include": ["checkout.ts", "tracker.ts"]
+}

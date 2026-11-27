@@ -6,7 +6,7 @@ import {
   type ToolId,
 } from "./monero-tools";
 import { sendToBackground } from "./globals";
-import type { ExtensionBrowser } from "./globals";
+import type { ExtensionBrowser, ToolContentZone } from "./globals";
 
 declare global {
   var browser: ExtensionBrowser;
@@ -82,6 +82,7 @@ export function deliverToolUrl(url: string): boolean {
   return true;
 }
 export function installToolLinkEventInterception() {
+  for (const id of Object.keys(tools) as ToolId[]) (tools[id].content as ToolContentZone).install?.();
   // click only. keyboard activation (enter) dispatches a click, a touch tap does too.
   // a keydown on a focused link is not an activation, so it must not deliver.
   document.addEventListener("click", interceptToolLinkCallback, true);

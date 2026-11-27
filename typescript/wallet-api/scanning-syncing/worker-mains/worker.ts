@@ -4,7 +4,7 @@ import {
 } from "./coordinator-main";
 import { handleCpuboundScanTry, sendFromCpuWorker } from "./cpubound-main";
 import { log, setupLoggingPath } from "../../io/logging";
-import { queueCacheWrite } from "../scanresult/scanCoordination";
+import { queueCoordinatorCommand } from "../scanresult/coordinatorCommand";
 import { multisigMainWorkerCall } from "./multisig-main";
 import {
   DistributedKeyGenerator,
@@ -68,8 +68,8 @@ const handleMessage = async (e: MessageEvent) => {
     return;
   }
 
-  if (msg.type === "cache_write") {
-    queueCacheWrite(e);
+  if (msg.type === "coordinator_command") {
+    queueCoordinatorCommand(e);
     return;
   }
 

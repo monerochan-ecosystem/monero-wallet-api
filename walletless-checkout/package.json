@@ -1,0 +1,13 @@
+{
+  "name": "walletless-checkout",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@spirobel/monero-wallet-api": "file:../typescript",
+    "@spirobel/mininext": "0.9.2",
+    "qrcode": "1.5.4"
+  },
+  "scripts": {
+    "start": "bun checkout.ts"
+  }
+}

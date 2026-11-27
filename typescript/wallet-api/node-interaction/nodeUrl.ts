@@ -11,17 +11,28 @@ import {
   STAGENET_GENESIS_BLOCK_HASH,
 } from "./binaryEndpoints";
 import {
+  get_block,
   get_block_headers_range,
   get_fee_estimate,
   get_info,
   get_output_distribution,
   send_raw_transaction,
   type FeeEstimateResponse,
+  type GetBlock,
+  type GetBlockParams,
   type GetBlockHeadersRangeParams,
   type GetOutputDistributionParams,
   type SendRawTransactionResult,
 } from "./jsonEndpoints";
 export type NETWORKS = "mainnet" | "stagenet" | "testnet";
+
+const BLOCK_CACHE_LIMIT = 6400;
+const BLOCK_CACHE_AFTER_TRIM = 4800;
+
+type BlockCacheOptions = {
+  block_cache_limit?: number;
+  block_cache_after_trim?: number;
+};
 
 import {
   makeInput,
@@ -31,6 +42,7 @@ import {
 } from "../send-functionality/transactionBuilding";
 import { WasmProcessor } from "../wasm-processing/wasmProcessor";
 import { getMoneroWasmBytes } from "../wasm-processing/wasmLoader";
+import { sleep } from "../io/sleep";
 /**
  * This class is useful to interact with Moneros DaemonRpc binary requests in a convenient way.
  * (similar to how you would interact with a REST api that gives you json back.)
@@ -38,9 +50,26 @@ import { getMoneroWasmBytes } from "../wasm-processing/wasmLoader";
  * {@link https://docs.getmonero.org/rpc-library/monerod-rpc/#get_blocksbin}
  */
 export class NodeUrl extends WasmProcessor {
-  protected constructor(public node_url: string) {
+  readonly #nodeUrl: string;
+  private readonly blockCacheLimit: number;
+  private readonly blockCacheAfterTrim: number;
+
+  // construct for json rpc; create() also initializes wasm for the binary helpers.
+  public constructor(node_url: string, options: BlockCacheOptions = {}) {
     super();
+    this.#nodeUrl = node_url;
+    const limit = options.block_cache_limit ?? BLOCK_CACHE_LIMIT;
+    const afterTrim = options.block_cache_after_trim ?? Math.min(BLOCK_CACHE_AFTER_TRIM, limit);
+    if (!Number.isSafeInteger(limit) || !Number.isSafeInteger(afterTrim) || limit < 0 || afterTrim < 0 || afterTrim > limit) {
+      throw new RangeError("invalid block cache sizes");
+    }
+    this.blockCacheLimit = limit;
+    this.blockCacheAfterTrim = afterTrim;
   }
+  public get node_url(): string {
+    return this.#nodeUrl;
+  }
+
   private _network: NETWORKS | undefined;
   get network(): NETWORKS {
     return this._network as NETWORKS; // we set this in ViewPair.create()
@@ -52,8 +81,8 @@ export class NodeUrl extends WasmProcessor {
     }
     return this._genesis_hash; // set in first call to ViewPair.getBlocksBin, if params.block_ids is supplied
   }
-  public static async create(node_url?: string): Promise<NodeUrl> {
-    const nodeUrl = new NodeUrl(node_url || LOCAL_NODE_DEFAULT_URL);
+  public static async create(node_url?: string, options?: BlockCacheOptions): Promise<NodeUrl> {
+    const nodeUrl = new NodeUrl(node_url || LOCAL_NODE_DEFAULT_URL, options);
     await nodeUrl.initWasmModule(await getMoneroWasmBytes());
     return nodeUrl;
   }
@@ -166,26 +195,98 @@ export class NodeUrl extends WasmProcessor {
   public async sendRawTransaction(
     tx_as_hex: SignedTransaction,
     do_not_relay: boolean = false,
+    signal?: AbortSignal,
   ): Promise<SendRawTransactionResult> {
-    return send_raw_transaction(this.node_url, tx_as_hex, do_not_relay);
+    return send_raw_transaction(this.node_url, tx_as_hex, do_not_relay, signal);
   }
+  // the first entry is the least recently used block.
+  private blocks = new Map<number, GetBlock>();
+
+  public getBlock(params: GetBlockParams, signal?: AbortSignal): Promise<GetBlock | null> {
+    return get_block(this.node_url, params, signal);
+  }
+
+  /** cached height snapshot. expected_hash refreshes a hit that disagrees with a checked header. */
+  public async getCachedBlock({ height, expected_hash }: { height: number; expected_hash?: string }, signal?: AbortSignal): Promise<GetBlock | null> {
+    signal?.throwIfAborted();
+    const blocks = this.blocks;
+    const cached = blocks.get(height);
+    const hit = cached && (expected_hash === undefined || cached.block_header.hash === expected_hash);
+    const block = hit ? cached : await this.getBlock({ height }, signal);
+    signal?.throwIfAborted();
+    if (!block) return null;
+    // a request from before a reset must not refill the new cache.
+    if (blocks !== this.blocks) return structuredClone(block);
+    if (!hit) {
+      const parent = blocks.get(height - 1);
+      const next = blocks.get(height + 1);
+      if ((parent && parent.block_header.hash !== block.block_header.prev_hash) ||
+          (next && next.block_header.prev_hash !== block.block_header.hash)) this.blocks = new Map();
+    }
+    // set alone keeps an existing entry in place. delete and reinsert moves it to the end.
+    // trim from the front to remove the least recently used blocks first.
+    this.blocks.delete(height);
+    this.blocks.set(height, block);
+    if (this.blocks.size > this.blockCacheLimit) {
+      while (this.blocks.size > this.blockCacheAfterTrim) this.blocks.delete(this.blocks.keys().next().value!);
+    }
+    return structuredClone(block);
+  }
+
   /**
    * Retrieve block headers for a specified range of heights.
    * @link https://docs.getmonero.org/rpc-library/monerod-rpc/#get_block_headers_range
    * @param params The parameters including start_height, end_height, and optional fill_pow_hash.
    * @returns The result object with headers, status, etc. Throws if the range is invalid:(end_height > daemonheight)
    */
-  public async getBlockHeadersRange(params: GetBlockHeadersRangeParams) {
-    return await get_block_headers_range(this.node_url, params);
+  public async getBlockHeadersRange(params: GetBlockHeadersRangeParams, signal?: AbortSignal) {
+    return await get_block_headers_range(this.node_url, params, signal);
   }
   /**
    * Fetch general information about the Monero daemon.
    * @link https://docs.getmonero.org/rpc-library/monerod-rpc/#get_info
    * @returns The result object with daemon info like height, status, etc.
    */
-  public async getInfo() {
-    return get_info(this.node_url);
+  public async getInfo(signal?: AbortSignal) {
+    return get_info(this.node_url, signal);
   }
+
+  private cachedInfo?: { at: number; value: Awaited<ReturnType<typeof get_info>> };
+
+  public async getInfoDebounced({ interval_ms = 5000, signal }: { interval_ms?: number; signal?: AbortSignal } = {}) {
+    signal?.throwIfAborted();
+    if (this.cachedInfo && Date.now() - this.cachedInfo.at < interval_ms) return this.cachedInfo.value;
+    const value = await this.getInfo(signal);
+    this.cachedInfo = { at: Date.now(), value };
+    return value;
+  }
+
+  public async pollTip(
+    notify: (block: GetBlock, signal: AbortSignal, started_at?: number) => void | Promise<void>,
+    signal: AbortSignal,
+    interval = 1000,
+    onError?: (error: unknown) => void,
+    // a round asks the node only while active() is true
+    active: () => boolean = () => true,
+  ): Promise<void> {
+    let lastHash: string | undefined;
+    while (!signal.aborted) {
+      if (active()) try {
+        const started_at = performance.now();
+        const { height, top_block_hash } = await this.getInfo(signal);
+        const hash = top_block_hash.toLowerCase();
+        const block = hash !== lastHash && await this.getCachedBlock({ height: height - 1, expected_hash: hash }, signal);
+        if (block) {
+          await notify(block, signal, started_at);
+          lastHash = hash;
+        }
+      } catch (error) {
+        if (!signal.aborted) onError?.(error);
+      }
+      await sleep(interval, signal).catch(() => {});
+    }
+  }
+
   async addGenesisHashToBlockIds(params: GetBlocksBinRequest) {
     if (params.block_ids) {
       if (!this._genesis_hash && this.network === "mainnet") {

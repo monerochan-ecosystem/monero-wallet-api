@@ -1,5 +1,6 @@
 import { atomicWrite, ViewPair, type Output } from "../../xmr3_common";
-import type { ScanCache, Subaddress, TxLog } from "./scanCache";
+import { isInputLocked, txFailed, txLogHoldsFunds, type ScanCache, type Subaddress, type TxLog } from "./scanCache";
+export { txLogHoldsFunds } from "./scanCache";
 import { outputStatus, type OutputStatus } from "./scanResult";
 
 export type WriteStatsFileParams = {
@@ -329,15 +330,10 @@ export function processTxlogInputs(txlog: TxLog, cache: ScanCache) {
   }
   return { inputSum, alreadyRecognizedAsSpend };
 }
-// an in-flight row has no node answer yet. it still locks the inputs.
-export function txLogHoldsFunds(txlog: TxLog): boolean {
-  if (txlog.error) return false;
-  if (!txlog.sendResult) return true;
-  return txlog.sendResult.status === "OK";
-}
 export function processTxlogs(cache: ScanCache, stats: ScanStats) {
-  for (const txlog of cache.tx_logs || []) {
+  for (const [index, txlog] of (cache.tx_logs || []).entries()) {
     if (!txlog || !txLogHoldsFunds(txlog)) continue;
+    if (txlog.inputs_index.some((id) => cache.pending_spent_utxos?.[id] !== undefined && cache.pending_spent_utxos[id] !== index)) continue;
     const { inputSum, alreadyRecognizedAsSpend } = processTxlogInputs(
       txlog,
       cache,
@@ -347,13 +343,14 @@ export function processTxlogs(cache: ScanCache, stats: ScanStats) {
     // locked inputs are already out of the spendable sum. do not subtract them again.
     let alreadyExcluded = 0n;
     for (const inputId of txlog.inputs_index) {
-      if (cache.pending_spent_utxos?.[inputId] === undefined) continue;
+      if (!isInputLocked(cache, inputId)) continue;
       const input = cache.outputs[inputId];
       if (!input || typeof input.spent_in_tx_hash === "string") continue;
       alreadyExcluded += input.amount;
     }
     stats.total_spendable_amount -= inputSum - alreadyExcluded;
-    const newPending = inputSum - outWardPaymentSum;
+    // failed sends hold the whole input amount. no payment/change is assumed yet.
+    const newPending = txFailed(txlog) ? inputSum : inputSum - outWardPaymentSum;
     stats.total_pending_amount += newPending;
   }
 }

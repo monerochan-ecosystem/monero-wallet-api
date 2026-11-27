@@ -17,10 +17,9 @@ import {
   type FeePriority,
   type TransactionFeeOptions,
   type Input,
-  type SendError,
 } from "../../send-functionality/transactionBuilding";
-import { createWebworker, type WorkerSet, type TxCacheWriteMessage } from "../backgroundWorker";
-import { applyTxCacheWrite } from "./scanCoordination";
+import { createWebworker, type WorkerSet } from "../backgroundWorker";
+import type { CoordinatorCommand, CoordinatorCommands } from "./coordinatorCommand";
 import { spendable } from "./scanResult";
 import {
   getPathPrefix,
@@ -36,19 +35,19 @@ import {
   type ActionLogBackendKind,
   type ExtensionMessageBus,
 } from "../../actionlog/actionLogOpened";
-import { sendToBackground, type ExtensionMessageByKind } from "../../tools/globals";
+import type { ExtensionMessageByKind } from "../../tools/globals";
 import type { LogSetting, PossibleLogs } from "../../io/logging";
 import {
   findRange,
   lastRange,
   readCacheFileDefaultLocation,
-  writeCacheFileDefaultLocationThrows,
+  txFailed,
   type CacheChangedCallback,
   type CacheChangedCallbackParameters,
-  type ChangedOutput,
   type ScanCache,
   type Subaddress,
   type TxLog,
+  type TxCacheWriteMessage,
 } from "./scanCache";
 import {
   alignScanStatsWithCache,
@@ -74,7 +73,8 @@ export type ScanCacheOpenedCreateParams = {
   no_worker?: boolean;
   no_stats?: boolean;
   notify?: CacheChangedCallback;
-  cacheWriter?: { write?: WorkerSet["writeCache"] };
+  // the master wallet and its slaves share this object. the coordinator sets only write. a wallet with a worker sets only callCoordinator.
+  cacheWriter?: { write?: (message: TxCacheWriteMessage) => Promise<number>; callCoordinator?: WorkerSet["callCoordinator"] };
   masterCacheChanged?: CacheChangedCallback;
   workerError?: (error: unknown) => void;
 };
@@ -106,6 +106,9 @@ function checkFeeCircuitBreaker(estimate: FeeEstimateResponse, limit = 20_000_00
     throw new Error(`fee too high: ${fee} atomic units per 10000 bytes exceeds the limit of ${limit}`);
   }
 }
+
+/** signed bytes and the TxLog row that owns them. */
+export type SignedSend = { signedTx: string; txLogIndex: number };
 
 export class ScanCacheOpened {
   /** how many decoys to sample per input (default 20, ring size is 11) */
@@ -251,7 +254,7 @@ export class ScanCacheOpened {
   get prepending_txs(): PrePendingTx[] {
     const txs = [];
     for (const txlog of this._cache.tx_logs || []) {
-      if (!txlog || !txLogHoldsFunds(txlog)) continue;
+      if (!txlog || txFailed(txlog) || !txLogHoldsFunds(txlog)) continue;
       const { inputSum, alreadyRecognizedAsSpend } = processTxlogInputs(
         txlog,
         this._cache,
@@ -381,12 +384,14 @@ export class ScanCacheOpened {
     }
     return walletStillExists;
   }
+  /** submits signed bytes directly. use sendSignedTransaction for a tracked send. */
   public async sendTransaction(
     signedTx: string,
   ): Promise<SendRawTransactionResult> {
     const node = await NodeUrl.create(this.node_url);
     return await node.sendRawTransaction(signedTx);
   }
+  /** signs with the wallet spend key. use makeSignTransaction to reserve inputs and save the bytes. */
   public async signTransaction(unsignedTx: string) {
     const privateSpendKey = readPrivateSpendKeyFromEnv(
       this._cache.primary_address,
@@ -400,6 +405,7 @@ export class ScanCacheOpened {
     checkFeeCircuitBreaker(feeEstimate, fee_circuit_breaker);
     return feeEstimate;
   }
+  /** estimates the fee and selects inputs. the caller must reserve them before a tracked send. */
   public async calculateFeeAndSelectInputs(
     params: CreateTransactionParams,
   ): Promise<{
@@ -424,6 +430,7 @@ export class ScanCacheOpened {
     if (!selectedInputs.length) throw new Error("not enough funds");
     return { selectedInputs, feeEstimate };
   }
+  /** prepares decoys and builds an unsigned payment. the caller manages input reservations. */
   public async makeTransactionFromSelectedInputs(
     payments: Payment[],
     selectedInputs: Output[],
@@ -473,6 +480,7 @@ export class ScanCacheOpened {
     });
     return unsignedTx;
   }
+  /** prepares decoys and builds an unsigned sweep. the caller manages input reservations. */
   public async makeSweepTransactionFromSelectedInputs(
     destination_address: string,
     selectedInputs: Output[],
@@ -528,7 +536,7 @@ export class ScanCacheOpened {
     return unsignedTx;
   }
   /**
-   * this function returns the unsigned transaction, throws {@link SendError}
+   * selects inputs and builds an unsigned payment. the caller manages input reservations.
    */
   public async makeTransaction(params: CreateTransactionParams) {
     const { selectedInputs, feeEstimate } =
@@ -541,8 +549,8 @@ export class ScanCacheOpened {
     );
   }
   /**
-   * sweep inputs to external wallet address (the wallet will receive input amount - fee)
-   * @param inputs     use spendableInputs() to find inputs to put in
+   * builds an unsigned sweep for a separate signer. the caller manages input reservations.
+   * @param inputs outputs to sweep. use spendableInputs() to find them.
    */
   public async sweepToExternalWallet(
     destination_address: string,
@@ -577,30 +585,29 @@ export class ScanCacheOpened {
   get tx_logs() {
     return this._cache.tx_logs || [];
   }
+  // an outer wallet sends the command to the coordinator through the worker of the master wallet.
+  // the wallet of the coordinator has no worker. this returns undefined there, and the method body runs.
+  private callCoordinator<K extends keyof CoordinatorCommands>(
+    kind: K,
+    params: CoordinatorCommands[K],
+    beforeBroadcast?: () => void,
+  ) {
+    return (this.cacheWriter?.callCoordinator ?? this.worker?.callCoordinator)?.({
+      kind, params, primary_address: this.primary_address,
+      decoySampleCount: this.decoySampleCount,
+      decoyRetry: this.decoyRetry,
+      decoyRetrySizes: this.decoyRetrySizes,
+    } as CoordinatorCommand<K>, beforeBroadcast);
+  }
+
+  // only the wallet of the coordinator can save. it queues the save with the scan loop and waits for the disk.
   private async writeTxCache(
     message: Omit<TxCacheWriteMessage, "primary_address">,
-    changed_outputs: ChangedOutput[] = [],
   ): Promise<number> {
     const payload = { ...message, primary_address: this.primary_address };
-    const write = this.cacheWriter?.write ?? this.worker?.writeCache;
+    const write = this.cacheWriter?.write;
     if (write) return write(payload);
-    if (this.cacheWriter || !this.no_worker) throw new Error("scanner is not running");
-    let index = -1;
-    await writeCacheFileDefaultLocationThrows({
-      primary_address: this.primary_address,
-      pathPrefix: this.pathPrefix,
-      writeCallback: (cache) => { index = applyTxCacheWrite(cache, payload); },
-    });
-    const newCache = await readCacheFileDefaultLocation(
-      this.primary_address,
-      this.pathPrefix,
-    );
-    if (!newCache)
-      throw new Error(
-        `cache not found for primary address: ${this.primary_address}, and path prefix: ${this.pathPrefix}`,
-      );
-    await this.feed({ newCache, changed_outputs });
-    return index;
+    throw new Error("scanner is not running; transaction cache writes require the coordinator");
   }
   // the coordinator reserves inputs before the node request starts
   private async beginInFlightSend(args: {
@@ -610,43 +617,46 @@ export class ScanCacheOpened {
     invocationId?: string;
   }) {
     return this.writeTxCache({
-      reserve: true,
       txLog: {
         feeEstimate: args.feeEstimate,
         payments: args.payments,
         node_url: this.node_url,
         inputs_index: args.inputs.map((input) => String(input.index_on_blockchain)),
+        last_broadcast_at: null,
         height: this.current_height!,
         timestamp: Date.now(),
         invocationId: args.invocationId,
       },
-    }, args.inputs.map((output) => ({ change_reason: "spent", output })));
+    });
   }
-  // update the same row with the node answer. unlock the inputs on failure.
+  // an attempted broadcast keeps its reservation until release or an on-chain spend.
   private async finishInFlightSend(args: {
     txLogIndex: number;
     sendResult?: SendRawTransactionResult;
     signedTx?: string;
     error?: string;
-    invocationId?: string;
   }) {
     const ok = args.sendResult?.status === "OK" && args.error === undefined;
     await this.writeTxCache({
       txLogIndex: args.txLogIndex,
       txLog: {
-        ...(args.invocationId ? { invocationId: args.invocationId } : {}),
         ...(args.signedTx ? { signed_tx: args.signedTx } : {}),
         ...(args.sendResult ? { sendResult: args.sendResult } : {}),
         error: ok ? undefined : args.error || args.sendResult?.reason || "send failed",
       },
     });
   }
-  public async makeSignSendTransaction(params: CreateTransactionParams) {
+  /**
+   * reserves inputs and saves the signed bytes to the TxLog before it returns.
+   * pass the result to sendSignedTransaction on this wallet to record the broadcast.
+   */
+  public async makeSignTransaction(params: CreateTransactionParams): Promise<SignedSend> {
+    const command = this.callCoordinator("makeSignTransaction", params);
+    if (command) return command;
     let maybeInputs: Output[] = [];
     let maybeFeeEstimate: FeeEstimateResponse | undefined;
-    let maybeSendResult: SendRawTransactionResult | undefined;
-    let maybeSignedTx: string | undefined;
     let txLogIndex: number | undefined;
+    let maybeSignedTx: string | undefined;
     try {
       const { selectedInputs, feeEstimate } =
         await this.calculateFeeAndSelectInputs(params);
@@ -666,31 +676,19 @@ export class ScanCacheOpened {
       );
       const signedTx = await this.signTransaction(unsignedTx);
       maybeSignedTx = signedTx;
-      const sendResult = await this.sendTransaction(signedTx);
-      maybeSendResult = sendResult;
-      if (sendResult.status !== "OK")
-        throw new Error("send raw transaction rpc returned error");
-      await this.finishInFlightSend({
-        txLogIndex,
-        sendResult,
-        signedTx,
-        invocationId: params.invocationId,
-      });
-      return sendResult;
+      await this.writeTxCache({ txLogIndex, txLog: { signed_tx: signedTx } });
+      return { signedTx, txLogIndex };
     } catch (e) {
-      if (txLogIndex !== undefined && maybeSendResult?.status !== "OK") {
+      if (txLogIndex !== undefined) {
         await this.finishInFlightSend({
           txLogIndex,
-          sendResult: maybeSendResult,
           signedTx: maybeSignedTx,
           error: String(e || "unknown error"),
-          invocationId: params.invocationId,
         });
         throw e;
       }
-      if (txLogIndex !== undefined) throw e;
       await this.writeTxCache({ txLog: {
-        sendResult: maybeSendResult,
+        sendResult: undefined,
         error: String(e || "unknown error"),
         feeEstimate: maybeFeeEstimate,
         payments: params.payments,
@@ -703,6 +701,54 @@ export class ScanCacheOpened {
       } });
       throw e;
     }
+  }
+
+  /**
+   * records the attempt before it calls beforeBroadcast or submits the saved bytes.
+   * saves the node result on the same row. an accepted send can return cache_error
+   * if the wallet could not save the result.
+   */
+  public async sendSignedTransaction(
+    signed: SignedSend,
+    invocationId?: string,
+    beforeBroadcast?: () => void,
+  ): Promise<SendRawTransactionResult & { cache_error?: string }> {
+    const command = this.callCoordinator("sendSignedTransaction", { signed, invocationId }, beforeBroadcast);
+    if (command) return command;
+    const { txLogIndex, signedTx } = signed;
+    const row = this._cache.tx_logs?.[txLogIndex];
+    if (!row || row.signed_tx !== signedTx || (invocationId !== undefined && row.invocationId !== invocationId))
+      throw new Error("signed transaction does not match this wallet and invocation");
+    await this.renewTransactionLock(txLogIndex, true);
+    let sendResult: SendRawTransactionResult | undefined;
+    try {
+      await beforeBroadcast?.();
+      sendResult = await this.sendTransaction(signedTx);
+      if (sendResult.status !== "OK")
+        throw new Error("send raw transaction rpc returned error");
+      await this.finishInFlightSend({ txLogIndex, sendResult });
+      return sendResult;
+    } catch (e) {
+      if (sendResult?.status === "OK") {
+        return { ...sendResult, cache_error: e instanceof Error ? e.message : String(e) };
+      }
+      await this.finishInFlightSend({
+        txLogIndex,
+        sendResult,
+        error: String(e || "unknown error"),
+      });
+      throw e;
+    }
+  }
+
+  /** builds, signs, saves, and broadcasts a tracked payment. */
+  public async makeSignSendTransaction(params: CreateTransactionParams) {
+    const command = this.callCoordinator("makeSignSendTransaction", params);
+    if (command) return command;
+    return this.sendSignedTransaction(
+      await this.makeSignTransaction(params),
+      params.invocationId,
+    );
   }
 
   private outputsForIndexes(indexes: string[]): Output[] {
@@ -722,10 +768,13 @@ export class ScanCacheOpened {
     return selected;
   }
 
+  /** sends a tracked payment with automatic selection or specific output indexes. */
   public async makeSignSend(params: TransactionFeeOptions & {
     payments: Payment[];
     input_indexes: string[];
   }) {
+    const command = this.callCoordinator("makeSignSend", params);
+    if (command) return command;
     const { input_indexes, ...transaction } = params;
     return this.makeSignSendTransaction({
       ...transaction,
@@ -733,10 +782,13 @@ export class ScanCacheOpened {
     });
   }
 
+  /** builds and sends a tracked sweep. saves its signed bytes before broadcast. */
   public async sweepSignSend(params: TransactionFeeOptions & {
     address: string;
     input_indexes: string[];
   }) {
+    const command = this.callCoordinator("sweepSignSend", params);
+    if (command) return command;
     const inputs = params.input_indexes.length
       ? this.outputsForIndexes(params.input_indexes)
       : this.spendableInputs();
@@ -748,8 +800,7 @@ export class ScanCacheOpened {
       inputs,
       feeEstimate,
     });
-    let sendResult: SendRawTransactionResult | undefined;
-    let signedTx: string | undefined;
+    let signedTx: string;
     try {
       const unsignedTx = await this.makeSweepTransactionFromSelectedInputs(
         params.address,
@@ -758,29 +809,43 @@ export class ScanCacheOpened {
         params.fee_priority,
       );
       signedTx = await this.signTransaction(unsignedTx);
-      sendResult = await this.sendTransaction(signedTx);
-      if (sendResult.status !== "OK")
-        throw new Error("send raw transaction rpc returned error");
-      await this.finishInFlightSend({
-        txLogIndex,
-        sendResult,
-        signedTx,
-      });
-      return sendResult;
+      await this.writeTxCache({ txLogIndex, txLog: { signed_tx: signedTx } });
     } catch (e) {
-      if (sendResult?.status !== "OK") {
-        await this.finishInFlightSend({
-          txLogIndex,
-          sendResult,
-          signedTx,
-          error: e instanceof Error ? e.message : String(e),
-        });
-      }
+      await this.finishInFlightSend({ txLogIndex, error: String(e) });
       throw e;
     }
+    return this.sendSignedTransaction({ txLogIndex, signedTx });
   }
 
+  /** saves a new attempt and checks input reservations before a broadcast or checkout handover. */
+  public async renewTransactionLock(txLogIndex: number, clearFailure = false) {
+    const command = this.callCoordinator("renewTransactionLock", { txLogIndex, clearFailure });
+    if (command) return command;
+    const signed = clearFailure ? undefined : this._cache.tx_logs?.[txLogIndex]?.signed_tx;
+    await this.writeTxCache({ txLogIndex, broadcast: true,
+      ...(clearFailure ? { txLog: { sendResult: undefined, error: undefined } } : {}),
+      tx_hash: signed && this.view_pair.scanTransaction({ tx_as_hex: signed }).tx_hash,
+    });
+  }
+
+  /** records checkout acceptance and keeps the reservation even if the payer node reports an error. */
+  public async recordHandoverAcceptance(txLogIndex: number) {
+    const command = this.callCoordinator("recordHandoverAcceptance", { txLogIndex });
+    if (command) return command;
+    await this.writeTxCache({ txLogIndex, txLog: { broadcast_accepted: true } });
+  }
+
+  /** releases the inputs reserved by a draft or an unsuccessful attempt. signed bytes can still be accepted. */
+  public async releaseInputs(txLogIndex: number) {
+    const command = this.callCoordinator("releaseInputs", { txLogIndex });
+    if (command) return command;
+    await this.writeTxCache({ txLogIndex, releaseInputs: true });
+  }
+
+  /** reserves the inputs again if available, then submits the same saved bytes. */
   public async rebroadcastTx(txLogIndex: number) {
+    const command = this.callCoordinator("rebroadcastTx", { txLogIndex });
+    if (command) return command;
     const txlog = this._cache.tx_logs?.[txLogIndex];
     if (!txlog?.signed_tx) throw new Error("no signed tx to rebroadcast");
     const inputs = txlog.inputs_index
@@ -791,16 +856,7 @@ export class ScanCacheOpened {
       inputs.every((output) => typeof output.spent_in_tx_hash === "string")
     )
       throw new Error("inputs already spent on chain");
-    await this.writeTxCache({ txLogIndex, reserve: true, txLog: { sendResult: undefined, error: undefined } });
-    let sendResult: SendRawTransactionResult | undefined;
-    try {
-      sendResult = await this.sendTransaction(txlog.signed_tx);
-      await this.finishInFlightSend({ txLogIndex, sendResult });
-      return sendResult;
-    } catch (error) {
-      if (sendResult?.status !== "OK") await this.finishInFlightSend({ txLogIndex, error: String(error) });
-      throw error;
-    }
+    return this.sendSignedTransaction({ txLogIndex, signedTx: txlog.signed_tx }, txlog.invocationId);
   }
 
   get failed_txs() {
@@ -808,10 +864,7 @@ export class ScanCacheOpened {
     const rows: { index: number; txlog: TxLog; inputs: Output[] }[] = [];
     for (let index = 0; index < logs.length; index++) {
       const txlog = logs[index];
-      if (!txlog || txlog.hidden_on_send_plate) continue;
-      if (txlog.sendResult?.status === "OK") continue;
-      // no node answer yet. this row is still in flight.
-      if (!txlog.sendResult && !txlog.error) continue;
+      if (!txlog || !txFailed(txlog)) continue;
       const inputs = txlog.inputs_index
         .map((id) => this._cache.outputs[id])
         .filter((output) => output);
@@ -820,16 +873,25 @@ export class ScanCacheOpened {
         inputs.every((output) => typeof output.spent_in_tx_hash === "string")
       )
         continue;
+      if (txlog.hidden_on_send_plate && (
+        !txLogHoldsFunds(txlog) || !inputs.some((input) =>
+          this._cache.pending_spent_utxos?.[String(input.index_on_blockchain)] === index &&
+          typeof input.spent_in_tx_hash !== "string" && typeof input.burned !== "number"
+        )
+      )) continue;
       rows.push({ index, txlog, inputs });
     }
     return rows;
   }
 
-  public async dismissSendPlate() {
-    await this.writeTxCache({ dismiss: true });
+  /** hides the send notice and keeps its TxLog row and reservation. */
+  public async dismissSendPlate(txLogIndex?: number) {
+    const command = this.callCoordinator("dismissSendPlate", { txLogIndex });
+    if (command) return command;
+    await this.writeTxCache({ dismiss: true, txLogIndex });
   }
   /**
-   * makeStandardTransaction
+   * builds an unsigned payment to one address. the caller manages input reservations.
    */
   public makeStandardTransaction(
     destination_address: string,
@@ -944,7 +1006,9 @@ export class ScanCacheOpened {
         worker.terminate();
       } catch {
       }
-      if (this.cacheWriter && this.cacheWriter.write === worker.writeCache) this.cacheWriter.write = undefined;
+      if (this.cacheWriter && this.cacheWriter.callCoordinator === worker.callCoordinator) {
+        this.cacheWriter.callCoordinator = undefined;
+      }
     }
   }
   public async unpause() {
@@ -957,7 +1021,7 @@ export class ScanCacheOpened {
         this.pathPrefix,
         (params) => this._onWorkerError(params),
       );
-      if (this.cacheWriter) this.cacheWriter.write = this.worker?.writeCache;
+      if (this.cacheWriter) this.cacheWriter.callCoordinator = this.worker?.callCoordinator;
     }
     return await this._scanSettings.unhaltWallet(
       this.view_pair.primary_address,
@@ -1116,14 +1180,6 @@ export type ManyScanCachesOpenedCreateOptions = {
   extensionMessageBus?: ExtensionMessageBus;
 };
 
-function defaultNotifyMasterChanged(params: CacheChangedCallbackParameters) {
-  void sendToBackground(
-    "walletCacheChanged",
-    JSON.stringify(params, (_k, v) =>
-      typeof v === "bigint" ? v.toString() : v,
-    ),
-  ).catch(() => {});
-}
 export class ManyScanCachesOpened {
   get start_height(): number | null {
     if (this.wallets.length === 0) return this._scanSettings.start_height;
@@ -1150,19 +1206,7 @@ export class ManyScanCachesOpened {
   ) {
     if (this.actionLogOpened.extensionMessageBus === "ui") {
       // the background owns the worker. it stops, then writes. do not write here first.
-      const result = await sendToBackground("worker.changeNodeUrlAndStartHeight", {
-        node_url,
-        start_height,
-      });
-      if (
-        result &&
-        typeof result === "object" &&
-        "error" in result &&
-        (result as { error?: unknown }).error
-      ) {
-        throw new Error(String((result as { error: unknown }).error));
-      }
-      if (result == null) throw new Error("background did not save the node url");
+      await this.actionLogOpened.callExtensionBackground("worker.changeNodeUrlAndStartHeight", { node_url, start_height });
       return;
     }
     if (this.wallets.length === 0) {
@@ -1180,7 +1224,7 @@ export class ManyScanCachesOpened {
   }
   public async stopWorker() {
     if (this.actionLogOpened.extensionMessageBus === "ui") {
-      await sendToBackground("worker.stopWorker", null).catch(() => {});
+      await this.actionLogOpened.callExtensionBackground("worker.stopWorker", null);
       return;
     }
     if (this.wallets.length === 0) return;
@@ -1197,7 +1241,7 @@ export class ManyScanCachesOpened {
 
   public async changeNodeUrl(node_url: string) {
     if (this.actionLogOpened.extensionMessageBus === "ui") {
-      await sendToBackground("worker.setNodeUrl", { node_url }).catch(() => {});
+      await this.actionLogOpened.callExtensionBackground("worker.setNodeUrl", { node_url });
       return;
     }
     if (this.wallets.length === 0) {
@@ -1215,18 +1259,18 @@ export class ManyScanCachesOpened {
     return wallet;
   }
 
+  // an outer wallet with the ui role sends the command to the background wallet over the bus.
+  // the public result type of a send stays the same on both roles.
   public async makeSignSend(params: ExtensionMessageByKind["worker.makeSignSend"]) {
     if (this.actionLogOpened.extensionMessageBus === "ui") {
-      await sendToBackground("worker.makeSignSend", params).catch(() => {});
-      return;
+      return this.actionLogOpened.callExtensionBackground("worker.makeSignSend", params);
     }
     return this.walletByAddress(params.primary_address).makeSignSend(params);
   }
 
   public async sweepSignSend(params: ExtensionMessageByKind["worker.sweepSignSend"]) {
     if (this.actionLogOpened.extensionMessageBus === "ui") {
-      await sendToBackground("worker.sweepSignSend", params).catch(() => {});
-      return;
+      return this.actionLogOpened.callExtensionBackground("worker.sweepSignSend", params);
     }
     return this.walletByAddress(params.primary_address).sweepSignSend(params);
   }
@@ -1236,18 +1280,25 @@ export class ManyScanCachesOpened {
     tx_log_index: number;
   }) {
     if (this.actionLogOpened.extensionMessageBus === "ui") {
-      await sendToBackground("worker.rebroadcastTx", params).catch(() => {});
-      return;
+      return this.actionLogOpened.callExtensionBackground("worker.rebroadcastTx", params);
     }
     return this.walletByAddress(params.primary_address).rebroadcastTx(params.tx_log_index);
   }
 
-  public async dismissSendPlate(params: { primary_address: string }) {
+  public async releaseInputs(params: { primary_address: string; tx_log_index: number }) {
     if (this.actionLogOpened.extensionMessageBus === "ui") {
-      await sendToBackground("worker.dismissSendPlate", params).catch(() => {});
+      await this.actionLogOpened.callExtensionBackground("worker.releaseInputs", params);
       return;
     }
-    return this.walletByAddress(params.primary_address).dismissSendPlate();
+    return this.walletByAddress(params.primary_address).releaseInputs(params.tx_log_index);
+  }
+
+  public async dismissSendPlate(params: { primary_address: string; tx_log_index?: number }) {
+    if (this.actionLogOpened.extensionMessageBus === "ui") {
+      await this.actionLogOpened.callExtensionBackground("worker.dismissSendPlate", params);
+      return;
+    }
+    return this.walletByAddress(params.primary_address).dismissSendPlate(params.tx_log_index);
   }
 
   get merchant_confirmations(): number | null | undefined {
@@ -1295,11 +1346,11 @@ export class ManyScanCachesOpened {
     logs_exclude?: string[] | null,
   ) {
     if (this.actionLogOpened.extensionMessageBus === "ui") {
-      await sendToBackground("worker.setLogSettings", {
+      await this.actionLogOpened.callExtensionBackground("worker.setLogSettings", {
         logs,
         logs_include,
         logs_exclude,
-      }).catch(() => {});
+      });
     }
     await this._scanSettings.setLogSettings(
       logs,
@@ -1318,9 +1369,9 @@ export class ManyScanCachesOpened {
   }
   public async changeStartHeight(start_height: number | null) {
     if (this.actionLogOpened.extensionMessageBus === "ui") {
-      await sendToBackground("worker.setStartHeight", {
+      await this.actionLogOpened.callExtensionBackground("worker.setStartHeight", {
         start_height,
-      }).catch(() => {});
+      });
       return;
     }
     if (this.wallets.length === 0) {
@@ -1461,9 +1512,22 @@ export class ManyScanCachesOpened {
     const newOptions = { ...options };
     const ui = newOptions.extensionMessageBus === "ui";
     if (ui) newOptions.no_worker = true;
-    // browser worker (background.ts): broadcast cache to sidebar 
-    if (!newOptions.notifyMasterChanged && !newOptions.no_worker) {
-      newOptions.notifyMasterChanged = defaultNotifyMasterChanged;
+    // browser worker (background.ts): push each cache change to the sidebar over the bus.
+    // a scan result can arrive before the bus exists. those are kept and sent first.
+    const beforeBus: CacheChangedCallbackParameters[] = [];
+    let bus: ActionLogOpened | undefined;
+    const pushToSidebar = (params: CacheChangedCallbackParameters) => {
+      if (!bus) {
+        beforeBus.push(params);
+        return;
+      }
+      const payload = JSON.stringify(params, (_k, v) =>
+        typeof v === "bigint" ? v.toString() : v,
+      );
+      bus.callExtensionSidebar("walletCacheChanged", payload);
+    };
+    if (!newOptions.notifyMasterChanged && !newOptions.no_worker && newOptions.extensionMessageBus) {
+      newOptions.notifyMasterChanged = pushToSidebar;
     }
     let connectionFailedShown = false;
     if (autoRetry) {
@@ -1523,6 +1587,8 @@ export class ManyScanCachesOpened {
       onChange: newOptions.onActionLogChange ?? null,
       extensionMessageBus: newOptions.extensionMessageBus,
     });
+    bus = actionLogOpened;
+    for (const params of beforeBus.splice(0)) pushToSidebar(params);
 
     instance = new ManyScanCachesOpened(
       wallets,
@@ -1546,7 +1612,7 @@ export class ManyScanCachesOpened {
 
   public async buildWallets() {
     if (this.actionLogOpened.extensionMessageBus === "ui") {
-      await sendToBackground("worker.buildWallets", null).catch(() => {});
+      await this.actionLogOpened.callExtensionBackground("worker.buildWallets", null);
       return;
     }
     await this.stopWorker();
@@ -1560,10 +1626,10 @@ export class ManyScanCachesOpened {
       this._scanSettings,
       this._options,
     )) ?? [];
-    if (this.actionLogOpened.extensionMessageBus === "worker") {
-      void sendToBackground("walletsChanged", {
+    if (this.actionLogOpened.extensionMessageBus === "background") {
+      this.actionLogOpened.callExtensionSidebar("walletsChanged", {
         scan_settings_path: this._scanSettings.scan_settings_path,
-      }).catch(() => {});
+      });
     }
   }
 

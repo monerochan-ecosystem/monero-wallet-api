@@ -76,7 +76,7 @@ async function withDeadline<T>(promise: Promise<T>, label: string): Promise<T> {
   }
 }
 
-async function transportFixture(name: string) {
+async function transportFixture(name: string, rowFields: Record<string, unknown> = {}) {
   const dir = resolve(OUT, name);
   await rm(dir, { force: true, recursive: true });
   await mkdir(dir, { recursive: true });
@@ -103,6 +103,11 @@ async function transportFixture(name: string) {
         entered.resolve();
         return new Promise<Response>((resolve) => held.push(resolve));
       }
+      if (new URL(request.url).pathname === "/send_raw_transaction") {
+        methods.push("send_raw_transaction");
+        return Response.json({ double_spend: false, fee_too_low: false, invalid_input: false, invalid_output: false,
+          low_mixin: false, not_relayed: false, overspend: false, reason: "", status: "OK", too_big: false, untrusted: false });
+      }
       const message = await request.json() as { method: string; params?: { start_height: number } };
       methods.push(message.method);
       if (message.method === "get_block_headers_range") return Response.json({ id: "0", jsonrpc: "2.0", result: {
@@ -128,6 +133,7 @@ async function transportFixture(name: string) {
       } });
     },
   });
+  const node_url = server.url.href.replace(/\/$/, "");
   let mco: ManyScanCachesOpened | undefined;
   let closed = false;
   const close = async () => {
@@ -144,19 +150,23 @@ async function transportFixture(name: string) {
   transportCleanup.push(close);
   const block = { block_height: 50, block_timestamp: 1, block_hash: "11".repeat(32) };
   const path = `${dir}/${address}_cache.json`;
+  // one unsent row. a command that takes an index needs a saved row.
+  const row = { timestamp: 1, height: 50, inputs_index: [], payments: [], node_url, last_broadcast_at: null, ...rowFields };
   await Bun.write(path, JSON.stringify({
     primary_address: address, outputs: {}, own_key_images: {}, daemon_height: 51,
-    scanned_ranges: [{ start: 0, end: 50, block_hashes: [block, block, block] }], tx_logs: [], pending_spent_utxos: {},
+    scanned_ranges: [{ start: 0, end: 50, block_hashes: [block, block, block] }], tx_logs: [row], pending_spent_utxos: {},
   }));
   await Bun.write(`${dir}/ScanSettings.json`, JSON.stringify({
-    node_url: server.url.href.replace(/\/$/, ""), start_height: 0, cpu_worker_count: 1,
+    node_url, start_height: 0, cpu_worker_count: 1,
     wallets: [{ primary_address: address }],
   }));
   mco = await unpacked.openWallets({ scan_settings_path: `${dir}/ScanSettings.json`, no_stats: true, workerError: (error) => errors.push(String(error)) });
   await withDeadline(entered.promise, "worker did not enter the held block fetch");
   const worker = (mco.wallets[0] as unknown as { worker: WorkerSet }).worker;
-  const message = { primary_address: address, txLog: { timestamp: 1, height: 50, inputs_index: [], payments: [], node_url: mco.node_url } };
-  return { dir, path, mco, worker, message, methods, errors, close };
+  // a command that needs no wallet logic. it marks the row as accepted by the merchant.
+  // the public method runs the whole path: wallet, sender, worker, scan loop, reply.
+  const accept = (txLogIndex: number) => mco!.wallets[0]!.recordHandoverAcceptance(txLogIndex);
+  return { dir, path, mco, worker, accept, methods, errors, close };
 }
 
 test("production worker reads its genesis header from the local fixture", async () => {
@@ -170,36 +180,55 @@ test("production worker reads its genesis header from the local fixture", async 
   }
 });
 
-test("production cache message writes the file and returns its assigned index", async () => {
+test("production coordinator command writes the file and replies", async () => {
   const fixture = await transportFixture("transport-write");
   try {
-    const index = await withDeadline(fixture.worker.writeCache(fixture.message), "cache reply missing");
+    await withDeadline(fixture.accept(0), "command reply missing");
     const cache = JSON.parse(await Bun.file(fixture.path).text());
-    expect(index).toBe(0);
     expect(cache.tx_logs).toHaveLength(1);
-    expect(cache.tx_logs[index].timestamp).toBe(1);
-    expect(fixture.mco.wallets[0]!.tx_logs[index]!.timestamp).toBe(1);
-    await Bun.write(`${fixture.dir}/result.json`, JSON.stringify({ index, cache }, null, 2));
+    expect(cache.tx_logs[0].broadcast_accepted).toBe(true);
+    expect(fixture.mco.wallets[0]!.tx_logs[0]!.broadcast_accepted).toBe(true);
+    await Bun.write(`${fixture.dir}/result.json`, JSON.stringify({ cache }, null, 2));
   } finally {
     await fixture.close();
   }
 });
 
-test("production cache message rejects an invalid index and accepts the next write", async () => {
+test("production coordinator command rejects an invalid index and accepts the next command", async () => {
   const fixture = await transportFixture("transport-error");
   try {
-    await expect(withDeadline(fixture.worker.writeCache({ ...fixture.message, txLogIndex: 99 }), "cache error reply missing")).rejects.toThrow("tx log missing");
-    const index = await withDeadline(fixture.worker.writeCache(fixture.message), "cache reply missing after an error");
+    await expect(withDeadline(fixture.accept(99), "command error reply missing")).rejects.toThrow(/^tx log missing$/);
+    await withDeadline(fixture.accept(0), "command reply missing after an error");
     const cache = JSON.parse(await Bun.file(fixture.path).text());
-    expect(index).toBe(0);
     expect(cache.tx_logs).toHaveLength(1);
-    await Bun.write(`${fixture.dir}/result.json`, JSON.stringify({ index, cache }, null, 2));
+    expect(cache.tx_logs[0].broadcast_accepted).toBe(true);
+    await Bun.write(`${fixture.dir}/result.json`, JSON.stringify({ cache }, null, 2));
   } finally {
     await fixture.close();
   }
 });
 
-test("production cache reply waiting at shutdown rejects instead of hanging", async () => {
+test("production send runs the broadcast callback after the lock is on disk and before the node call", async () => {
+  const fixture = await transportFixture("transport-before-broadcast", { signed_tx: "aa", invocationId: "before-broadcast" });
+  try {
+    const nodeSends = () => fixture.methods.filter((method) => method === "send_raw_transaction").length;
+    let atCallback: { lockOnDisk: boolean; nodeSends: number } | undefined;
+    const sent = await withDeadline(fixture.mco.wallets[0]!.sendSignedTransaction({ txLogIndex: 0, signedTx: "aa" }, "before-broadcast", async () => {
+      const row = JSON.parse(await Bun.file(fixture.path).text()).tx_logs[0];
+      atCallback = { lockOnDisk: typeof row.last_broadcast_at === "number", nodeSends: nodeSends() };
+    }), "send reply missing");
+    const cache = JSON.parse(await Bun.file(fixture.path).text());
+    await Bun.write(`${fixture.dir}/result.json`, JSON.stringify({ atCallback, sent, nodeSends: nodeSends(), row: cache.tx_logs[0] }, null, 2));
+    expect(atCallback).toEqual({ lockOnDisk: true, nodeSends: 0 });
+    expect(sent.status).toBe("OK");
+    expect(nodeSends()).toBe(1);
+    expect(cache.tx_logs[0].sendResult.status).toBe("OK");
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("production command reply waiting at shutdown rejects instead of hanging", async () => {
   const fixture = await transportFixture("transport-shutdown");
   const entered = Promise.withResolvers<void>();
   const release = Promise.withResolvers<void>();
@@ -210,16 +239,17 @@ test("production cache reply waiting at shutdown rejects instead of hanging", as
     await original.call(worker, event);
   };
   try {
-    const pending = fixture.worker.writeCache(fixture.message).then(
-      () => ({ error: "write unexpectedly resolved" }), (error) => ({ error: String(error) }),
+    const pending = fixture.accept(0).then(
+      () => ({ error: "command unexpectedly resolved" }), (error) => ({ error: String(error) }),
     );
     await withDeadline(entered.promise, "cache result did not reach the parent");
     await fixture.mco.stopWorker();
-    const result = await withDeadline(pending, "cache write did not reject at shutdown");
+    const result = await withDeadline(pending, "command did not reject at shutdown");
     expect(result.error).toContain("scanner stopped");
     const cache = JSON.parse(await Bun.file(fixture.path).text());
-    expect(cache.tx_logs).toHaveLength(1);
-    await Bun.write(`${fixture.dir}/result.json`, JSON.stringify({ ...result, committedRows: cache.tx_logs.length }, null, 2));
+    // the save was on disk before its result was held
+    expect(cache.tx_logs[0].broadcast_accepted).toBe(true);
+    await Bun.write(`${fixture.dir}/result.json`, JSON.stringify({ ...result, row: cache.tx_logs[0] }, null, 2));
   } finally {
     release.resolve();
     await fixture.close();

@@ -1,5 +1,11 @@
 import { LOCAL_NODE_DEFAULT_URL } from "../node-interaction/nodeUrl";
-import { type CacheChangedCallbackParameters, type TxLog } from "./scanresult/scanCache";
+import type { CacheChangedCallbackParameters } from "./scanresult/scanCache";
+import {
+  createCoordinatorCommandSender,
+  type CoordinatorCommand,
+  type CoordinatorCommands,
+  type CoordinatorResults,
+} from "./scanresult/coordinatorCommand";
 import {
   openScanSettingsFile,
   SCAN_SETTINGS_STORE_NAME_DEFAULT,
@@ -33,15 +39,12 @@ export function getWorkerUrl(): string | undefined {
   return customWorkerUrl;
 }
 
-export type TxCacheWriteMessage = {
-  primary_address: string;
-  txLog?: Partial<TxLog>;
-  txLogIndex?: number;
-  reserve?: boolean;
-  dismiss?: boolean;
-};
 export type WorkerSet = {
-  writeCache: (message: TxCacheWriteMessage) => Promise<number>;
+  // sends one command to the coordinator worker and waits for its reply
+  callCoordinator: <K extends keyof CoordinatorCommands>(
+    command: CoordinatorCommand<K>,
+    beforeBroadcast?: () => void,
+  ) => Promise<CoordinatorResults[K]>;
   fetchWorker: Worker;
   cpuWorkers: Worker[];
   // ask coordinator to drain, then kill. timeout falls back to terminate.
@@ -119,10 +122,14 @@ export async function createWebworker(
 
     let shutdownResolve: (() => void) | undefined;
     let shuttingDown = false;
-    const cacheWrites = new Set<() => void>();
+    const commands = createCoordinatorCommandSender(
+      (message, port) => coordinationWorker.postMessage(message, [port]),
+      () => shuttingDown,
+    );
 
     const hardTerminate = () => {
-      for (const reject of cacheWrites) reject();
+      shuttingDown = true;
+      commands.cancelPending();
       for (const p of cpuPorts) {
         try {
           p.close();
@@ -150,17 +157,18 @@ export async function createWebworker(
 
     coordinationWorker.onmessage = async (event) => {
       if (event.data.type === "ERROR") {
-        for (const reject of cacheWrites) reject();
+        commands.cancelPending();
         if (handle_error) handle_error(event.data.payload);
       } else if (event.data.type === "SCAN_RESULT") {
         const replyPort = event.ports[0];
         try {
           await handle_result?.(event.data.payload);
-          replyPort?.postMessage({ txLogIndex: event.data.txLogIndex });
         } catch (error) {
-          if (replyPort) replyPort.postMessage({ error: String(error) });
+          if (replyPort) log("createWebworker", ["cache saved but notification failed", String(error)]);
           else handle_error?.(error);
         } finally {
+          // the coordinator has already saved this cache before sending it here.
+          replyPort?.postMessage({ txLogIndex: event.data.txLogIndex });
           replyPort?.close();
         }
       } else if (event.data.type === "SHUTDOWN_DONE") {
@@ -199,27 +207,14 @@ export async function createWebworker(
       });
 
     return {
-      writeCache: (message) => new Promise<number>((resolve, reject) => {
-        if (shuttingDown) { reject(new Error("scanner is stopping")); return; }
-        const channel = new MessageChannel();
-        const close = () => { channel.port1.close(); channel.port2.close(); cacheWrites.delete(cancel); };
-        const cancel = () => { close(); reject(new Error("scanner stopped before the cache write completed")); };
-        cacheWrites.add(cancel);
-        channel.port1.onmessage = (event) => {
-          close();
-          if (event.data.error) reject(new Error(event.data.error));
-          else resolve(event.data.txLogIndex);
-        };
-        try { coordinationWorker.postMessage({ ...message, type: "cache_write" }, [channel.port2]); }
-        catch (error) { close(); reject(error); }
-      }),
+      callCoordinator: commands.callCoordinator,
       fetchWorker: coordinationWorker,
       cpuWorkers,
       // graceful only: abort fetch, cancel cpus, wait. does not terminate.
       shutdown: async (timeoutMs = 5000) => {
         if (shuttingDown) return;
         shuttingDown = true;
-        for (const reject of cacheWrites) reject();
+        commands.cancelPending();
         log("createWebworker", ["shutdown start, timeoutMs=", timeoutMs]);
         const done = new Promise<void>((resolve) => {
           shutdownResolve = resolve;

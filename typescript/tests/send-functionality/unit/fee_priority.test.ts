@@ -155,6 +155,8 @@ test("payment link execution forwards the payer's fee options", async () => {
     getPort: () => undefined,
     log: {
       invocation: async () => ({
+        events: [],
+        no_check: true,
         address: "destination",
         amount: "1",
         wallet_to_send_from_pa: "wallet",
@@ -164,7 +166,11 @@ test("payment link execution forwards the payer's fee options", async () => {
     getWallets: () => ({
       wallets: [{
         primary_address: "wallet",
-        makeSignSendTransaction: async (params: unknown) => { sent.push(params); },
+        makeSignTransaction: async (params: unknown) => {
+          sent.push(params);
+          return { signedTx: "signed", txLogIndex: 0 };
+        },
+        sendSignedTransaction: async () => {},
       }],
     }),
   } as unknown as Parameters<NonNullable<typeof tool.worker.execute_run>>[0];

@@ -12,15 +12,18 @@ import { tools, type ToolId } from "../tools/monero-tools";
 import type { ParsedMoneroToolInvocation } from "../tools/monero-tools";
 import {
   getExtensionRuntime,
-  sendToBackground,
   type ExtensionMessageByKind,
   type ExtensionMessageKind,
   type ExtensionPort,
   type ToolNotice,
 } from "../tools/globals";
+import type { CoordinatorResults } from "../scanning-syncing/scanresult/coordinatorCommand";
+import type { ManyScanCachesOpened } from "../scanning-syncing/scanresult/scanCacheOpened";
+import { ActionLogIdbBackend } from "./backend/idbBackend";
+import { ActionLogSqliteBackend } from "./backend/sqliteBackend";
 
 export type ActionLogBackendKind = "sqlite" | "idb";
-export type ExtensionMessageBus = "worker" | "ui";
+export type ExtensionMessageBus = "background" | "ui";
 
 export type ActionLogOpenedCreateOptions = {
   path?: string;
@@ -30,47 +33,33 @@ export type ActionLogOpenedCreateOptions = {
   extensionMessageBus?: ExtensionMessageBus;
 };
 
-type WorkerMessageResult =
+type BackgroundMessageResult =
+  | { ok: true; result?: unknown }
   | { events?: ActionLogEvent[] }
   | { tx_logs: unknown }
-  | { error: string }
   | void;
-
-type BoundMco = {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  feed: (params: any) => Promise<void>;
-  wallets?: unknown;
-  changeNodeUrl: (node_url: string) => Promise<void>;
-  changeStartHeight: (start_height: number | null) => Promise<void>;
-  changeNodeUrlAndStartHeight: (
-    node_url?: string,
-    start_height?: number | null,
-  ) => Promise<void>;
-  buildWallets: () => Promise<void>;
-  stopWorker: () => Promise<void>;
-  makeSignSend: (params: ExtensionMessageByKind["worker.makeSignSend"]) => Promise<unknown>;
-  sweepSignSend: (params: ExtensionMessageByKind["worker.sweepSignSend"]) => Promise<unknown>;
-  rebroadcastTx: (params: {
-    primary_address: string;
-    tx_log_index: number;
-  }) => Promise<unknown>;
-  dismissSendPlate: (params: { primary_address: string }) => Promise<unknown>;
-  setLogSettings: (
-    logs?: "console" | "file" | "console-and-file" | "off" | null,
-    logs_include?: string[] | null,
-    logs_exclude?: string[] | null,
-  ) => Promise<unknown>;
-};
 
 function armWorker(toolId: ToolId) {
   return tools[toolId]?.worker;
 }
 
+/**
+ * records tool invocations and their results. openWallets() returns a ManyScanCachesOpened
+ * that exposes the shared log as actionLogOpened. the log can access each ScanCacheOpened
+ * through the ManyScanCachesOpened.wallets list.
+ * use toolCall() to record a request, execute() to accept it, or dismiss() to decline it.
+ *
+ * in an extension, the background page runs the scanner and writes the log.
+ * callExtensionBackground() sends a request from a ui page and waits for the reply.
+ * callExtensionSidebar() sends log, wallet list and cache updates to the ui pages.
+ *
+ * outside an extension, callers use the log directly. it uses SQLite by default.
+ */
 export class ActionLogOpened {
   private ports = new Map<string, ExtensionPort>();
   private runtimeInstalled = false;
   private bus: ExtensionMessageBus | null = null;
-  private mco: BoundMco | null = null;
+  private mco: ManyScanCachesOpened | null = null;
   private reloadWallets?: (scan_settings_path?: string) => Promise<void>;
   private uiMessages: Promise<void> = Promise.resolve();
   private invocationsCache: InvocationState[] = [];
@@ -100,7 +89,7 @@ export class ActionLogOpened {
 
   // mco wires itself after create
   bindMco(
-    mco: BoundMco,
+    mco: ManyScanCachesOpened,
     reloadWallets?: (scan_settings_path?: string) => Promise<void>,
   ): Promise<void> {
     this.mco = mco;
@@ -126,18 +115,6 @@ export class ActionLogOpened {
       reloadWallets: () => this.mco?.buildWallets(),
       getPort: (id: string) => this.ports.get(id),
     };
-  }
-
-  get extensionMessageBus(): ExtensionMessageBus | null {
-    return this.bus;
-  }
-
-  private isUiBus(): boolean {
-    return this.bus === "ui";
-  }
-
-  private broadcastActionLogChanged() {
-    void sendToBackground("actionLogChanged", null).catch(() => {});
   }
 
   async append(
@@ -226,7 +203,7 @@ export class ActionLogOpened {
 
   async dismissNotice(noticeId: string): Promise<void> {
     if (this.isUiBus()) {
-      await sendToBackground("dismissNotice", { noticeId }).catch(() => {});
+      await this.callExtensionBackground("dismissNotice", { noticeId }).catch(() => {});
       await this.refreshUiCache();
       return;
     }
@@ -235,7 +212,7 @@ export class ActionLogOpened {
 
   async dismiss(invocationId: string): Promise<void> {
     if (this.isUiBus()) {
-      await sendToBackground("dismiss", { invocationId }).catch(() => {});
+      await this.callExtensionBackground("dismiss", { invocationId }).catch(() => {});
       return;
     }
     await this.dismissLocal(invocationId);
@@ -246,7 +223,7 @@ export class ActionLogOpened {
     args: Record<string, unknown> = {},
   ): Promise<void> {
     if (this.isUiBus()) {
-      await sendToBackground("execute", { invocationId, args }).catch(() => {});
+      await this.callExtensionBackground("execute", { invocationId, args }).catch(() => {});
       return;
     }
     await this.executeLocal(invocationId, args);
@@ -255,31 +232,87 @@ export class ActionLogOpened {
   getPort(invocationId: string): ExtensionPort | undefined {
     return this.ports.get(invocationId);
   }
+  // ---------- extension message bus ----------
+
+  get extensionMessageBus(): ExtensionMessageBus | null {
+    return this.bus;
+  }
+
+  private isUiBus(): boolean {
+    return this.bus === "ui";
+  }
+
+  /**
+   * sends a request from a ui page to the background page and waits for the reply.
+   * returns the result or the raw reply. rejects on a missing or failed reply.
+   */
+  callExtensionBackground<K extends keyof ExtensionMessageByKind>(
+    kind: K,
+    payload: ExtensionMessageByKind[K],
+  ): Promise<K extends `worker.${infer C extends keyof CoordinatorResults}` ? CoordinatorResults[C] : unknown>;
+  async callExtensionBackground<K extends keyof ExtensionMessageByKind>(
+    kind: K,
+    payload: ExtensionMessageByKind[K],
+  ): Promise<unknown> {
+    const reply = await getExtensionRuntime()?.sendMessage({ kind, payload });
+    if (!reply || typeof reply !== "object")
+      throw new Error(`no reply from the extension bus for ${kind}`);
+    if ("error" in reply) throw new Error(String(reply.error));
+    if ("ok" in reply) {
+      if (reply.ok !== true) throw new Error(`the extension bus rejected ${kind}`);
+      return "result" in reply ? reply.result : undefined;
+    }
+    return reply;
+  }
+
+  /** sends an update from the background page to the ui pages without waiting for a reply. */
+  callExtensionSidebar<K extends keyof ExtensionMessageByKind>(
+    kind: K,
+    payload: ExtensionMessageByKind[K],
+  ): void {
+    getExtensionRuntime()?.sendMessage({ kind, payload }).catch(() => {});
+  }
+
+  private broadcastActionLogChanged() {
+    this.callExtensionSidebar("actionLogChanged", null);
+  }
+
+  // distinguish message handling by bus type 
+  private handlesMessage(kind: string): boolean {
+    if (this.bus === "ui")
+      return ["actionLogChanged", "walletsChanged", "walletCacheChanged"].includes(kind);
+    if (this.bus !== "background") return false;
+    return kind.startsWith("worker.") || [
+      "openSidebar", "toolCall", "dismiss", "execute", "dismissNotice",
+      "shareViewkeyOK", "shareViewkeyFAILED",
+    ].includes(kind);
+  }
 
   private listenOnMessage(
     handle: (
       env: { kind: ExtensionMessageKind; payload: unknown },
       sender?: { tab?: { windowId?: number } },
-    ) => Promise<WorkerMessageResult>,
+    ) => Promise<BackgroundMessageResult>,
   ) {
     const rt = getExtensionRuntime();
     if (!rt) return;
     rt.onMessage.addListener((msg, sender: unknown, sendResponse?: (r: unknown) => void) => {
-      const done = handle(
+      const kind = (msg as { kind?: string } | null)?.kind;
+      if (!kind || !this.handlesMessage(kind)) return false;
+      handle(
         msg as { kind: ExtensionMessageKind; payload: unknown },
         sender as { tab?: { windowId?: number } } | undefined,
-      ).then((result) => {
-        if (result !== undefined) sendResponse?.(result);
-        return result;
-      });
-      void done;
+      ).then(
+        (result) => { if (result !== undefined) sendResponse?.(result); },
+        (error) => sendResponse?.({ error: error instanceof Error ? error.message : String(error) }),
+      );
       return true;
     });
   }
 
   installExtensionMessagebus() {
     if (this.runtimeInstalled) return;
-    if (this.bus === "worker") this.installWorkerMessagebus();
+    if (this.bus === "background") this.installBackgroundMessagebus();
     else if (this.bus === "ui") this.installUiMessagebus();
   }
 
@@ -292,17 +325,18 @@ export class ActionLogOpened {
     });
   }
 
-  private installWorkerMessagebus() {
+  private installBackgroundMessagebus() {
     const rt = getExtensionRuntime();
     if (!rt) return;
     this.runtimeInstalled = true;
-    this.listenOnMessage((env, sender) => this.handleWorkerMessage(env, sender));
+    this.listenOnMessage((env, sender) => this.handleBackgroundMessage(env, sender));
     rt.onConnect.addListener((port) => {
       const invocationId = port.name;
       const existing = this.ports.get(invocationId);
       if (existing) existing.disconnect();
       this.ports.set(invocationId, port);
       port.onDisconnect.addListener(() => {
+        if (this.ports.get(invocationId) !== port) return;
         this.ports.delete(invocationId);
         void this.dispatchPortDisconnect(invocationId);
       });
@@ -343,26 +377,32 @@ export class ActionLogOpened {
     return;
   }
 
-  private async handleWorkerMessage(
+  private requireWallets(): ManyScanCachesOpened {
+    if (!this.mco) throw new Error("background wallet is not ready");
+    return this.mco;
+  }
+
+  private async handleBackgroundMessage(
     env: { kind: ExtensionMessageKind; payload: unknown },
     sender?: { tab?: { windowId?: number } },
-  ): Promise<WorkerMessageResult> {
+  ): Promise<BackgroundMessageResult> {
     if (!env?.kind) return {};
     const ctx = this.toolCtx();
     switch (env.kind) {
+      // the chrome service worker handles "openSidebar" msg (sidepanel can only be opened from sw)
       case "openSidebar":
         this.openWalletUi(sender);
         return {};
       case "worker.setNodeUrl": {
         const p = env.payload as { node_url?: string };
         if (p?.node_url != null)
-          await this.mco?.changeNodeUrl(p.node_url);
+          await this.requireWallets().changeNodeUrl(p.node_url);
         return {};
       }
       case "worker.setStartHeight": {
         const p = env.payload as { start_height?: number | null };
         if (p && "start_height" in p)
-          await this.mco?.changeStartHeight(p.start_height ?? null);
+          await this.requireWallets().changeStartHeight(p.start_height ?? null);
         return {};
       }
       case "worker.changeNodeUrlAndStartHeight": {
@@ -370,45 +410,45 @@ export class ActionLogOpened {
           node_url?: string;
           start_height?: number | null;
         };
-        try {
-          await this.mco?.changeNodeUrlAndStartHeight(
-            p?.node_url,
-            p?.start_height,
-          );
-          return {};
-        } catch (err) {
-          return { error: err instanceof Error ? err.message : String(err) };
-        }
+        await this.requireWallets().changeNodeUrlAndStartHeight(
+          p?.node_url,
+          p?.start_height,
+        );
+        return {};
       }
       case "worker.buildWallets":
-        await this.mco?.buildWallets();
+        await this.requireWallets().buildWallets();
         return {};
       case "worker.stopWorker":
-        await this.mco?.stopWorker();
+        await this.requireWallets().stopWorker();
         return {};
       case "worker.makeSignSend": {
         const p = env.payload as ExtensionMessageByKind["worker.makeSignSend"];
-        await this.mco?.makeSignSend(p);
-        return {};
+        const result = await this.requireWallets().makeSignSend(p);
+        return { ok: true, result };
       }
       case "worker.sweepSignSend": {
         const p = env.payload as ExtensionMessageByKind["worker.sweepSignSend"];
-        await this.mco?.sweepSignSend(p);
-        return {};
+        const result = await this.requireWallets().sweepSignSend(p);
+        return { ok: true, result };
+      }
+      case "worker.releaseInputs": {
+        await this.requireWallets().releaseInputs(env.payload as ExtensionMessageByKind["worker.releaseInputs"]);
+        return { ok: true };
       }
       case "worker.rebroadcastTx": {
         const p = env.payload as ExtensionMessageByKind["worker.rebroadcastTx"];
-        await this.mco?.rebroadcastTx(p);
-        return {};
+        const result = await this.requireWallets().rebroadcastTx(p);
+        return { ok: true, result };
       }
       case "worker.dismissSendPlate": {
         const p = env.payload as ExtensionMessageByKind["worker.dismissSendPlate"];
-        await this.mco?.dismissSendPlate(p);
-        return {};
+        await this.requireWallets().dismissSendPlate(p);
+        return { ok: true };
       }
       case "worker.setLogSettings": {
         const p = env.payload as ExtensionMessageByKind["worker.setLogSettings"];
-        await this.mco?.setLogSettings(
+        await this.requireWallets().setLogSettings(
           p?.logs,
           p?.logs_include,
           p?.logs_exclude,
@@ -544,12 +584,10 @@ async function openBackend(
   if (options.backendInstance) return options.backendInstance;
   const kind = options.backend ?? defaultBackendKind();
   if (kind === "idb") {
-    const { ActionLogIdbBackend } = await import("./backend/idbBackend");
     const path = options.path ?? "actionlog";
     return ActionLogIdbBackend.open(path);
   }
   if (kind === "sqlite") {
-    const { ActionLogSqliteBackend } = await import("./backend/sqliteBackend");
     const path = options.path ?? "actionlog.sqlite";
     return ActionLogSqliteBackend.open(path);
   }

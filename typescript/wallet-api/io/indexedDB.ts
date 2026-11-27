@@ -149,12 +149,11 @@ export async function putFileIntoIndexedDB(
   const [dbContent, byteLength] = await getItemLength(content);
 
   const tx = browserGlobal.filesDb.transaction(fileStoreName, "readwrite");
-  const store = tx.objectStore(fileStoreName);
-  const request = store.put(dbContent, path);
+  tx.objectStore(fileStoreName).put(dbContent, path);
 
   return await new Promise((resolve, reject) => {
-    request.onsuccess = () => resolve(byteLength);
-    request.onerror = () => reject(request.error);
+    tx.oncomplete = () => resolve(byteLength);
+    tx.onabort = () => reject(tx.error ?? new Error("file write aborted"));
   });
 }
 
