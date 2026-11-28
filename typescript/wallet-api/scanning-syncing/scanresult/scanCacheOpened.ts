@@ -84,6 +84,7 @@ export type CreateTransactionParams = TransactionFeeOptions & {
   inputs?: Output[];
   no_fee_circuit_breaker?: boolean;
   invocationId?: string;
+  metadata?: TxLog["metadata"];
 };
 const feePriorities: readonly FeePriority[] = ["unimportant", "normal", "elevated", "priority"];
 const feeMultipliers = [1n, 5n, 25n, 1000n];
@@ -615,6 +616,7 @@ export class ScanCacheOpened {
     inputs: Output[];
     feeEstimate: FeeEstimateResponse;
     invocationId?: string;
+    metadata?: TxLog["metadata"];
   }) {
     return this.writeTxCache({
       txLog: {
@@ -626,6 +628,7 @@ export class ScanCacheOpened {
         height: this.current_height!,
         timestamp: Date.now(),
         invocationId: args.invocationId,
+        metadata: args.metadata,
       },
     });
   }
@@ -667,6 +670,7 @@ export class ScanCacheOpened {
         inputs: selectedInputs,
         feeEstimate,
         invocationId: params.invocationId,
+        metadata: params.metadata,
       });
       const unsignedTx = await this.makeTransactionFromSelectedInputs(
         params.payments,
@@ -697,6 +701,7 @@ export class ScanCacheOpened {
         height: this.current_height!,
         timestamp: Date.now(),
         invocationId: params.invocationId,
+        metadata: params.metadata,
         signed_tx: maybeSignedTx,
       } });
       throw e;
@@ -772,6 +777,7 @@ export class ScanCacheOpened {
   public async makeSignSend(params: TransactionFeeOptions & {
     payments: Payment[];
     input_indexes: string[];
+    metadata?: TxLog["metadata"];
   }) {
     const command = this.callCoordinator("makeSignSend", params);
     if (command) return command;
@@ -786,6 +792,7 @@ export class ScanCacheOpened {
   public async sweepSignSend(params: TransactionFeeOptions & {
     address: string;
     input_indexes: string[];
+    metadata?: TxLog["metadata"];
   }) {
     const command = this.callCoordinator("sweepSignSend", params);
     if (command) return command;
@@ -799,6 +806,7 @@ export class ScanCacheOpened {
       payments,
       inputs,
       feeEstimate,
+      metadata: params.metadata,
     });
     let signedTx: string;
     try {

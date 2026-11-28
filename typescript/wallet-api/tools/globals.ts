@@ -21,7 +21,9 @@ export type ExtensionMessageByKind = {
   execute: { invocationId: string; args?: Record<string, unknown> };
   dismiss: { invocationId: string };
   dismissNotice: { noticeId: string };
-  openSidebar: null;
+  openSidebar: { metadata: Record<string, unknown>; windowId?: number } | null;
+  takeSidebarMetadata: { windowId: number };
+  sidebarMetadataChanged: { windowId: number };
   "tabs.create": { url: string };
   actionLogChanged: null;
   walletCacheChanged: string;
@@ -38,11 +40,13 @@ export type ExtensionMessageByKind = {
     primary_address: string;
     payments: { address: string; amount: string }[];
     input_indexes: string[];
+    metadata?: Record<string, unknown>;
   };
   "worker.sweepSignSend": TransactionFeeOptions & {
     primary_address: string;
     address: string;
     input_indexes: string[];
+    metadata?: Record<string, unknown>;
   };
   "worker.rebroadcastTx": {
     primary_address: string;
@@ -119,9 +123,11 @@ export type ExtensionRuntime = {
 };
 
 // the parts of the extension namespace that wallet pages use.
-// the library itself only needs runtime.sendMessage and connect.
 export type ExtensionBrowser = {
   runtime: ExtensionRuntime;
+  sidebarAction?: { open: () => Promise<void> };
+  sidePanel?: { open: (options: { windowId: number }) => Promise<void> };
+  windows?: { getCurrent: () => Promise<{ id?: number }> };
   tabs: {
     create: (options: { url: string }) => Promise<{ id?: number }>;
     query: (query: { url?: string }) => Promise<{ id?: number }[]>;
@@ -132,6 +138,11 @@ export type ExtensionBrowser = {
     ) => Promise<unknown>;
   };
 };
+
+export function getExtensionBrowser(): ExtensionBrowser | undefined {
+  const g = globalThis as unknown as { browser?: ExtensionBrowser; chrome?: ExtensionBrowser };
+  return g.browser ?? g.chrome;
+}
 
 export function getExtensionRuntime(): ExtensionRuntime | null {
   const g = globalThis as unknown as {

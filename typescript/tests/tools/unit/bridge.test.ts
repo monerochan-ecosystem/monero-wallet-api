@@ -72,14 +72,15 @@ test("the bridge opens the side panel in the sender tab window only", async () =
   const b = browser(); installBridge(); await settle();
   b.message.fire({ kind: "openSidebar" }, { tab: { windowId: 18 } }, () => {});
   b.message.fire({ kind: "openSidebar" }, {}, () => {});
+  b.message.fire({ kind: "openSidebar", payload: { metadata: { route: "form" } } }, { tab: { windowId: 18 } }, () => {});
   await settle();
   expect(b.panels).toEqual([{ windowId: 18 }]);
 });
 
-test("the bridge claims no reply channel except for tabs.create", async () => {
+test("the bridge claims no reply channel for legacy opens, tool calls, or sidebar metadata", async () => {
   const b = browser(); installBridge(); await settle();
   const reply = () => { throw new Error("bridge must not reply"); };
-  for (const kind of ["openSidebar", "execute", "toolCall"])
+  for (const kind of ["openSidebar", "execute", "toolCall", "takeSidebarMetadata", "sidebarMetadataChanged"])
     expect(b.message.fire({ kind }, { tab: { windowId: 18 } }, reply)).toEqual([undefined]);
   await settle();
   expect(b.panels).toEqual([{ windowId: 18 }]);

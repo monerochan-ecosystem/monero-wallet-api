@@ -7,7 +7,9 @@ const oldDatabase = Bun.env.CHECKOUT_DB;
 Bun.env.CHECKOUT_DB = ":memory:";
 const db = await import("../../../../standard-checkout/db");
 const checkout = await import("../../../../standard-checkout/acceptance");
-const { tools } = await import("../../../dist/xmr3");
+const { tools } = await import(
+  Bun.resolveSync("@spirobel/monero-wallet-api", resolve("../standard-checkout"))
+) as typeof import("../../../dist/xmr3");
 const oldFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = oldFetch; });
 afterAll(() => { if (oldDatabase === undefined) delete Bun.env.CHECKOUT_DB; else Bun.env.CHECKOUT_DB = oldDatabase; });

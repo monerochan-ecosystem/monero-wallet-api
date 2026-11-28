@@ -1,7 +1,11 @@
 import { afterAll, afterEach, expect, spyOn, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { resolve } from "node:path";
-import { NodeUrl, ViewPair, openTrackers, type Trackers, type ScannedTransaction, type TransactionTrackerState } from "../../../dist/xmr3";
+import type { NodeUrl, ViewPair, Trackers, ScannedTransaction, TransactionTrackerState } from "../../../dist/xmr3";
+
+const sdk = await import(
+  Bun.resolveSync("@spirobel/monero-wallet-api", resolve("../walletless-checkout"))
+) as typeof import("../../../dist/xmr3");
 
 const oldDatabase = Bun.env.CHECKOUT_DB;
 Bun.env.CHECKOUT_DB = ":memory:";
@@ -14,7 +18,7 @@ const accepted = { status: "OK", reason: "", double_spend: false };
 const restores: (() => void)[] = [];
 afterEach(() => { for (const restore of restores.splice(0)) restore(); });
 
-class TestViewPair extends ViewPair {
+class TestViewPair extends sdk.ViewPair {
   constructor(private scans: Map<string, ScannedTransaction>) { super("http://node", primary_address); }
   public override scanTransaction({ tx_as_hex, payment_id, invoice_amount }: Parameters<ViewPair["scanTransaction"]>[0]): ScannedTransaction {
     const scan = this.scans.get(tx_as_hex.toLowerCase());
@@ -42,25 +46,25 @@ async function setup(name: string, send?: (hex: string) => Promise<typeof accept
   const payments = new Map<number, string>();
   let nodeDown = false;
   const header = (height: number) => ({ height, hash: `block${height}`, prev_hash: `block${height - 1}`, depth: top - height });
-  const info = spyOn(NodeUrl.prototype, "getInfo").mockImplementation(async () => {
+  const info = spyOn(sdk.NodeUrl.prototype, "getInfo").mockImplementation(async () => {
     if (nodeDown) throw new Error("node unavailable");
     return { height: top + 1, top_block_hash: "block" + top } as Awaited<ReturnType<NodeUrl["getInfo"]>>;
   });
-  const blocks = spyOn(NodeUrl.prototype, "getBlock").mockImplementation(async (params) => {
+  const blocks = spyOn(sdk.NodeUrl.prototype, "getBlock").mockImplementation(async (params) => {
     const height = "height" in params ? params.height : Number(params.hash.slice(5));
     const payment = payments.get(height);
     return { block_header: header(height), miner_tx_hash: "", tx_hashes: payment ? [payment] : [] };
   });
-  const broadcast = spyOn(NodeUrl.prototype, "sendRawTransaction").mockImplementation(async hex => {
+  const broadcast = spyOn(sdk.NodeUrl.prototype, "sendRawTransaction").mockImplementation(async hex => {
     calls.push(hex);
     return (send ? await send(hex) : accepted) as Awaited<ReturnType<NodeUrl["sendRawTransaction"]>>;
   });
   const view = new TestViewPair(scans);
   const scan = spyOn(view, "scanTransaction");
-  const create = spyOn(ViewPair, "create").mockResolvedValue(view);
+  const create = spyOn(sdk.ViewPair, "create").mockResolvedValue(view);
   for (const mock of [info, blocks, broadcast, scan, create]) restores.push(() => mock.mockRestore());
-  const open: typeof openTrackers = async (options = {}) => {
-    many = await openTrackers({
+  const open: typeof sdk.openTrackers = async (options = {}) => {
+    many = await sdk.openTrackers({
       ...options, interval: 60_000,
       notify: async (trackers) => {
         if (failSave && trackers.some(({ data }) => data.state === "sending")) throw new Error("storage unavailable");
