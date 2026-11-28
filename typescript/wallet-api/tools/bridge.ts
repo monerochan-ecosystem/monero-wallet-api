@@ -56,7 +56,7 @@ export function installBridge(options: { backgroundUrl?: string; confirmationPag
         return true;
       } catch { reply({ error: "invalid tab url" }); return; }
     }
-    if (message?.kind !== "openSidebar" || sender.tab?.windowId == null) return;
+    if (message?.kind !== "openSidebar" || message.payload != null || sender.tab?.windowId == null) return;
     void api.sidePanel.open({ windowId: sender.tab.windowId }).catch(() => {});
   });
 

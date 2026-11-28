@@ -11,6 +11,7 @@ import {
 import { tools, type ToolId } from "../tools/monero-tools";
 import type { ParsedMoneroToolInvocation } from "../tools/monero-tools";
 import {
+  getExtensionBrowser,
   getExtensionRuntime,
   type ExtensionMessageByKind,
   type ExtensionMessageKind,
@@ -39,6 +40,10 @@ type BackgroundMessageResult =
   | { tx_logs: unknown }
   | void;
 
+type ExtensionMessageSender = { url?: string; tab?: { windowId?: number } };
+type SidebarMetadata = NonNullable<ExtensionMessageByKind["openSidebar"]>["metadata"];
+type ReceiveSidebarMetadata = (metadata: SidebarMetadata) => void | Promise<void>;
+
 function armWorker(toolId: ToolId) {
   return tools[toolId]?.worker;
 }
@@ -62,6 +67,9 @@ export class ActionLogOpened {
   private mco: ManyScanCachesOpened | null = null;
   private reloadWallets?: (scan_settings_path?: string) => Promise<void>;
   private uiMessages: Promise<void> = Promise.resolve();
+  private sidebarWatcher?: { windowId: number; receive: ReceiveSidebarMetadata };
+  private pendingSidebarMetadata = new Map<number, SidebarMetadata>();
+  private sidebarOpenRequest = 0;
   private invocationsCache: InvocationState[] = [];
   private activeCache: InvocationState[] = [];
   private noticeList: ToolNotice[] = [];
@@ -265,6 +273,37 @@ export class ActionLogOpened {
     return reply;
   }
 
+  /** opens the native sidebar for this extension tab and passes app context to it. */
+  async openSidebar(options: { metadata: SidebarMetadata }): Promise<void> {
+    const request = ++this.sidebarOpenRequest;
+    const api = getExtensionBrowser();
+    let windowId: number | undefined;
+    if (api?.sidebarAction) {
+      await api.sidebarAction.open();
+    } else if (api?.sidePanel) {
+      windowId = (await api.windows?.getCurrent())?.id;
+      if (windowId == null) throw new Error("no extension sidebar window");
+      await api.sidePanel.open({ windowId });
+    } else {
+      throw new Error("native sidebar unavailable");
+    }
+    if (request === this.sidebarOpenRequest) await this.callExtensionBackground("openSidebar", { ...options, windowId });
+  }
+
+  /** use in the sidebar to receive pending and later metadata for its browser window. */
+  async watchSidebarMetadata(receive: ReceiveSidebarMetadata): Promise<void> {
+    const windowId = (await getExtensionBrowser()?.windows?.getCurrent())?.id;
+    if (windowId == null) throw new Error("no extension sidebar window");
+    const watcher = { windowId, receive };
+    this.sidebarWatcher = watcher;
+    await this.takeSidebarMetadata(watcher);
+  }
+
+  private async takeSidebarMetadata(watcher: { windowId: number; receive: ReceiveSidebarMetadata }) {
+    const metadata = await this.callExtensionBackground("takeSidebarMetadata", { windowId: watcher.windowId });
+    if (metadata != null && watcher === this.sidebarWatcher) await watcher.receive(metadata as SidebarMetadata);
+  }
+
   /** sends an update from the background page to the ui pages without waiting for a reply. */
   callExtensionSidebar<K extends keyof ExtensionMessageByKind>(
     kind: K,
@@ -279,11 +318,13 @@ export class ActionLogOpened {
 
   // distinguish message handling by bus type 
   private handlesMessage(kind: string): boolean {
-    if (this.bus === "ui")
+    if (this.bus === "ui") {
+      if (kind === "sidebarMetadataChanged") return !!this.sidebarWatcher;
       return ["actionLogChanged", "walletsChanged", "walletCacheChanged"].includes(kind);
+    }
     if (this.bus !== "background") return false;
     return kind.startsWith("worker.") || [
-      "openSidebar", "toolCall", "dismiss", "execute", "dismissNotice",
+      "openSidebar", "takeSidebarMetadata", "toolCall", "dismiss", "execute", "dismissNotice",
       "shareViewkeyOK", "shareViewkeyFAILED",
     ].includes(kind);
   }
@@ -291,7 +332,7 @@ export class ActionLogOpened {
   private listenOnMessage(
     handle: (
       env: { kind: ExtensionMessageKind; payload: unknown },
-      sender?: { tab?: { windowId?: number } },
+      sender?: ExtensionMessageSender,
     ) => Promise<BackgroundMessageResult>,
   ) {
     const rt = getExtensionRuntime();
@@ -301,7 +342,7 @@ export class ActionLogOpened {
       if (!kind || !this.handlesMessage(kind)) return false;
       handle(
         msg as { kind: ExtensionMessageKind; payload: unknown },
-        sender as { tab?: { windowId?: number } } | undefined,
+        sender as ExtensionMessageSender | undefined,
       ).then(
         (result) => { if (result !== undefined) sendResponse?.(result); },
         (error) => sendResponse?.({ error: error instanceof Error ? error.message : String(error) }),
@@ -371,6 +412,12 @@ export class ActionLogOpened {
       await this.mco?.feed(raw);
       return {};
     }
+    if (env.kind === "sidebarMetadataChanged") {
+      const watcher = this.sidebarWatcher;
+      const payload = env.payload as ExtensionMessageByKind["sidebarMetadataChanged"] | null;
+      if (watcher && payload?.windowId === watcher.windowId) await this.takeSidebarMetadata(watcher);
+      return {};
+    }
     // Unhandled kinds (worker.* queries especially) get no answer here.
     // The worker answers, and the first answer wins. A local {} would win
     // the race and hide the worker response.
@@ -384,15 +431,18 @@ export class ActionLogOpened {
 
   private async handleBackgroundMessage(
     env: { kind: ExtensionMessageKind; payload: unknown },
-    sender?: { tab?: { windowId?: number } },
+    sender?: ExtensionMessageSender,
   ): Promise<BackgroundMessageResult> {
     if (!env?.kind) return {};
     const ctx = this.toolCtx();
     switch (env.kind) {
-      // the chrome service worker handles "openSidebar" msg (sidepanel can only be opened from sw)
+      // native opening runs in the click; metadata stays on the existing command.
       case "openSidebar":
+        if (env.payload != null) return this.handleSidebarMetadata(env.kind, env.payload, sender);
         this.openWalletUi(sender);
         return {};
+      case "takeSidebarMetadata":
+        return this.handleSidebarMetadata(env.kind, env.payload, sender);
       case "worker.setNodeUrl": {
         const p = env.payload as { node_url?: string };
         if (p?.node_url != null)
@@ -544,18 +594,34 @@ export class ActionLogOpened {
     await this.refreshUiCache();
   }
 
-  private openWalletUi(sender?: { tab?: { windowId?: number } }) {
-    const g = globalThis as unknown as {
-      browser?: {
-        sidebarAction?: { open: () => Promise<void> };
-        sidePanel?: { open: (o: { windowId: number }) => Promise<void> };
-      };
-      chrome?: {
-        sidebarAction?: { open: () => Promise<void> };
-        sidePanel?: { open: (o: { windowId: number }) => Promise<void> };
-      };
-    };
-    const api = g.browser ?? g.chrome;
+  private handleSidebarMetadata(
+    kind: "openSidebar" | "takeSidebarMetadata",
+    payload: unknown,
+    sender?: ExtensionMessageSender,
+  ): BackgroundMessageResult {
+    const extensionUrl = getExtensionRuntime()?.getURL("");
+    if (!extensionUrl || !sender?.url?.startsWith(extensionUrl)) throw new Error("sidebar metadata requires an extension page");
+    const request = payload as ExtensionMessageByKind["openSidebar"];
+    const senderWindow = sender.tab?.windowId;
+    const windowId = kind === "openSidebar" ? senderWindow : request?.windowId;
+    if (windowId == null || !Number.isInteger(windowId) || windowId < 0) throw new Error("invalid sidebar window");
+    if ((senderWindow != null && senderWindow !== windowId) || (request?.windowId != null && request.windowId !== windowId)) {
+      throw new Error("sidebar request is from a different window");
+    }
+    if (kind === "takeSidebarMetadata") {
+      const metadata = this.pendingSidebarMetadata.get(windowId);
+      this.pendingSidebarMetadata.delete(windowId);
+      return { ok: true, result: metadata ?? null };
+    }
+    const metadata = request?.metadata;
+    if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) throw new Error("invalid sidebar metadata");
+    this.pendingSidebarMetadata.set(windowId, metadata);
+    this.callExtensionSidebar("sidebarMetadataChanged", { windowId });
+    return { ok: true };
+  }
+
+  private openWalletUi(sender?: ExtensionMessageSender) {
+    const api = getExtensionBrowser();
     void api?.sidebarAction?.open?.().catch(() => {});
     const windowId = sender?.tab?.windowId;
     if (windowId != null) {
