@@ -12,6 +12,7 @@ import {
 import { atomicWrite } from "../../io/atomicWrite";
 import { log } from "../../io/logging";
 import type { Payment } from "../../send-functionality/inputSelection";
+import { restoreCacheAmounts } from "../../send-functionality/conversion";
 
 export async function initScanCache(
   viewpair: ViewPair,
@@ -131,12 +132,10 @@ export async function readCacheFile(
   const jsonString = await Bun.file(cacheFilePath)
     .text()
     .catch(() => undefined);
-  return jsonString
-    ? (JSON.parse(jsonString, (key, value) => {
-        if (key === "amount") return BigInt(value);
-        return value;
-      }) as ScanCache)
-    : undefined;
+  if (!jsonString) return undefined;
+  const cache = JSON.parse(jsonString) as ScanCache;
+  restoreCacheAmounts(cache);
+  return cache;
 }
 export function cacheFileDefaultLocation(
   primary_address: string,
@@ -273,6 +272,8 @@ export type TxLog = {
   sendResult?: SendRawTransactionResult;
   error?: string;
   invocationId?: string;
+  /** application data saved as json. */
+  metadata?: Record<string, unknown>;
   signed_tx?: string;
   // null marks an unsent draft. old rows can lack this field.
   last_broadcast_at?: number | null;

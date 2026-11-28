@@ -211,15 +211,18 @@ test("signed transaction reaches disk before the node request", async () => {
   let observed: any = null;
   let writesAtNode = 0;
   wallet.sendTransaction = async () => { observed = await readCacheFileDefaultLocation(addresses[1]!, dir); writesAtNode = messages; return answer(); };
-  const signed = await wallet.makeSignTransaction({ payments: [{ address: "dest", amount: "100000000000" }], invocationId: "handover" });
+  const metadata = { checkout: { reference: "invoice-41", amount: "12.50" } };
+  const signed = await wallet.makeSignTransaction({ payments: [{ address: "dest", amount: "100000000000" }], invocationId: "handover", metadata });
   const before = await readCacheFileDefaultLocation(addresses[1]!, dir);
   expect(before?.tx_logs?.[0]?.signed_tx).toBe("signed");
   expect(before?.tx_logs?.[0]?.sendResult).toBeUndefined();
   await wallet.sendSignedTransaction(signed, "handover");
   await Bun.write(`${dir}/result.json`, stringify({ writesAtNode, observed }));
+  expect(before?.tx_logs?.[0]?.metadata).toEqual(metadata);
   expect(writesAtNode).toBe(3);
   expect(observed?.tx_logs?.[0]?.signed_tx).toBe("signed");
   expect(observed?.tx_logs?.[0]?.sendResult).toBeUndefined();
+  expect(observed?.tx_logs?.[0]?.metadata).toEqual(metadata);
 });
 
 test("a caller can act between signing and sending without stopping the coordinator", async () => {
@@ -545,6 +548,51 @@ test("sweep reserves its inputs without stopping the scanner", async () => {
   expect(stops).toBe(0);
 });
 
+test("a sweep keeps application metadata through a failed broadcast, reopen, and retry", async () => {
+  const { dir, mco, wallet } = await fixture("sweep-metadata");
+  const primary_address = wallet.primary_address;
+  const readSavedRows = async () => (await readCacheFileDefaultLocation(primary_address, dir))!.tx_logs!;
+  wallet.sendTransaction = async () => answer("Failed");
+  await expect(send(mco, ["7"])).rejects.toThrow("rpc returned error");
+  await mco.releaseInputs({ primary_address, tx_log_index: 0 });
+  const [original] = await readSavedRows();
+
+  const metadata = { checkout: { amount: "25.50", fields: [{ amount: 7 }, { amount: false }, null] }, source: "client-42" };
+  let beforeBroadcast: ScanCache["tx_logs"];
+  wallet.getFeeEstimate = async () => fee;
+  wallet.makeSweepTransactionFromSelectedInputs = async () => "unsigned";
+  wallet.signTransaction = async () => "signed-sweep";
+  wallet.sendTransaction = async () => {
+    beforeBroadcast = await readSavedRows();
+    return answer("Failed");
+  };
+  await expect(mco.sweepSignSend({ primary_address, address: "dest", input_indexes: ["7"], metadata })).rejects.toThrow("rpc returned error");
+  const afterFailure = await readSavedRows();
+
+  await mco.stopWorker();
+  ready = gate();
+  const reopened = await openWallets({ scan_settings_path: `${dir}/ScanSettings.json`, no_stats: true });
+  runs.push(reopened);
+  await ready.promise;
+  const afterReopen = structuredClone(reopened.wallets[1]!.tx_logs);
+  wallet.sendTransaction = async () => answer();
+  await reopened.rebroadcastTx({ primary_address, tx_log_index: 1 });
+  const afterRetry = await readSavedRows();
+  await Bun.write(`${dir}/result.json`, stringify({ original, beforeBroadcast, afterFailure, afterReopen, afterRetry }));
+
+  expect(original?.metadata).toBeUndefined();
+  for (const rows of [beforeBroadcast, afterFailure, afterReopen, afterRetry]) {
+    expect(rows).toHaveLength(2);
+    expect(rows?.[0]).toEqual(original);
+    expect(rows?.[1]?.metadata).toEqual(metadata);
+    expect(rows?.[1]?.signed_tx).toBe("signed-sweep");
+  }
+  expect(beforeBroadcast?.[1]?.sendResult).toBeUndefined();
+  expect(afterFailure[1]?.sendResult?.status).toBe("Failed");
+  expect(afterReopen[1]).toEqual(afterFailure[1]);
+  expect(afterRetry[1]?.sendResult?.status).toBe("OK");
+});
+
 test("an older asynchronous stats result cannot replace newer wallet stats", async () => {
   const { wallet } = await fixture("stats-order");
   const entered = gate();
@@ -566,10 +614,17 @@ test("an older asynchronous stats result cannot replace newer wallet stats", asy
 
 test("a fee request failure is logged without stopping scanning", async () => {
   const { dir, mco, wallet } = await fixture("fee-error");
+  const metadata = { request: { amount: null } };
   wallet.calculateFeeAndSelectInputs = async () => { throw new Error("fee request failed"); };
-  await expect(send(mco)).rejects.toThrow("fee request failed");
+  await expect(mco.makeSignSend({
+    primary_address: wallet.primary_address,
+    payments: [{ address: "dest", amount: "100000000000" }],
+    input_indexes: [],
+    metadata,
+  })).rejects.toThrow("fee request failed");
   const cache = await readCacheFileDefaultLocation(addresses[1]!, dir);
   expect(cache!.tx_logs![0]!.error).toContain("fee request failed");
+  expect(cache!.tx_logs![0]!.metadata).toEqual(metadata);
   expect(cache!.tx_logs![0]!.feeEstimate).toBeUndefined();
   expect(cache!.pending_spent_utxos).toEqual({});
   expect(stops).toBe(0);

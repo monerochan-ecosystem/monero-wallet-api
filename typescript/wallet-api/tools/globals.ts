@@ -40,11 +40,13 @@ export type ExtensionMessageByKind = {
     primary_address: string;
     payments: { address: string; amount: string }[];
     input_indexes: string[];
+    metadata?: Record<string, unknown>;
   };
   "worker.sweepSignSend": TransactionFeeOptions & {
     primary_address: string;
     address: string;
     input_indexes: string[];
+    metadata?: Record<string, unknown>;
   };
   "worker.rebroadcastTx": {
     primary_address: string;

@@ -6,6 +6,21 @@ export function truncateDecimalString(str: string, decimals = 3): string {
   return truncatedFraction ? `${integer}.${truncatedFraction}` : integer!;
 }
 
+export function restoreCacheAmounts(value: unknown): void {
+  if (value === null || typeof value !== "object") return;
+  const object = value as Record<string, unknown>;
+  for (const [key, entry] of Object.entries(object)) {
+    // application metadata keeps its json values, including fields called amount.
+    if (key === "metadata") continue;
+    if (
+      key === "amount" || key === "pending_amount" || key === "total_amount" ||
+      key === "total_pending_amount" || key === "primary_address_received_amount" ||
+      key === "primary_address_pending_amount"
+    ) object[key] = BigInt(entry as string | number | boolean);
+    else restoreCacheAmounts(entry);
+  }
+}
+
 export function convertBigIntAmount(amount: bigint): string {
   if (amount < 0) amount *= -1n;
   let display_amount = "";

@@ -18,6 +18,7 @@ import {
   type ExtensionPort,
   type ToolNotice,
 } from "../tools/globals";
+import { restoreCacheAmounts } from "../send-functionality/conversion";
 import type { CoordinatorResults } from "../scanning-syncing/scanresult/coordinatorCommand";
 import type { ManyScanCachesOpened } from "../scanning-syncing/scanresult/scanCacheOpened";
 import { ActionLogIdbBackend } from "./backend/idbBackend";
@@ -402,13 +403,8 @@ export class ActionLogOpened {
       return {};
     }
     if (env.kind === "walletCacheChanged") {
-      const raw =
-        typeof env.payload === "string"
-          ? JSON.parse(env.payload, (key, value) => {
-              if (key === "amount") return BigInt(value);
-              return value;
-            })
-          : env.payload;
+      const raw = typeof env.payload === "string" ? JSON.parse(env.payload) : env.payload;
+      if (typeof env.payload === "string") restoreCacheAmounts(raw);
       await this.mco?.feed(raw);
       return {};
     }

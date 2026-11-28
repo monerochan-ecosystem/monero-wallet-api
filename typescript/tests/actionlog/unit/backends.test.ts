@@ -3,6 +3,7 @@ import { mkdir, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { runInNewContext } from "node:vm";
 import { ActionLogOpened } from "../../../wallet-api/actionlog/actionLogOpened";
+import type { ManyScanCachesOpened } from "../../../wallet-api/scanning-syncing/scanresult/scanCacheOpened";
 
 const browserGlobals = globalThis as { browser?: unknown; chrome?: unknown };
 const originalBrowser = browserGlobals.browser;
@@ -207,4 +208,29 @@ test("the wallet background refuses sidebar metadata from web pages and other wi
   await background.receive("openSidebar", { metadata: { route: "latest" } }, actionLog);
   expect(await background.receive("takeSidebarMetadata", { windowId: 18 }, { ...sidebar, tab: { windowId: 19 } })).toMatchObject({ error: expect.any(String) });
   expect(await background.receive("takeSidebarMetadata", { windowId: 18 }, sidebar)).toEqual({ ok: true, result: { route: "latest" } });
+});
+
+test("wallet cache messages preserve metadata amount values and revive wallet amounts", async () => {
+  const runtime = extensionRuntime(async () => {}, "chrome-extension://wallet/");
+  browserGlobals.chrome = { runtime };
+  const log = await ActionLogOpened.create({ backendInstance: memoryBackend, extensionMessageBus: "ui" });
+  const received: unknown[] = [];
+  await log.bindMco({ feed: async (data: unknown) => { received.push(data); } } as ManyScanCachesOpened);
+  const metadata = { amount: "0.02", parts: [{ amount: 2 }, { amount: null }] };
+  const output = { amount: "20000000000" };
+  const payload = {
+    newCache: {
+      outputs: { first: output },
+      tx_logs: [{ metadata, payments: [{ amount: "10000000000" }] }],
+    },
+    changed_outputs: [{ output, change_reason: "added" }],
+  };
+  expect(await runtime.receive("walletCacheChanged", JSON.stringify(payload))).toEqual({});
+  expect(received).toEqual([{
+    newCache: {
+      outputs: { first: { amount: 20000000000n } },
+      tx_logs: [{ metadata, payments: [{ amount: 10000000000n }] }],
+    },
+    changed_outputs: [{ output: { amount: 20000000000n }, change_reason: "added" }],
+  }]);
 });

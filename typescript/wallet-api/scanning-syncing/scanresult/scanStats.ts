@@ -2,6 +2,7 @@ import { atomicWrite, ViewPair, type Output } from "../../xmr3_common";
 import { isInputLocked, txFailed, txLogHoldsFunds, type ScanCache, type Subaddress, type TxLog } from "./scanCache";
 export { txLogHoldsFunds } from "./scanCache";
 import { outputStatus, type OutputStatus } from "./scanResult";
+import { restoreCacheAmounts } from "../../send-functionality/conversion";
 
 export type WriteStatsFileParams = {
   primary_address: string;
@@ -44,27 +45,16 @@ export function statsFileDefaultLocation(
   return `${pathPrefix ?? ""}${primary_address}_stats.json`;
 }
 
-// amount | total_amount | total_pending_amount | pending_amount  :->  all bigint keys
 export async function readStatsFile(
   cacheFilePath: string,
 ): Promise<ScanStats | undefined> {
   const jsonString = await Bun.file(cacheFilePath)
     .text()
     .catch(() => undefined);
-  return jsonString
-    ? (JSON.parse(jsonString, (key, value) => {
-        if (
-          key === "amount" ||
-          key === "pending_amount" ||
-          key === "total_amount" ||
-          key === "total_pending_amount" ||
-          key === "primary_address_received_amount" ||
-          key === "primary_address_pending_amount"
-        )
-          return BigInt(value);
-        return value;
-      }) as ScanStats)
-    : undefined;
+  if (!jsonString) return;
+  const stats = JSON.parse(jsonString) as ScanStats;
+  restoreCacheAmounts(stats);
+  return stats;
 }
 
 export async function readStatsFileDefaultLocation(
